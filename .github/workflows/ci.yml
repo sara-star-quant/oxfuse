@@ -69,43 +69,6 @@ jobs:
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest --limits downlevel
 
-  # Temporary: finds out which GPU test binary crashes the DX12 software adapter at
-  # process exit. Runs each binary alone and prints exit codes. Remove once solved.
-  windows-gpu-diagnostics:
-    runs-on: windows-latest
-    continue-on-error: true
-    timeout-minutes: 40
-    env:
-      OXFUSE_WINDOWS_GPU_TESTS: "1"
-      RUST_BACKTRACE: full
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: matmul probe, one process per kernel configuration
-        shell: bash
-        run: |
-          set +e
-          cargo test -p oxfuse-wgpu --test windows_probe --no-run --locked
-          exe=$(ls -t target/debug/deps/windows_probe-*.exe | head -1)
-          for cfg in 16,2,64 8,2,64 16,3,64 8,4,64 4,4,64 4,2,64 16,1,64; do
-            echo "=== probe $cfg"
-            OXFUSE_PROBE=$cfg "$exe" --ignored --nocapture --exact probe_one_matmul_configuration 2>&1 | grep -E "^probe:|STATUS_|panicked" 
-            echo "exit=${PIPESTATUS[0]}"
-          done
-          exit 0
-      - name: raw shader probe, one process per construct
-        shell: bash
-        run: |
-          set +e
-          exe=$(ls -t target/debug/deps/windows_probe-*.exe | head -1)
-          for name in F E A B C D; do
-            echo "=== raw $name"
-            OXFUSE_RAW=$name "$exe" --ignored --nocapture --exact probe_one_raw_shader 2>&1 | grep -E "^probe:|STATUS_|panicked"
-            echo "exit=${PIPESTATUS[0]}"
-          done
-          exit 0
-
   # cargo-deny runs through its own action, not a justfile recipe, so it gets the
   # action's cache and advisory-db handling.
   deny:
