@@ -4,7 +4,6 @@
 //! device can run it (`oxfuse gpu-selftest`) and attach the output to an issue.
 
 use crate::bounds::{SIGMOID_ULP_BOUND, gpu_matmul_bound, sigmoid_matches, ulp_distance};
-use crate::config::KernelConfig;
 use crate::context::Context;
 use crate::exec::WgpuBackend;
 use oxfuse_core::{Error, GraphBuilder, Limits, Op};
@@ -117,7 +116,7 @@ fn pattern_sweep() -> Vec<f32> {
 pub fn run_selftest(ctx: Arc<Context>) -> Result<SelfTestReport, Error> {
     let limits = ctx.limits().clone();
     let info = ctx.info().clone();
-    let device = WgpuBackend::with(ctx, KernelConfig::DEFAULT);
+    let device = WgpuBackend::for_context(ctx);
     let reference = &ReferenceBackend;
 
     let mut finite_tier_exact = true;
