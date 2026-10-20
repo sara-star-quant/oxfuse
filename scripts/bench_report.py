@@ -72,8 +72,10 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 - GPU MatMul, register block: each thread of a 16 x 16 workgroup holds a 4 x 4
   block of the result in sixteen scalar variables, so a workgroup covers a
   64 x 64 block and loads one tile of A and one of B per step of 16 in k. Each
-  output still sums in ascending k from one accumulator. At 1024 x 1024 in an
-  isolated sweep: one output per thread 16.8 ms (128 GFLOP/s), 2 x 2 per thread
+  output still sums in ascending k from one accumulator. At 1024 x 1024 in a
+  throwaway single-dispatch harness outside the repo (so no repo command
+  reproduces these particular figures; the table below is the reproducible
+  measurement): one output per thread 16.8 ms (128 GFLOP/s), 2 x 2 per thread
   7.8 ms, 4 x 4 per thread 3.84 ms (559 GFLOP/s). Kept 4 x 4. Tried and
   dropped: 8 x 8 threads with 4 x 4 blocks 4.06 ms, with 8 x 8 blocks 4.79 ms,
   8 x 8 threads with one output 19.3 ms, and the same 4 x 4 block held in an
@@ -89,12 +91,21 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 
 
 def commit():
-    """Short HEAD, marked when tracked files differ from it, so a table is
-    never credited to a commit that does not contain the measured code."""
-    head = sh('git', '-C', str(ROOT), 'rev-parse', '--short', 'HEAD')
+    """The git tree id of crates/ at HEAD, marked when tracked files differ from
+    it. A tree id survives squashing and amending, so a table stays attached to
+    the code it measured (check with `git rev-parse HEAD:crates`)."""
+    tree = sh('git', '-C', str(ROOT), 'rev-parse', '--short', 'HEAD:crates')
     dirty = sh('git', '-C', str(ROOT), 'status', '--porcelain', '--untracked-files=no',
-               '--', '.', ':!docs/benchmarks.md')
-    return f"{head} (plus uncommitted changes)" if dirty.strip() else head
+               '--', 'crates', 'Cargo.toml', 'Cargo.lock', 'scripts')
+    return f"crates tree {tree} (plus uncommitted changes)" if dirty.strip() else f"crates tree {tree}"
+
+
+def wgpu_version():
+    """The wgpu version the GPU benchmarks built against, from Cargo.lock."""
+    lock = (ROOT / "Cargo.lock").read_text()
+    marker = 'name = "wgpu"\nversion = "'
+    i = lock.find(marker)
+    return lock[i + len(marker):].split('"', 1)[0] if i >= 0 else "unknown"
 
 
 def sh(*cmd):
@@ -121,12 +132,12 @@ def environment():
     return "\n".join(
         [
             f"- CPU: {cpu} ({cores} logical cores)",
-            f"- GPU adapter: {gpu}",
+            f"- GPU adapter: {gpu}, wgpu {wgpu_version()}",
             f"- Memory: {memory}",
             f"- OS: {platform.platform()}",
             f"- Rust: {sh('rustc', '--version')}",
             f"- RUSTFLAGS: `{os.environ.get('RUSTFLAGS', '')}`",
-            f"- Commit: {commit()}",
+            f"- Code: {commit()}",
         ]
     )
 

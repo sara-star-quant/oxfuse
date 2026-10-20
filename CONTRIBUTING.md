@@ -38,6 +38,7 @@ Mutation testing of the host-side code in `crates/wgpu/src/{config,bounds,model,
 
 - `exec.rs`: `|` replaced by `^` on `wgpu::BufferUsages` flags. The flags are disjoint bits, so the result is the same.
 - `exec.rs`: the guard that sends a rank-two `[1, 0]` transpose to the tiled kernel replaced by `false`, or `len() == 2` replaced by `!=`. The generic permute kernel gives the same bits, so only the choice of kernel changes. The identity permutation `[0, 1]` and rank-zero transposes have their own tests.
+- `context.rs`: deleting `power_preference` from the adapter request. It only chooses between several adapters, which a one-adapter machine cannot show.
 - `config.rs`: in `tile_grid`, `rows == 0 || ...` replaced by `&&`. A zero row count still produces zero tiles, which `grid_fold` rejects.
 - `model.rs`: the matmul tile loop bound `k0 < k` replaced by `<=`, or `k - k0` replaced by `k + k0` in `kmax`. The extra iterations read zero-filled tile cells and add `+0.0`, which cannot change a sum that starts at `+0.0`. The same holds for the shader's bound.
 - `model.rs`: `t + 1` replaced by `t * 1` in the transpose tile stride. The padding exists to avoid bank conflicts on a device, which the model does not have.

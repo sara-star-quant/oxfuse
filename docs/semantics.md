@@ -22,21 +22,26 @@ What each op computes, bit for bit where that is promised, and what is deliberat
 
 ## The GPU backend
 
-`WgpuBackend` (feature `wgpu`) runs the same ops on a device. The shading language does not pin down floating-point behavior the way IEEE 754 does, so its contract has two tiers instead of one.
+`WgpuBackend` (feature `wgpu`) runs the same ops on a device. The shading language does not pin down floating-point behavior the way IEEE 754 does, and the device flushes subnormal numbers to zero, so the contract is stated in tiers.
 
-**Finite tier: promised.** For finite inputs with finite, non-subnormal results:
+**Promised.** These hold on any adapter, for the inputs named:
 
 | Op | Contract |
 |---|---|
 | `Relu` | Bit-exact for every input, including NaN, infinity, signed zero and subnormals. It is computed on the bit pattern, so no floating-point rule applies. |
 | `Reshape`, `Transpose` | Bit-exact for every input. They only move bits. |
-| `Add`, `Mul` | Bit-exact on the finite tier. |
-| `MatMul` | Within the documented bound of the float64 result (`K * eps * sum(|a_ik * b_kj|)`). Not bit-exact: the device compiler fuses multiply-add, so a result can differ from the reference by many ulp on cancelling sums. |
-| `Sigmoid` | Within 65 ulp of the reference for every finite input whose result is a normal number, measured over all 2^32 inputs. A result below the smallest normal number may be flushed to zero. |
+| `Add`, `Mul` | Bit-exact when both operands hold only zero and normal numbers and the true result is zero or normal. |
+| `MatMul` | When every input is zero or a normal number, within `K * eps * sum(|a_ik * b_kj|) + 2 * K * f32::MIN_POSITIVE` of the float64 result. The first term is the CPU bound. The second covers products and partial sums that the device flushes to zero, which lose less than one smallest-normal number each. Not bit-exact: the device also fuses multiply-add. |
 
-**Outside the tier: measured, not promised.** The language lets a compiler assume NaN and infinity never occur and lets a device flush subnormals to zero. `docs/adapters.md` records what each measured device does with them, for example that `infinity * subnormal` is NaN on the first one. The CLI already rejects non-finite input and output, so the promise matches what files can express.
+**Measured, not promised.** These are measurements of one adapter (the first row of [adapters.md](adapters.md)); other adapters may differ and `oxfuse gpu-selftest` measures them:
 
-The 65 ulp figure and the flush behavior are measurements of the recorded adapter. `oxfuse gpu-selftest` measures any other.
+| Op | Measurement |
+|---|---|
+| `Sigmoid` | Within 65 ulp of the reference for every finite input whose result is a normal number, over all 2^32 inputs. A result below the smallest normal number may be flushed to zero. The tests enforce this figure only on that adapter. |
+
+**Outside both.** Subnormal inputs to `Add`, `Mul` or `MatMul`, and any NaN or infinity reaching them, are not promised: the device may flush a subnormal operand or a subnormal result to zero, and the language lets a compiler assume NaN and infinity never occur. `adapters.md` records what each measured device does with them, for example that `infinity * subnormal` is NaN on the first one.
+
+The CLI rejects non-finite input and output, but JSON can express subnormal numbers, and `--backend wgpu` prints whatever the device computed, flushed zeros included. Use `--backend cpu` when subnormal values matter.
 
 ## What is compared with NumPy
 

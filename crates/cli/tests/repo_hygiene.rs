@@ -68,9 +68,10 @@ fn there_is_exactly_one_licence_and_it_is_apache_2_0() {
 }
 
 /// Public docs must not name an accelerator vendor, so none reads as a support
-/// claim. The one exception is `docs/adapters.md`, a record of measurements whose
-/// first line says "measured, not supported" and which may not use the words that
-/// would turn a measurement into a promise.
+/// claim. The exceptions are the two records of measurements: `docs/adapters.md`,
+/// whose first line says "measured, not supported" and which may not use the words
+/// that would turn a measurement into a promise, and the generated
+/// `docs/benchmarks.md`, which states the machine it ran on.
 #[test]
 fn hardware_claims_match_what_exists() {
     let root = root();
@@ -84,6 +85,7 @@ fn hardware_claims_match_what_exists() {
         "README must point at the measured adapters"
     );
     let adapters_path = root.join("docs/adapters.md");
+    let benchmarks_path = root.join("docs/benchmarks.md");
     let mut public = vec![readme, fs::read_to_string(root.join("ROADMAP.md")).unwrap()];
     let mut dirs = vec![root.join("docs")];
     while let Some(dir) = dirs.pop() {
@@ -91,12 +93,25 @@ fn hardware_claims_match_what_exists() {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 dirs.push(path);
-            } else if path != adapters_path {
+            } else if path != adapters_path && path != benchmarks_path {
                 public.push(fs::read_to_string(path).unwrap());
             }
         }
     }
-    let brands = ["nvidia", "cuda", "tenstorrent", "rocm", "tpu"];
+    let brands = [
+        "nvidia",
+        "cuda",
+        "tenstorrent",
+        "rocm",
+        "tpu",
+        "amd",
+        "intel",
+        "qualcomm",
+        "adreno",
+        "mali",
+        "radeon",
+        "geforce",
+    ];
     for text in public {
         for word in text.split(|c: char| !c.is_alphanumeric()) {
             let word = word.to_lowercase();

@@ -11,7 +11,10 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Non-exhaustive: the `Wgpu` variant exists only when the `wgpu` feature is on,
+/// so downstream code must not match this enum exhaustively.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum BackendKind {
     /// The naive oracle. Constant folding always uses it.
     Reference,
@@ -264,6 +267,18 @@ fn render_outputs(outputs: Vec<(String, Tensor)>) -> Result<String, CliError> {
         .expect("serializing finite tensors cannot fail");
     text.push('\n');
     Ok(text)
+}
+
+/// Measures the first adapter against the reference and renders the report.
+#[cfg(feature = "wgpu")]
+pub fn gpu_selftest(downlevel: bool) -> Result<String, CliError> {
+    let profile = if downlevel {
+        oxfuse_wgpu::LimitsProfile::Downlevel
+    } else {
+        oxfuse_wgpu::LimitsProfile::Adapter
+    };
+    let context = Arc::new(oxfuse_wgpu::Context::new(profile)?);
+    Ok(oxfuse_wgpu::run_selftest(context)?.to_string())
 }
 
 #[cfg(test)]
@@ -705,16 +720,4 @@ mod tests {
             "{err}"
         );
     }
-}
-
-/// Measures the first adapter against the reference and renders the report.
-#[cfg(feature = "wgpu")]
-pub fn gpu_selftest(downlevel: bool) -> Result<String, CliError> {
-    let profile = if downlevel {
-        oxfuse_wgpu::LimitsProfile::Downlevel
-    } else {
-        oxfuse_wgpu::LimitsProfile::Adapter
-    };
-    let context = Arc::new(oxfuse_wgpu::Context::new(profile)?);
-    Ok(oxfuse_wgpu::run_selftest(context)?.to_string())
 }

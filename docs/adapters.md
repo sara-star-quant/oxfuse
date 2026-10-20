@@ -8,7 +8,7 @@ This page records what `oxfuse gpu-selftest` measured on devices someone ran it 
 |---|---|---|---|---|---|---|---|---|---|
 | Apple M1 Pro | Metal | 2026-10-20 | yes | yes | yes | 1720 | 43 | yes | nan |
 
-Notes on the first row, from the full runs in the test suite: Relu was bit-exact on all 2^32 bit patterns. Sigmoid was within 65 ulp of the reference on every finite input, worst at x = -86.64 (the self-test samples fewer inputs and reports a lower figure). `MatMul` always fuses multiply-add on this compiler, so it differs from the reference by up to about a thousand ulp on cancelling sums while staying inside the documented bound. Add and Mul flush subnormal values to zero, and `infinity * subnormal` gives NaN.
+Notes on the first row, from the full runs in the test suite: Relu was bit-exact on all 2^32 bit patterns. Sigmoid was within 65 ulp of the reference on every finite input, worst at x = -86.64 (the self-test samples fewer inputs and reports a lower figure). `MatMul` always fuses multiply-add on this compiler, so it differs from the reference by up to a few thousand ulp on cancelling sums while staying inside the documented bound. Add and Mul flush subnormal values to zero, and `infinity * subnormal` gives NaN.
 
 ## How to add a row
 

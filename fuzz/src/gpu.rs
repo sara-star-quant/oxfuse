@@ -7,7 +7,7 @@
 use oxfuse_core::passes::ConstEvaluator;
 use oxfuse_core::{GraphBuilder, Limits, Op, Source, TensorType};
 use oxfuse_runtime::{Backend, ReferenceEvaluator, Tensor};
-use oxfuse_wgpu::{WgpuBackend, matmul_bound, sigmoid_matches, sigmoid_ulp_bound_for};
+use oxfuse_wgpu::{WgpuBackend, gpu_matmul_bound, sigmoid_matches, sigmoid_ulp_bound_for};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -85,7 +85,7 @@ pub fn op_agrees(
                     if exact.abs() > 1e37 {
                         return None; // near overflow: not promised
                     }
-                    let tolerance = matmul_bound(&row, &col) + (k as f64 + 1.0) * f64::from(f32::MIN_POSITIVE);
+                    let tolerance = gpu_matmul_bound(&row, &col);
                     let err = (f64::from(got[idx]) - exact).abs();
                     (err.is_nan() || err > tolerance).then(|| {
                         format!("matmul element {idx}: device {:e}, exact {exact:e}, tolerance {tolerance:e}", got[idx])
