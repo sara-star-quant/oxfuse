@@ -24,7 +24,7 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 | Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
 | Tests detect real defects | cargo-mutants: 268 of 280 caught, survivors documented |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
-| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani proofs of the dispatch fold and the matmul and transpose indexing |
+| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani proofs of the dispatch fold and the matmul, transpose and permute indexing |
 | Builds on Rust 1.88 or newer | MSRV job in CI |
 
 Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.49x of `ndarray`'s speed on the recorded machine.
