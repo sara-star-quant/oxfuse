@@ -53,6 +53,11 @@ bench-report:
 bench-check:
     cargo bench -p oxfuse-runtime -p oxfuse-wgpu --locked --no-run
 
+# The CLI built with the GPU backend: lint and tests (needs an adapter, or the tests do nothing).
+test-wgpu:
+    cargo clippy -p oxfuse -p oxfuse-wgpu --all-targets --features oxfuse/wgpu --locked -- -D warnings
+    cargo test -p oxfuse -p oxfuse-wgpu --features oxfuse/wgpu --locked
+
 # Tests with the threaded matmul compiled in.
 test-parallel:
     cargo clippy -p oxfuse-runtime -p oxfuse --all-targets --features parallel --locked -- -D warnings

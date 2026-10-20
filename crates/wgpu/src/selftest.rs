@@ -3,7 +3,7 @@
 //! the values the shading language does not pin down. Anyone with another
 //! device can run it (`oxfuse gpu-selftest`) and attach the output to an issue.
 
-use crate::bounds::{SIGMOID_ULP_BOUND, matmul_bound, sigmoid_matches, ulp_distance};
+use crate::bounds::{SIGMOID_ULP_BOUND, gpu_matmul_bound, sigmoid_matches, ulp_distance};
 use crate::config::KernelConfig;
 use crate::context::Context;
 use crate::exec::WgpuBackend;
@@ -182,7 +182,7 @@ pub fn run_selftest(ctx: Arc<Context>) -> Result<SelfTestReport, Error> {
                     .sum();
                 let idx = i * n + j;
                 matmul_within_bound &=
-                    (f64::from(got[idx]) - exact).abs() <= matmul_bound(&row, &col);
+                    (f64::from(got[idx]) - exact).abs() <= gpu_matmul_bound(&row, &col);
                 matmul_max_ulp =
                     matmul_max_ulp.max(ulp_distance(got[idx], want[idx]).unwrap_or(u32::MAX));
             }

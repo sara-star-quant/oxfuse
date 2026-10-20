@@ -43,14 +43,7 @@ fn graph(op: Op, shapes: &[&[usize]]) -> Graph {
 }
 
 fn wait(gpu: &WgpuBackend) {
-    gpu.context()
-        .device()
-        .poll(wgpu_wait())
-        .expect("the device finishes");
-}
-
-fn wgpu_wait() -> oxfuse_wgpu::PollType {
-    oxfuse_wgpu::PollType::wait_indefinitely()
+    gpu.context().wait_idle().expect("the device finishes");
 }
 
 fn compare(
@@ -122,7 +115,7 @@ fn compare(
 fn record_adapter() {
     let Ok(gpu) = WgpuBackend::new() else { return };
     let info = gpu.context().info();
-    let line = format!("{} ({:?}), wgpu {}\n", info.name, info.backend, "30.0.1");
+    let line = format!("{} ({:?})\n", info.name, info.backend);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/criterion");
     let _ = std::fs::create_dir_all(&dir);
     let _ = std::fs::write(dir.join("gpu-adapter.txt"), line);

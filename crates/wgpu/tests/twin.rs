@@ -7,7 +7,7 @@ mod common;
 use common::{available, bits, device, reference, tensor};
 use oxfuse_core::Op;
 use oxfuse_wgpu::shaders::{Binary, Unary};
-use oxfuse_wgpu::{DeviceCaps, KernelConfig, matmul_bound, model};
+use oxfuse_wgpu::{DeviceCaps, KernelConfig, gpu_matmul_bound, model};
 use proptest::prelude::*;
 
 const CFG: KernelConfig = KernelConfig::DEFAULT;
@@ -83,7 +83,7 @@ proptest! {
                 let col: Vec<f32> = (0..k).map(|x| b.data()[x * n + j]).collect();
                 let exact: f64 = row.iter().zip(&col).map(|(x, y)| f64::from(*x) * f64::from(*y)).sum();
                 let err = (f64::from(got[i * n + j]) - exact).abs();
-                prop_assert!(err <= matmul_bound(&row, &col));
+                prop_assert!(err <= gpu_matmul_bound(&row, &col));
             }
         }
     }

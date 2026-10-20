@@ -6,17 +6,17 @@
 //! mutex; results are copied into fresh buffers before they are returned.
 
 use crate::config::{DeviceCaps, KernelConfig, check_tensor, grid_fold, permute_layout, tile_grid};
-use crate::context::{Context, LimitsProfile};
+use crate::context::{Context, LimitsProfile, POLL_TIMEOUT};
 use crate::shaders::{self, Binary, Unary};
 use oxfuse_core::{Error, Graph, Op};
 use oxfuse_runtime::{Backend, Executable, Plan, Tensor};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use wgpu::util::DeviceExt;
 
-/// How long to wait for the device before a run or download fails.
-const POLL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Highest rank the permute kernel walks (its dimensions fit two `vec4<u32>`).
+const MAX_PERMUTE_RANK: usize = 8;
 
 fn backend_error(message: impl Into<String>) -> Error {
     Error::Backend(message.into())
@@ -207,6 +207,12 @@ impl WgpuExecutable {
                         ],
                         groups: (grid.x_count, grid.y_count),
                     })
+                }
+                Op::Transpose { perm } if perm.len() > MAX_PERMUTE_RANK => {
+                    return Err(backend_error(format!(
+                        "a transpose of rank {} is not supported, the kernels handle rank {MAX_PERMUTE_RANK} at most",
+                        perm.len()
+                    )));
                 }
                 Op::Transpose { perm } => {
                     let rank = perm.len();

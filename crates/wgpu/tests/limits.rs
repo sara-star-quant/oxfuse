@@ -6,7 +6,9 @@ mod common;
 use common::{available, bits, data, reference, run_op, tensor};
 use oxfuse_core::{Error, GraphBuilder, Limits, Op};
 use oxfuse_runtime::{Backend, Executable, Tensor};
-use oxfuse_wgpu::{Context, DeviceCaps, KernelConfig, LimitsProfile, WgpuBackend, matmul_bound};
+use oxfuse_wgpu::{
+    Context, DeviceCaps, KernelConfig, LimitsProfile, WgpuBackend, gpu_matmul_bound,
+};
 use std::sync::Arc;
 
 fn downlevel() -> Option<WgpuBackend> {
@@ -66,8 +68,21 @@ fn downlevel_limits_run_every_op() {
                 .zip(&col)
                 .map(|(x, y)| f64::from(*x) * f64::from(*y))
                 .sum();
-            assert!((f64::from(got[i * 33 + j]) - exact).abs() <= matmul_bound(&row, &col));
+            assert!((f64::from(got[i * 33 + j]) - exact).abs() <= gpu_matmul_bound(&row, &col));
         }
+    }
+    // Sigmoid has its own pipeline and is bounded, not exact.
+    let x = tensor(&[200], 6, true);
+    let got = run_op(&backend, Op::Sigmoid, std::slice::from_ref(&x));
+    let want = reference(Op::Sigmoid, std::slice::from_ref(&x));
+    for i in 0..200 {
+        assert!(
+            oxfuse_wgpu::sigmoid_matches(got[i], want[i], common::sigmoid_bound()),
+            "sigmoid({:e}) = {:e}, reference {:e}",
+            x.data()[i],
+            got[i],
+            want[i]
+        );
     }
 }
 
@@ -89,6 +104,27 @@ fn oversize_tensor_is_a_compile_error() {
     };
     assert!(message.contains(&cap.to_string()), "{message}");
     assert!(message.contains("storage buffer"), "{message}");
+}
+
+#[test]
+fn a_transpose_of_rank_above_eight_is_a_compile_error_not_a_panic() {
+    if !available() {
+        return;
+    }
+    let limits = Limits {
+        max_rank: 9,
+        ..Limits::default()
+    };
+    let mut b = GraphBuilder::new(limits);
+    let x = b.input("x", vec![1; 9]).unwrap();
+    let perm: Vec<usize> = (0..9).rev().collect();
+    let y = b.node("y", Op::Transpose { perm }, &[x]).unwrap();
+    let graph = b.finish(&[y]).unwrap();
+    match common::gpu().compile(&graph) {
+        Err(Error::Backend(m)) => assert!(m.contains("rank 9") && m.contains("8"), "{m}"),
+        Err(other) => panic!("wrong error: {other}"),
+        Ok(_) => panic!("a rank-9 transpose must not compile"),
+    }
 }
 
 #[test]

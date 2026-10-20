@@ -159,3 +159,24 @@ fn transposing_a_scalar_is_a_copy() {
     assert_eq!(out[0].shape(), &[] as &[usize]);
     assert_eq!(out[0].data(), &[-2.5]);
 }
+
+#[test]
+fn wait_idle_returns_once_submitted_work_is_done() {
+    if !available() {
+        return;
+    }
+    let backend = GPU.as_ref().unwrap();
+    let exe = relu_executable(vec![1024]);
+    let input = exe
+        .upload(&Tensor::new(vec![1024], vec![-1.0; 1024]).unwrap())
+        .unwrap();
+    let out = exe.run_device(&[input]).unwrap();
+    backend.context().wait_idle().unwrap();
+    assert!(
+        exe.download(&out[0])
+            .unwrap()
+            .data()
+            .iter()
+            .all(|v| *v == 0.0)
+    );
+}

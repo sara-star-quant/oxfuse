@@ -2,6 +2,10 @@
 
 use oxfuse_core::Error;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// How long to wait for the device before a run or download fails.
+pub(crate) const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Which limits the device is created with. `Downlevel` asks for the smallest
 /// limits every supported device guarantees, so a test run proves the kernels
@@ -79,6 +83,20 @@ impl Context {
         &self.limits
     }
 
+    /// Blocks until all submitted work has finished, or fails after the poll timeout.
+    pub fn wait_idle(&self) -> Result<(), Error> {
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(POLL_TIMEOUT),
+            })
+            .map_err(|e| Error::Backend(format!("waiting for the device failed: {e}")))?;
+        match self.take_errors() {
+            Some(message) => Err(Error::Backend(message)),
+            None => Ok(()),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn record_error(&self, message: &str) {
         self.errors.lock().unwrap().push(message.to_owned());
@@ -128,6 +146,34 @@ mod tests {
             .expect("the invalid shader was reported");
         assert!(!message.is_empty());
         assert_eq!(context.take_errors(), None, "errors are drained once read");
+    }
+
+    #[test]
+    fn the_device_has_exactly_the_limits_the_profile_asked_for() {
+        for profile in [LimitsProfile::Adapter, LimitsProfile::Downlevel] {
+            let Ok(context) = Context::new(profile) else {
+                return; // no adapter on this machine
+            };
+            assert_eq!(context.device().limits(), *context.limits(), "{profile:?}");
+        }
+    }
+
+    #[test]
+    fn wait_idle_reports_a_recorded_device_error_once() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        assert_eq!(context.wait_idle(), Ok(()));
+        context.record_error("injected failure");
+        match context.wait_idle() {
+            Err(Error::Backend(m)) => assert!(m.contains("injected failure"), "{m}"),
+            other => panic!("the recorded error must surface, got {other:?}"),
+        }
+        assert_eq!(
+            context.wait_idle(),
+            Ok(()),
+            "errors are drained once reported"
+        );
     }
 
     #[test]
