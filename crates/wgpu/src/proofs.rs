@@ -14,21 +14,21 @@
 const MATMUL_FORMULAS: [&str; 12] = [
     "let gr = row0 + idx / 16u;",
     "let gk = k0 + idx % 16u;",
-    "if (gr < p.m && gk < p.k)",
+    "if (in_grid && gr < p.m && gk < p.k)",
     "a[gr * p.k + gk]",
     "let gk2 = k0 + idx / 64u;",
     "let gc = col0 + idx % 64u;",
-    "if (gk2 < p.k && gc < p.n)",
+    "if (in_grid && gk2 < p.k && gc < p.n)",
     "b[gk2 * p.n + gc]",
-    "if (rr < p.m && cc < p.n)",
+    "if (in_grid && rr < p.m && cc < p.n)",
     "dst[rr * p.n + cc]",
     "let rr = row0 + lid.y * 4u + 0u;",
     "let kmax = min(16u, p.k - k0);",
 ];
 #[cfg(test)]
 const TRANSPOSE_FORMULAS: [&str; 4] = [
-    "if (r < p.rows && c < p.cols)",
-    "if (out_row < p.cols && out_col < p.rows)",
+    "if (in_grid && r < p.rows && c < p.cols)",
+    "if (in_grid && out_row < p.cols && out_col < p.rows)",
     "src[r * p.cols + c]",
     "dst[out_row * p.rows + out_col]",
 ];

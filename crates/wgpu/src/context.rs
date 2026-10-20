@@ -14,6 +14,10 @@ pub(crate) const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum LimitsProfile {
     Adapter,
     Downlevel,
+    /// The downlevel limits with the dispatch limit lowered to the given number
+    /// of workgroups per dimension, so tests can force small shapes onto a folded
+    /// grid with spare workgroups.
+    Capped(u32),
 }
 
 pub struct Context {
@@ -39,6 +43,10 @@ impl Context {
         let limits = match profile {
             LimitsProfile::Adapter => adapter.limits(),
             LimitsProfile::Downlevel => wgpu::Limits::downlevel_defaults(),
+            LimitsProfile::Capped(cap) => wgpu::Limits {
+                max_compute_workgroups_per_dimension: cap,
+                ..wgpu::Limits::downlevel_defaults()
+            },
         };
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             required_limits: limits.clone(),
