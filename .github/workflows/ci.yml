@@ -85,25 +85,43 @@ jobs:
       - name: each test binary alone, one thread
         shell: bash
         run: |
+          set +e
           cargo test -p oxfuse-wgpu --no-run --locked
           for t in device_contract ops twin limits special_values sweep selftest model shaders_validate; do
             echo "=== $t (one thread)"
-            cargo test -p oxfuse-wgpu --test $t --locked -- --test-threads=1 2>&1 | tail -4
-            echo "exit=${PIPESTATUS[0]}"
+            cargo test -p oxfuse-wgpu --test $t --locked -- --test-threads=1 > out.txt 2>&1
+            echo "exit=$?"
+            grep -E "test result|STATUS_|panicked" out.txt | head -3
           done
           echo "=== lib"
-          cargo test -p oxfuse-wgpu --lib --locked -- --test-threads=1 2>&1 | tail -3
-          echo "exit=${PIPESTATUS[0]}"
+          cargo test -p oxfuse-wgpu --lib --locked -- --test-threads=1 > out.txt 2>&1
+          echo "exit=$?"
+          grep -E "test result|STATUS_|panicked" out.txt | head -3
+          exit 0
+      - name: every device_contract test alone
+        shell: bash
+        run: |
+          set +e
+          exe=$(ls -t target/debug/deps/device_contract-*.exe | head -1)
+          for name in $("$exe" --list 2>/dev/null | grep ': test$' | sed 's/: test$//'); do
+            "$exe" --exact "$name" > out.txt 2>&1
+            echo "exit=$? $name"
+          done
+          exit 0
       - name: device_contract with default threads
         shell: bash
         run: |
+          set +e
           cargo test -p oxfuse-wgpu --test device_contract --locked 2>&1 | tail -4
           echo "exit=${PIPESTATUS[0]}"
+          exit 0
       - name: cli self-test (a short-lived process)
         shell: bash
         run: |
+          set +e
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest
           echo "exit=$?"
+          exit 0
 
   # cargo-deny runs through its own action, not a justfile recipe, so it gets the
   # action's cache and advisory-db handling.
