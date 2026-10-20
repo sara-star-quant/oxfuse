@@ -51,7 +51,7 @@ bench-report:
 
 # Compile the benchmarks without running them (what CI does).
 bench-check:
-    cargo bench -p oxfuse-runtime --locked --no-run
+    cargo bench -p oxfuse-runtime -p oxfuse-wgpu --locked --no-run
 
 # Tests with the threaded matmul compiled in.
 test-parallel:
@@ -74,4 +74,16 @@ fuzz-seed:
 
 # `just fuzz loader 60` runs one target for that many seconds.
 fuzz target seconds="60": fuzz-seed
-    cd fuzz && cargo +{{fuzz_toolchain}} fuzz run {{target}} -- -max_total_time={{seconds}}
+    cd fuzz && cargo +{{fuzz_toolchain}} fuzz run {{ if target =~ '^gpu' { '--sanitizer none' } else { '' } }} {{target}} -- -max_total_time={{seconds}}
+
+# All 2^32 f32 patterns through Relu and Sigmoid on the GPU (minutes); writes the measured Sigmoid error.
+gpu-exhaustive:
+    cargo test -p oxfuse-wgpu --release --locked --test sweep sweep_exhaustive -- --ignored --nocapture
+
+# Bounded proofs of the GPU index arithmetic. Needs `cargo +stable install kani-verifier --version 0.68.0 --locked` and `cargo kani setup`.
+kani:
+    cargo kani -p oxfuse-wgpu --lib
+
+# GPU benchmarks against the fast CPU backend. Slow, needs an adapter; writes target/criterion for bench-report.
+bench-gpu:
+    cargo bench -p oxfuse-wgpu --locked

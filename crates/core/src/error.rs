@@ -83,6 +83,8 @@ pub enum Error {
     },
     #[error("invalid graph: {0}")]
     Verify(String),
+    #[error("backend error: {0}")]
+    Backend(String),
 }
 
 impl Error {
@@ -108,6 +110,7 @@ impl Error {
             Error::MissingAttribute { .. } => "E018",
             Error::UnexpectedAttribute { .. } => "E019",
             Error::InvalidAttribute { .. } => "E020",
+            Error::Backend(_) => "E021",
         }
     }
 }
@@ -194,6 +197,7 @@ mod tests {
                 reason: "r".into(),
             },
             Error::Verify("bad".into()),
+            Error::Backend("no adapter".into()),
         ]
     }
 
@@ -203,6 +207,13 @@ mod tests {
         let codes: HashSet<&str> = errors.iter().map(Error::code).collect();
         assert_eq!(codes.len(), errors.len());
         assert!(codes.iter().all(|c| c.len() == 4 && c.starts_with('E')));
+    }
+
+    #[test]
+    fn backend_errors_carry_their_message_and_a_stable_code() {
+        let e = Error::Backend("no adapter found".into());
+        assert_eq!(e.to_string(), "backend error: no adapter found");
+        assert_eq!(e.code(), "E021");
     }
 
     #[test]

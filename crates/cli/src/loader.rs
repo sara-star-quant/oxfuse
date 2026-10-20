@@ -93,7 +93,8 @@ fn locate(file: &GraphFile, error: &Error) -> Option<String> {
         Error::LimitExceeded { .. }
         | Error::InputCount { .. }
         | Error::InputShape { .. }
-        | Error::Verify(_) => None,
+        | Error::Verify(_)
+        | Error::Backend(_) => None,
     }
 }
 

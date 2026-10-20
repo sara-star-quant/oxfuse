@@ -40,6 +40,22 @@ jobs:
           tool: just@1.59.0
       - run: just msrv
 
+  # Runs the GPU tests on a software Vulkan device. A missing adapter fails the job
+  # (OXFUSE_REQUIRE_ADAPTER) instead of letting the tests skip. This checks that
+  # the shader text runs correctly on a second, independent implementation; it
+  # says nothing about speed or about any hardware device.
+  gpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      OXFUSE_REQUIRE_ADAPTER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - run: cargo test -p oxfuse-wgpu --locked
+
   # cargo-deny runs through its own action, not a justfile recipe, so it gets the
   # action's cache and advisory-db handling.
   deny:
