@@ -22,6 +22,21 @@ fn backend_error(message: impl Into<String>) -> Error {
     Error::Backend(message.into())
 }
 
+/// The kernel configuration an adapter gets by default. Software adapters get a
+/// 1 by 1 register block: on the Windows software adapter the 4 by 4 kernel took
+/// more than 30 seconds to run its first dispatch, while 1 by 1 compiles in about
+/// half a second and runs a 128 by 128 matmul in about a second. Register blocking
+/// gains nothing on a CPU-backed device anyway.
+fn default_config(device_type: wgpu::DeviceType) -> KernelConfig {
+    match device_type {
+        wgpu::DeviceType::Cpu => KernelConfig {
+            reg_block: 1,
+            ..KernelConfig::DEFAULT
+        },
+        _ => KernelConfig::DEFAULT,
+    }
+}
+
 pub struct WgpuBackend {
     ctx: Arc<Context>,
     cfg: KernelConfig,
@@ -31,7 +46,13 @@ impl WgpuBackend {
     /// Fails with `Error::Backend` when there is no adapter.
     pub fn new() -> Result<Self, Error> {
         let ctx = Context::new(LimitsProfile::Adapter)?;
-        Ok(Self::with(Arc::new(ctx), KernelConfig::DEFAULT))
+        Ok(Self::for_context(Arc::new(ctx)))
+    }
+
+    /// A backend on `ctx` with the default configuration for that adapter.
+    pub fn for_context(ctx: Arc<Context>) -> Self {
+        let cfg = default_config(ctx.info().device_type);
+        Self::with(ctx, cfg)
     }
 
     pub fn with(ctx: Arc<Context>, cfg: KernelConfig) -> Self {
@@ -40,6 +61,10 @@ impl WgpuBackend {
 
     pub fn context(&self) -> &Arc<Context> {
         &self.ctx
+    }
+
+    pub fn config(&self) -> KernelConfig {
+        self.cfg
     }
 
     /// Like `Backend::compile`, keeping the device API (`upload`, `run_device`, `download`).
@@ -553,6 +578,46 @@ mod tests {
         backend.context().record_error("second failure");
         assert!(
             matches!(exe.run_device(&[device]), Err(Error::Backend(m)) if m.contains("second failure"))
+        );
+    }
+
+    #[test]
+    fn software_adapters_get_the_small_matmul_block() {
+        let default_block = KernelConfig::DEFAULT.reg_block;
+        assert_eq!(default_config(wgpu::DeviceType::Cpu).reg_block, 1);
+        for hardware in [
+            wgpu::DeviceType::IntegratedGpu,
+            wgpu::DeviceType::DiscreteGpu,
+            wgpu::DeviceType::VirtualGpu,
+            wgpu::DeviceType::Other,
+        ] {
+            assert_eq!(
+                default_config(hardware),
+                KernelConfig::DEFAULT,
+                "{hardware:?}"
+            );
+        }
+        assert_eq!(default_block, 4);
+    }
+
+    #[test]
+    fn every_default_config_fits_the_smallest_guaranteed_limits() {
+        for device_type in [wgpu::DeviceType::Cpu, wgpu::DeviceType::DiscreteGpu] {
+            assert_eq!(
+                default_config(device_type).validate(&DeviceCaps::DOWNLEVEL),
+                Ok(())
+            );
+        }
+    }
+
+    #[test]
+    fn a_backend_picks_its_config_from_the_adapter() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        assert_eq!(
+            backend.config(),
+            default_config(backend.context().info().device_type)
         );
     }
 }

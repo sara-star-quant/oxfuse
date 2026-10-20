@@ -8,34 +8,21 @@ use oxfuse_wgpu::WgpuBackend;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-/// On Windows CI the DX12 software adapter passed every test and then crashed the
-/// test process at exit (STATUS_ACCESS_VIOLATION); the cause is undiagnosed, so the
-/// GPU tests do not run there unless OXFUSE_WINDOWS_GPU_TESTS is set.
-fn skipped_on_this_platform() -> bool {
-    cfg!(windows) && std::env::var_os("OXFUSE_WINDOWS_GPU_TESTS").is_none()
-}
-
-pub static GPU: LazyLock<Option<WgpuBackend>> = LazyLock::new(|| {
-    if skipped_on_this_platform() {
-        eprintln!("GPU tests are skipped on Windows (see tests/common/mod.rs)");
-        return None;
+pub static GPU: LazyLock<Option<WgpuBackend>> = LazyLock::new(|| match WgpuBackend::new() {
+    Ok(backend) => {
+        eprintln!("adapter: {}", backend.context().info().name);
+        Some(backend)
     }
-    match WgpuBackend::new() {
-        Ok(backend) => {
-            eprintln!("adapter: {}", backend.context().info().name);
-            Some(backend)
-        }
-        Err(e) => {
-            eprintln!("no adapter, tests skipped: {e}");
-            None
-        }
+    Err(e) => {
+        eprintln!("no adapter, tests skipped: {e}");
+        None
     }
 });
 
 pub fn available() -> bool {
     let ok = GPU.is_some();
     assert!(
-        ok || skipped_on_this_platform() || std::env::var_os("OXFUSE_REQUIRE_ADAPTER").is_none(),
+        ok || std::env::var_os("OXFUSE_REQUIRE_ADAPTER").is_none(),
         "OXFUSE_REQUIRE_ADAPTER is set but no adapter exists"
     );
     ok
