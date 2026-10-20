@@ -53,7 +53,7 @@ The fast backend returns the reference bits by design, so no output-level test c
 
 The GPU backend is measured, not supported, on every device. If you have one that is not in [docs/adapters.md](docs/adapters.md), run `cargo run --release -p oxfuse --features wgpu -- gpu-selftest` (and again with `--limits downlevel`) and open an issue with the output, your operating system and your driver version. A failing line is a result and is recorded too.
 
-The GPU tests do nothing without an adapter, and CI sets `OXFUSE_REQUIRE_ADAPTER=1` on its software Vulkan job so a missing adapter fails there. Software adapters get a 1 by 1 matmul register block instead of 4 by 4 (see `default_config` in `crates/wgpu/src/exec.rs`), because the Windows software adapter took more than 30 seconds to run its first 4 by 4 dispatch.
+The GPU tests do nothing without an adapter, and CI sets `OXFUSE_REQUIRE_ADAPTER=1` on its software Vulkan job so a missing adapter fails there. Software adapters get a 1 by 1 matmul register block instead of 4 by 4 (see `default_config` in `crates/wgpu/src/exec.rs`), because the Windows software adapter took more than 30 seconds to run its first 4 by 4 dispatch (a 16 by 16 tile with 1 by 1 blocks runs a 128 by 128 matmul in about a second there). The same adapter crashes the process on an early `return` before a `workgroupBarrier()`, which is why the barrier kernels never return early.
 
 ## Licence
 
