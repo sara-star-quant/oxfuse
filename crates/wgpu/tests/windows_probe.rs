@@ -10,7 +10,12 @@ use oxfuse_wgpu::{KernelConfig, WgpuBackend};
 use std::io::Write;
 
 fn say(stage: &str) {
-    eprintln!("probe: {stage}");
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    let ms = START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis();
+    eprintln!("probe: [{ms} ms] {stage}");
     let _ = std::io::stderr().flush();
 }
 
@@ -22,6 +27,8 @@ fn probe_one_matmul_configuration() {
     };
     let mut parts = spec.split(',').map(|p| p.parse::<u32>().unwrap());
     let (tile, reg_block) = (parts.next().unwrap(), parts.next().unwrap());
+    // Optional third value: the matrices are n by n (default 2).
+    let n = parts.next().unwrap_or(2) as usize;
     say(&format!("config tile {tile} reg_block {reg_block}"));
     if !common::available() {
         say("no adapter");
@@ -41,25 +48,33 @@ fn probe_one_matmul_configuration() {
     };
     let backend = WgpuBackend::with(ctx, cfg);
     let mut b = GraphBuilder::new(Limits::default());
-    let x = b.input("x", vec![2, 2]).unwrap();
-    let w = b.input("w", vec![2, 2]).unwrap();
+    let x = b.input("x", vec![n, n]).unwrap();
+    let w = b.input("w", vec![n, n]).unwrap();
     let p = b.node("p", Op::MatMul, &[x, w]).unwrap();
     let graph = b.finish(&[p]).unwrap();
     say("compile (shader module and pipeline)");
     let exe = backend.compile_device(&graph).unwrap();
+    // Small integers keep every sum exact, so the result can be checked exactly.
+    let a_data: Vec<f32> = (0..n * n).map(|i| (i % 5) as f32).collect();
+    let b_data: Vec<f32> = (0..n * n).map(|i| (i % 3) as f32).collect();
     say("upload");
     let a = exe
-        .upload(&Tensor::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]).unwrap())
+        .upload(&Tensor::new(vec![n, n], a_data.clone()).unwrap())
         .unwrap();
     let c = exe
-        .upload(&Tensor::new(vec![2, 2], vec![5.0, 6.0, 7.0, 8.0]).unwrap())
+        .upload(&Tensor::new(vec![n, n], b_data.clone()).unwrap())
         .unwrap();
     say("run_device (dispatch)");
     let out = exe.run_device(&[a, c]).unwrap();
-    say("download");
+    say("download (waits for the device)");
     let got = exe.download(&out[0]).unwrap();
-    say(&format!("result {:?}", got.data()));
-    assert_eq!(got.data(), &[19.0, 22.0, 43.0, 50.0]);
+    let mut worst = 0.0f32;
+    for (i, j) in [(0, 0), (n - 1, n - 1), (n / 2, n / 3)] {
+        let want: f32 = (0..n).map(|k| a_data[i * n + k] * b_data[k * n + j]).sum();
+        worst = worst.max((got.data()[i * n + j] - want).abs());
+    }
+    say(&format!("max error on three samples {worst}"));
+    assert_eq!(worst, 0.0);
     say("done");
 }
 

@@ -82,21 +82,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: each test binary alone, one thread
+      - name: failing binaries, with the full panic text
         shell: bash
         run: |
           set +e
           cargo test -p oxfuse-wgpu --no-run --locked
-          for t in device_contract ops twin limits special_values sweep selftest model shaders_validate; do
-            echo "=== $t (one thread)"
-            cargo test -p oxfuse-wgpu --test $t --locked -- --test-threads=1 > out.txt 2>&1
+          for t in selftest ops twin; do
+            echo "=== $t (one thread, full failure text)"
+            timeout 900 cargo test -p oxfuse-wgpu --test $t --locked -- --test-threads=1 > out.txt 2>&1
             echo "exit=$?"
-            grep -E "test result|STATUS_|panicked" out.txt | head -3
+            grep -B1 -A6 "panicked at" out.txt | head -40
           done
-          echo "=== lib"
-          cargo test -p oxfuse-wgpu --lib --locked -- --test-threads=1 > out.txt 2>&1
-          echo "exit=$?"
-          grep -E "test result|STATUS_|panicked" out.txt | head -3
           exit 0
       - name: every device_contract test alone
         shell: bash
@@ -114,7 +110,7 @@ jobs:
           set +e
           cargo test -p oxfuse-wgpu --test windows_probe --no-run --locked
           exe=$(ls -t target/debug/deps/windows_probe-*.exe | head -1)
-          for cfg in 16,1 8,1 4,1 2,1 1,1 16,2 8,2 16,4 8,4; do
+          for cfg in 16,4,2 16,4,16 16,4,64 16,4,128 16,1,64 16,1,128 8,1,64; do
             echo "=== probe $cfg"
             OXFUSE_PROBE=$cfg "$exe" --ignored --nocapture --exact probe_one_matmul_configuration 2>&1 | grep -E "^probe:|STATUS_|panicked" 
             echo "exit=${PIPESTATUS[0]}"
