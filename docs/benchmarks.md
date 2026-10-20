@@ -51,8 +51,10 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 - GPU MatMul, register block: each thread of a 16 x 16 workgroup holds a 4 x 4
   block of the result in sixteen scalar variables, so a workgroup covers a
   64 x 64 block and loads one tile of A and one of B per step of 16 in k. Each
-  output still sums in ascending k from one accumulator. At 1024 x 1024 in an
-  isolated sweep: one output per thread 16.8 ms (128 GFLOP/s), 2 x 2 per thread
+  output still sums in ascending k from one accumulator. At 1024 x 1024 in a
+  throwaway single-dispatch harness outside the repo (so no repo command
+  reproduces these particular figures; the table below is the reproducible
+  measurement): one output per thread 16.8 ms (128 GFLOP/s), 2 x 2 per thread
   7.8 ms, 4 x 4 per thread 3.84 ms (559 GFLOP/s). Kept 4 x 4. Tried and
   dropped: 8 x 8 threads with 4 x 4 blocks 4.06 ms, with 8 x 8 blocks 4.79 ms,
   8 x 8 threads with one output 19.3 ms, and the same 4 x 4 block held in an
@@ -73,7 +75,7 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 - OS: macOS-26.7.1-arm64-arm-64bit-Mach-O
 - Rust: rustc 1.99.1 (58cf8f9c3 2026-10-13)
 - RUSTFLAGS: ``
-- Commit: 5a0419f
+- Code: crates tree c0f23a8
 
 ## Results
 
@@ -81,55 +83,55 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 437.9 us | 109.3 us | 112.8 us | 4.01x |
+| 1048576 | 444.7 us | 113.1 us | 112.7 us | 3.94x |
 
 ### gpu-add
 
 | size | gpu-cold | gpu-resident | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
 |---|---|---|---|---|---|---|
-| 1048576 | 2.55 ms | 393.1 us | 2.87 ms | 113.9 us | 121.0 us | 0.29x |
-| 16777216 | 29.32 ms | 3.18 ms | 34.90 ms | 2.60 ms | 2.60 ms | 0.82x |
+| 1048576 | 2.61 ms | 389.7 us | 3.10 ms | 123.0 us | 120.8 us | 0.31x |
+| 16777216 | 33.05 ms | 3.49 ms | 39.49 ms | 2.60 ms | 2.60 ms | 0.74x |
 
 ### gpu-matmul
 
 | size | gpu-cold | gpu-resident | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
 |---|---|---|---|---|---|---|
-| 128 | 973.6 us (4.3 GFLOP/s) | 347.6 us (12.1 GFLOP/s) | 381.1 us (11.0 GFLOP/s) | 94.6 us (44.3 GFLOP/s) | 68.5 us (61.2 GFLOP/s) | 0.20x |
-| 256 | 1.14 ms (29.4 GFLOP/s) | 395.4 us (84.9 GFLOP/s) | 613.3 us (54.7 GFLOP/s) | 738.7 us (45.4 GFLOP/s) | 250.1 us (134.2 GFLOP/s) | 0.63x |
-| 512 | 1.70 ms (158.0 GFLOP/s) | 714.1 us (375.9 GFLOP/s) | 1.28 ms (210.5 GFLOP/s) | 5.88 ms (45.7 GFLOP/s) | 1.17 ms (229.9 GFLOP/s) | 1.64x |
-| 1024 | 6.04 ms (355.6 GFLOP/s) | 5.81 ms (369.8 GFLOP/s) | 5.93 ms (361.9 GFLOP/s) | 47.02 ms (45.7 GFLOP/s) | 8.14 ms (263.7 GFLOP/s) | 1.40x |
-| 2048 | 32.71 ms (525.3 GFLOP/s) | 25.05 ms (685.9 GFLOP/s) | 33.63 ms (510.9 GFLOP/s) | 401.71 ms (42.8 GFLOP/s) | 72.53 ms (236.9 GFLOP/s) | 2.90x |
+| 128 | 963.4 us (4.4 GFLOP/s) | 348.7 us (12.0 GFLOP/s) | 368.1 us (11.4 GFLOP/s) | 94.4 us (44.4 GFLOP/s) | 68.8 us (61.0 GFLOP/s) | 0.20x |
+| 256 | 1.09 ms (30.9 GFLOP/s) | 398.9 us (84.1 GFLOP/s) | 609.9 us (55.0 GFLOP/s) | 738.5 us (45.4 GFLOP/s) | 249.9 us (134.2 GFLOP/s) | 0.63x |
+| 512 | 1.71 ms (156.8 GFLOP/s) | 715.8 us (375.0 GFLOP/s) | 1.29 ms (208.1 GFLOP/s) | 5.93 ms (45.3 GFLOP/s) | 1.17 ms (229.9 GFLOP/s) | 1.63x |
+| 1024 | 6.28 ms (342.0 GFLOP/s) | 3.50 ms (613.0 GFLOP/s) | 6.16 ms (348.3 GFLOP/s) | 47.01 ms (45.7 GFLOP/s) | 8.04 ms (267.1 GFLOP/s) | 2.30x |
+| 2048 | 34.20 ms (502.3 GFLOP/s) | 25.05 ms (685.8 GFLOP/s) | 34.74 ms (494.5 GFLOP/s) | 400.65 ms (42.9 GFLOP/s) | 72.43 ms (237.2 GFLOP/s) | 2.89x |
 
 ### matmul
 
 | size | reference | cpu | cpu-threads | ndarray | best cpu vs reference |
 |---|---|---|---|---|---|
-| 64 | 169.3 us (3.1 GFLOP/s) | 12.0 us (43.5 GFLOP/s) | 12.3 us (42.8 GFLOP/s) | 6.5 us (80.9 GFLOP/s) | 14.06x |
-| 128 | 1.64 ms (2.6 GFLOP/s) | 94.1 us (44.6 GFLOP/s) | 69.4 us (60.4 GFLOP/s) | 48.6 us (86.3 GFLOP/s) | 23.56x |
-| 256 | 14.75 ms (2.3 GFLOP/s) | 740.4 us (45.3 GFLOP/s) | 245.4 us (136.7 GFLOP/s) | 362.1 us (92.7 GFLOP/s) | 60.09x |
-| 512 | 123.40 ms (2.2 GFLOP/s) | 5.91 ms (45.4 GFLOP/s) | 1.20 ms (224.0 GFLOP/s) | 2.82 ms (95.1 GFLOP/s) | 102.95x |
+| 64 | 167.7 us (3.1 GFLOP/s) | 12.0 us (43.6 GFLOP/s) | 12.1 us (43.5 GFLOP/s) | 6.4 us (82.0 GFLOP/s) | 13.93x |
+| 128 | 1.60 ms (2.6 GFLOP/s) | 92.5 us (45.3 GFLOP/s) | 68.6 us (61.2 GFLOP/s) | 48.1 us (87.3 GFLOP/s) | 23.35x |
+| 256 | 14.69 ms (2.3 GFLOP/s) | 724.8 us (46.3 GFLOP/s) | 249.2 us (134.6 GFLOP/s) | 360.4 us (93.1 GFLOP/s) | 58.95x |
+| 512 | 121.13 ms (2.2 GFLOP/s) | 5.77 ms (46.6 GFLOP/s) | 1.17 ms (230.3 GFLOP/s) | 2.81 ms (95.4 GFLOP/s) | 103.94x |
 
 ### pipeline
 
 | size | cpu-optimized | cpu-threads-optimized | cpu-threads-unoptimized | cpu-unoptimized | best cpu vs reference |
 |---|---|---|---|---|---|
-| 256 | 187.8 us | 127.4 us | 200.3 us | 252.8 us | - |
+| 256 | 186.4 us | 126.7 us | 202.2 us | 249.2 us | - |
 
 ### relu
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 239.8 us | 65.8 us | 69.4 us | 3.64x |
+| 1048576 | 231.0 us | 68.7 us | 67.0 us | 3.45x |
 
 ### sigmoid
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 1.90 ms | 1.75 ms | 1.76 ms | 1.08x |
+| 1048576 | 1.89 ms | 1.74 ms | 1.74 ms | 1.08x |
 
 ### transpose
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1024 | 2.59 ms | 581.3 us | 579.2 us | 4.48x |
+| 1024 | 2.58 ms | 568.8 us | 575.5 us | 4.53x |
 

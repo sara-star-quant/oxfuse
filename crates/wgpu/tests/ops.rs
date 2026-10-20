@@ -5,7 +5,7 @@ mod common;
 use common::{available, bits, data, device, measurements_dir, reference, tensor};
 use oxfuse_core::Op;
 use oxfuse_runtime::Tensor;
-use oxfuse_wgpu::{matmul_bound, ulp_distance};
+use oxfuse_wgpu::{gpu_matmul_bound, ulp_distance};
 
 // Around the 16-thread tile and the 64-wide block of the default configuration.
 const EDGES: [usize; 8] = [1, 15, 16, 17, 33, 63, 64, 65];
@@ -71,7 +71,7 @@ fn oracle(a: &Tensor, b: &Tensor, m: usize, k: usize, n: usize) -> Vec<(f64, f64
                 .zip(&col)
                 .map(|(x, y)| f64::from(*x) * f64::from(*y))
                 .sum();
-            out.push((exact, matmul_bound(&row, &col)));
+            out.push((exact, gpu_matmul_bound(&row, &col)));
         }
     }
     out
@@ -108,6 +108,29 @@ fn matmul_stays_inside_the_documented_bound_of_the_f64_oracle() {
             );
         }
     }
+}
+
+/// Normal inputs and a normal true result, but every product is subnormal and the
+/// device flushes it: the plain bound is violated, the flush-aware one is not.
+/// The CPU backends return the exact value.
+#[test]
+fn matmul_with_subnormal_products_stays_inside_the_flush_aware_bound() {
+    if !available() {
+        return;
+    }
+    let a = Tensor::new(vec![1, 2], vec![2f32.powi(-63); 2]).unwrap();
+    let b = Tensor::new(vec![2, 1], vec![2f32.powi(-64); 2]).unwrap();
+    let exact = f64::from(f32::MIN_POSITIVE);
+    let got = f64::from(device(Op::MatMul, &[a.clone(), b.clone()])[0]);
+    assert!(
+        (got - exact).abs() <= gpu_matmul_bound(a.data(), b.data()),
+        "device gave {got:e}"
+    );
+    assert_eq!(
+        reference(Op::MatMul, &[a, b])[0],
+        f32::MIN_POSITIVE,
+        "the reference is exact"
+    );
 }
 
 #[test]

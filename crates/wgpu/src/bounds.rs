@@ -36,6 +36,13 @@ pub fn matmul_bound(a_row: &[f32], b_col: &[f32]) -> f64 {
     a_row.len() as f64 * f64::from(f32::EPSILON) * magnitude
 }
 
+/// The `MatMul` bound for a device that flushes subnormals to zero: the plain
+/// bound plus one smallest-normal number per product and per partial sum (2k for
+/// k terms), which is the most a flushed term can lose. The CPU backends keep the plain bound.
+pub fn gpu_matmul_bound(a_row: &[f32], b_col: &[f32]) -> f64 {
+    matmul_bound(a_row, b_col) + 2.0 * a_row.len() as f64 * f64::from(f32::MIN_POSITIVE)
+}
+
 /// Largest ulp distance from the reference that Sigmoid may have on normal
 /// results: 65, measured over all finite `f32` inputs by `sweep_exhaustive` on an
 /// Apple M1 Pro (Metal) on 2026-10-20, worst at x = -86.64 where the device `exp`
@@ -217,5 +224,34 @@ mod tests {
             f32::MIN_POSITIVE * 0.5,
             1
         ));
+    }
+
+    #[test]
+    fn the_gpu_matmul_bound_adds_two_smallest_normals_per_term() {
+        // With a zero row the plain bound is exactly zero, so the extra term shows on its own.
+        let min = f64::from(f32::MIN_POSITIVE);
+        assert_eq!(gpu_matmul_bound(&[0.0; 3], &[4.0, 5.0, -6.0]), 6.0 * min);
+        assert_eq!(gpu_matmul_bound(&[0.0], &[1.0]), 2.0 * min);
+        // And it never replaces the plain bound.
+        let a = [1.0f32, -2.0, 3.0];
+        let b = [4.0f32, 5.0, -6.0];
+        assert_eq!(gpu_matmul_bound(&a, &b), matmul_bound(&a, &b) + 6.0 * min);
+    }
+
+    #[test]
+    fn products_that_flush_to_zero_stay_inside_the_gpu_bound_but_not_the_plain_one() {
+        // The reviewer's case: normal inputs and a normal true result (2^-126), but
+        // each product is 2^-127, a subnormal, which the device flushes to zero.
+        let a = [2f32.powi(-63); 2];
+        let b = [2f32.powi(-64); 2];
+        let exact = 2.0 * f64::from(a[0]) * f64::from(b[0]);
+        assert_eq!(exact, f64::from(f32::MIN_POSITIVE));
+        let flushed = 0.0f64;
+        let error = (flushed - exact).abs();
+        assert!(
+            error > matmul_bound(&a, &b),
+            "the plain bound cannot cover a flush"
+        );
+        assert!(error <= gpu_matmul_bound(&a, &b));
     }
 }
