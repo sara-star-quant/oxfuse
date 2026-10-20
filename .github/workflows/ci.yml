@@ -108,6 +108,18 @@ jobs:
             echo "exit=$? $name"
           done
           exit 0
+      - name: matmul probe, one process per kernel configuration
+        shell: bash
+        run: |
+          set +e
+          cargo test -p oxfuse-wgpu --test windows_probe --no-run --locked
+          exe=$(ls -t target/debug/deps/windows_probe-*.exe | head -1)
+          for cfg in 16,1 8,1 4,1 2,1 1,1 16,2 8,2 16,4 8,4; do
+            echo "=== probe $cfg"
+            OXFUSE_PROBE=$cfg "$exe" --ignored --nocapture --exact probe_one_matmul_configuration 2>&1 | grep -E "^probe:|STATUS_|panicked" 
+            echo "exit=${PIPESTATUS[0]}"
+          done
+          exit 0
       - name: device_contract with default threads
         shell: bash
         run: |
