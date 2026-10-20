@@ -214,3 +214,88 @@ fn concurrent_runs_agree() {
         h.join().unwrap();
     }
 }
+
+/// A device whose dispatch limit is lowered, so small shapes fold into a grid with
+/// spare workgroups. The spare groups reach every barrier and must touch nothing.
+fn capped(cap: u32) -> WgpuBackend {
+    let ctx = Context::new(LimitsProfile::Capped(cap)).expect("an adapter exists");
+    assert_eq!(ctx.limits().max_compute_workgroups_per_dimension, cap);
+    assert_eq!(
+        ctx.device().limits().max_compute_workgroups_per_dimension,
+        cap
+    );
+    let cfg = KernelConfig {
+        elementwise_wg: 4,
+        tile: 2,
+        reg_block: 2,
+        transpose_tile: 2,
+    };
+    WgpuBackend::with(Arc::new(ctx), cfg)
+}
+
+#[test]
+fn matmul_on_a_folded_grid_with_a_spare_workgroup_matches_the_reference() {
+    if !available() {
+        return;
+    }
+    // 5 x 13 outputs with 4 x 4 blocks: 2 x 4 = 8 tiles in a 3 x 3 grid, one spare.
+    let (m, k, n) = (5, 6, 13);
+    let a = tensor(&[m, k], 21, true);
+    let b = tensor(&[k, n], 22, true);
+    let got = run_op(&capped(3), Op::MatMul, &[a.clone(), b.clone()]);
+    for i in 0..m {
+        let row: Vec<f32> = (0..k).map(|x| a.data()[i * k + x]).collect();
+        for j in 0..n {
+            let col: Vec<f32> = (0..k).map(|x| b.data()[x * n + j]).collect();
+            let exact: f64 = row
+                .iter()
+                .zip(&col)
+                .map(|(x, y)| f64::from(*x) * f64::from(*y))
+                .sum();
+            assert!(
+                (f64::from(got[i * n + j]) - exact).abs() <= gpu_matmul_bound(&row, &col),
+                "[{i},{j}]"
+            );
+        }
+    }
+}
+
+#[test]
+fn transpose_on_a_folded_grid_with_spare_workgroups_matches_the_reference() {
+    if !available() {
+        return;
+    }
+    // 5 x 13 with 2 x 2 tiles: 3 x 7 = 21 tiles in a 5 x 5 grid, four spare.
+    let t = tensor(&[5, 13], 23, false);
+    let op = Op::Transpose { perm: vec![1, 0] };
+    assert_eq!(
+        bits(&run_op(&capped(5), op.clone(), std::slice::from_ref(&t))),
+        bits(&reference(op, std::slice::from_ref(&t)))
+    );
+}
+
+#[test]
+fn elementwise_ops_on_a_folded_grid_match_the_reference() {
+    if !available() {
+        return;
+    }
+    // 37 elements in groups of 4: 10 groups in a 4 x 3 grid, two spare.
+    let backend = capped(4);
+    let a = tensor(&[37], 24, true);
+    let b = tensor(&[37], 25, true);
+    let relu = tensor(&[37], 26, false);
+    assert_eq!(
+        bits(&run_op(&backend, Op::Relu, std::slice::from_ref(&relu))),
+        bits(&reference(Op::Relu, std::slice::from_ref(&relu)))
+    );
+    assert_eq!(
+        bits(&run_op(&backend, Op::Add, &[a.clone(), b.clone()])),
+        bits(&reference(Op::Add, &[a.clone(), b.clone()]))
+    );
+    let perm = Op::Transpose { perm: vec![1, 0] };
+    let m = tensor(&[29, 1], 27, false);
+    assert_eq!(
+        bits(&run_op(&backend, perm.clone(), std::slice::from_ref(&m))),
+        bits(&reference(perm, std::slice::from_ref(&m)))
+    );
+}
