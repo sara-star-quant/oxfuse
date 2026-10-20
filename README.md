@@ -1,6 +1,10 @@
 # Oxfuse
 
 [![ci](https://github.com/sara-star-quant/oxfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/sara-star-quant/oxfuse/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/oxfuse.svg)](https://crates.io/crates/oxfuse)
+[![docs.rs](https://img.shields.io/docsrs/oxfuse-core)](https://docs.rs/oxfuse-core)
+[![MSRV](https://img.shields.io/crates/msrv/oxfuse)](https://crates.io/crates/oxfuse)
+[![license](https://img.shields.io/crates/l/oxfuse.svg)](LICENSE)
 
 A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimizes it without changing results, and runs it on the CPU. Experimental, not for production use.
 
