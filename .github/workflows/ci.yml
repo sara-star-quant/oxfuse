@@ -29,6 +29,11 @@ jobs:
       - run: just test-parallel
       - if: matrix.os == 'ubuntu-latest'
         run: just bench-check
+      - name: gpu self-test report (a measurement, never a gate)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest || true
+          cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest --limits downlevel || true
 
   msrv:
     runs-on: ubuntu-latest
@@ -59,6 +64,46 @@ jobs:
         with:
           tool: just@1.59.0
       - run: just test-wgpu
+      - name: gpu self-test report (a measurement, never a gate)
+        run: |
+          cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest
+          cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest --limits downlevel
+
+  # Temporary: finds out which GPU test binary crashes the DX12 software adapter at
+  # process exit. Runs each binary alone and prints exit codes. Remove once solved.
+  windows-gpu-diagnostics:
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      OXFUSE_WINDOWS_GPU_TESTS: "1"
+      RUST_BACKTRACE: full
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: each test binary alone, one thread
+        shell: bash
+        run: |
+          cargo test -p oxfuse-wgpu --no-run --locked
+          for t in device_contract ops twin limits special_values sweep selftest model shaders_validate; do
+            echo "=== $t (one thread)"
+            cargo test -p oxfuse-wgpu --test $t --locked -- --test-threads=1 2>&1 | tail -4
+            echo "exit=${PIPESTATUS[0]}"
+          done
+          echo "=== lib"
+          cargo test -p oxfuse-wgpu --lib --locked -- --test-threads=1 2>&1 | tail -3
+          echo "exit=${PIPESTATUS[0]}"
+      - name: device_contract with default threads
+        shell: bash
+        run: |
+          cargo test -p oxfuse-wgpu --test device_contract --locked 2>&1 | tail -4
+          echo "exit=${PIPESTATUS[0]}"
+      - name: cli self-test (a short-lived process)
+        shell: bash
+        run: |
+          cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest
+          echo "exit=$?"
 
   # cargo-deny runs through its own action, not a justfile recipe, so it gets the
   # action's cache and advisory-db handling.
