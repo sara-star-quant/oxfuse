@@ -67,18 +67,23 @@ fn there_is_exactly_one_licence_and_it_is_apache_2_0() {
     );
 }
 
-/// The README must say what hardware is supported, and nothing public may
-/// claim an accelerator or name a vendor's hardware as a target. When a real
-/// accelerator backend lands, update this test, the README, the About text,
-/// the roadmap and the claims ledger in the same change.
+/// Public docs must not name an accelerator vendor, so none reads as a support
+/// claim. The one exception is `docs/adapters.md`, a record of measurements whose
+/// first line says "measured, not supported" and which may not use the words that
+/// would turn a measurement into a promise.
 #[test]
 fn hardware_claims_match_what_exists() {
     let root = root();
     let readme = fs::read_to_string(root.join("README.md")).unwrap();
     assert!(
-        readme.contains("CPU only"),
-        "README must state that Oxfuse is CPU only"
+        readme.contains("CPU by default"),
+        "README must state that Oxfuse is CPU by default"
     );
+    assert!(
+        readme.contains("docs/adapters.md"),
+        "README must point at the measured adapters"
+    );
+    let adapters_path = root.join("docs/adapters.md");
     let mut public = vec![readme, fs::read_to_string(root.join("ROADMAP.md")).unwrap()];
     let mut dirs = vec![root.join("docs")];
     while let Some(dir) = dirs.pop() {
@@ -86,7 +91,7 @@ fn hardware_claims_match_what_exists() {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 dirs.push(path);
-            } else {
+            } else if path != adapters_path {
                 public.push(fs::read_to_string(path).unwrap());
             }
         }
@@ -97,8 +102,27 @@ fn hardware_claims_match_what_exists() {
             let word = word.to_lowercase();
             assert!(
                 !brands.contains(&word.as_str()),
-                "public docs name `{word}`: no vendor support exists"
+                "public docs name `{word}` outside docs/adapters.md"
             );
         }
+    }
+    let adapters = fs::read_to_string(&adapters_path).expect("docs/adapters.md");
+    let first = adapters.lines().next().unwrap_or_default().to_lowercase();
+    assert!(
+        first.contains("measured, not supported"),
+        "docs/adapters.md must be headed `measured, not supported`"
+    );
+    let lower = adapters.to_lowercase();
+    for promise in [
+        "supports",
+        "supported on",
+        "supported by",
+        "works on",
+        "compatible with",
+    ] {
+        assert!(
+            !lower.contains(promise),
+            "docs/adapters.md uses `{promise}`: it records measurements, not support"
+        );
     }
 }

@@ -24,6 +24,7 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 | Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
 | Tests detect real defects | cargo-mutants: 268 of 280 caught, survivors documented |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
+| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani proofs of the index math |
 | Builds on Rust 1.88 or newer | MSRV job in CI |
 
 Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.49x of `ndarray`'s speed on the recorded machine.
@@ -40,9 +41,9 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 | `Reshape` | 1 | `shape` | element count must match |
 | `Transpose` | 1 | `perm` | output dim `i` is input dim `perm[i]` |
 
-`f32` only, row-major, CPU only.
+`f32` only, row-major. CPU by default; an optional GPU backend (`--features wgpu`, `--backend wgpu`) is measured on the devices in [docs/adapters.md](docs/adapters.md), with no support claimed for any device.
 
-Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, any accelerator. No vendor support is claimed or implied.
+Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, a GPU in the default build. No device or vendor support is claimed or implied.
 
 ## A first run
 

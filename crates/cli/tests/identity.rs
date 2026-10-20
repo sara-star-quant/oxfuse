@@ -51,5 +51,5 @@ fn every_crate_is_named_oxfuse() {
         );
         seen += 1;
     }
-    assert_eq!(seen, 3, "expected the core, runtime and cli crates");
+    assert_eq!(seen, 4, "expected the core, runtime, wgpu and cli crates");
 }

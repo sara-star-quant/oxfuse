@@ -20,6 +20,24 @@ What each op computes, bit for bit where that is promised, and what is deliberat
 - The threaded matmul splits the output by rows and never splits the `k` sum, so the thread count cannot change a result.
 - The optimization passes are exact: an optimized graph gives the same bits as the unoptimized one on the reference backend, errors included.
 
+## The GPU backend
+
+`WgpuBackend` (feature `wgpu`) runs the same ops on a device. The shading language does not pin down floating-point behavior the way IEEE 754 does, so its contract has two tiers instead of one.
+
+**Finite tier: promised.** For finite inputs with finite, non-subnormal results:
+
+| Op | Contract |
+|---|---|
+| `Relu` | Bit-exact for every input, including NaN, infinity, signed zero and subnormals. It is computed on the bit pattern, so no floating-point rule applies. |
+| `Reshape`, `Transpose` | Bit-exact for every input. They only move bits. |
+| `Add`, `Mul` | Bit-exact on the finite tier. |
+| `MatMul` | Within the documented bound of the float64 result (`K * eps * sum(|a_ik * b_kj|)`). Not bit-exact: the device compiler fuses multiply-add, so a result can differ from the reference by many ulp on cancelling sums. |
+| `Sigmoid` | Within 65 ulp of the reference for every finite input whose result is a normal number, measured over all 2^32 inputs. A result below the smallest normal number may be flushed to zero. |
+
+**Outside the tier: measured, not promised.** The language lets a compiler assume NaN and infinity never occur and lets a device flush subnormals to zero. `docs/adapters.md` records what each measured device does with them, for example that `infinity * subnormal` is NaN on the first one. The CLI already rejects non-finite input and output, so the promise matches what files can express.
+
+The 65 ulp figure and the flush behavior are measurements of the recorded adapter. `oxfuse gpu-selftest` measures any other.
+
 ## What is compared with NumPy
 
 The reference backend is checked against an independent NumPy float64 oracle (`scripts/gen_expected.py`). Exact ops must match on exactly representable inputs. `MatMul` on random inputs is held to the bound `K * eps * sum(|a_ik * b_kj|)` against the float64 result, where `eps` is the `f32` machine epsilon, and to exact equality on small-integer inputs. The oracle and the Rust code apply the same input rule: a JSON number is read as float64 and rounded to `f32` with round-to-nearest-even.

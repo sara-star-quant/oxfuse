@@ -30,6 +30,16 @@ Nothing here gates CI: timing is noisy.
 Reproduce: `just bench && just bench-report`. For the threaded rows, also run
 `cargo bench -p oxfuse-runtime --locked --features parallel` before reporting.
 
+GPU rows (`gpu-matmul`, `gpu-add`) come from `just bench-gpu`, which also times the
+fast CPU backend in the same run, on one thread and on all threads. `gpu-cold` is
+compile plus the first run (a driver may cache compiled shaders across samples, so
+it is a lower bound on a first run in a new process). `gpu-resident` keeps inputs
+on the device and times `run_device` until the device is idle, including the copy
+of the outputs. `gpu-with-transfers` is a host `run`: upload, run, download. The
+last column divides the best CPU time by the resident GPU time, so a value below
+1 means the GPU is slower. GPU results are not bit-identical to the CPU rows (see
+`semantics.md`).
+
 ## Optimization log
 
 Each fast kernel returns exactly the reference bits. The figures in this log
@@ -59,6 +69,18 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   (2^18) stays serial, 128 x 128 (2^21) already wins: 146 us to 88 us. At 256
   the time drops from 1.12 ms to 0.31 ms and at 512 from 8.66 ms to 1.6 ms on
   this 8-core machine. Kept, off by default.
+- GPU MatMul, register block: each thread of a 16 x 16 workgroup holds a 4 x 4
+  block of the result in sixteen scalar variables, so a workgroup covers a
+  64 x 64 block and loads one tile of A and one of B per step of 16 in k. Each
+  output still sums in ascending k from one accumulator. At 1024 x 1024 in an
+  isolated sweep: one output per thread 16.8 ms (128 GFLOP/s), 2 x 2 per thread
+  7.8 ms, 4 x 4 per thread 3.84 ms (559 GFLOP/s). Kept 4 x 4. Tried and
+  dropped: 8 x 8 threads with 4 x 4 blocks 4.06 ms, with 8 x 8 blocks 4.79 ms,
+  8 x 8 threads with one output 19.3 ms, and the same 4 x 4 block held in an
+  array indexed inside a loop, about 55 ms (the device spills it to memory,
+  three times slower than no blocking at all). Results stay inside the
+  documented bound of the float64 result but are not bit-identical to the
+  reference, because the device fuses multiply-add.
 - Add, Relu, Sigmoid, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Sigmoid also keeps std's exp, so it is
@@ -94,9 +116,12 @@ def environment():
         cpu = names[0] if names else "unknown"
         cores = str(len(names)) if names else "unknown"
         memory = "unknown"
+    adapter = CRITERION / "gpu-adapter.txt"
+    gpu = adapter.read_text().strip() if adapter.exists() else "none recorded"
     return "\n".join(
         [
             f"- CPU: {cpu} ({cores} logical cores)",
+            f"- GPU adapter: {gpu}",
             f"- Memory: {memory}",
             f"- OS: {platform.platform()}",
             f"- Rust: {sh('rustc', '--version')}",
@@ -121,7 +146,36 @@ def fmt_time(ns):
     return f"{ns / 1e3:.1f} us" if ns < 1e6 else f"{ns / 1e6:.2f} ms"
 
 
+GPU_ORDER = ["gpu-cold", "gpu-resident", "gpu-with-transfers", "cpu", "cpu-threads"]
+
+
+def gpu_table(group, by_size):
+    lines = [
+        f"### {group}",
+        "",
+        "| size | " + " | ".join(GPU_ORDER) + " | best cpu / resident gpu |",
+        "|---|" + "---|" * (len(GPU_ORDER) + 1),
+    ]
+    for size in sorted(by_size):
+        row = by_size[size]
+        cells = []
+        for v in GPU_ORDER:
+            ns = row.get(v)
+            if ns is None:
+                cells.append("-")
+            elif group == "gpu-matmul":
+                cells.append(f"{fmt_time(ns)} ({2 * size**3 / ns:.1f} GFLOP/s)")
+            else:
+                cells.append(fmt_time(ns))
+        cpu = [row[v] for v in ("cpu", "cpu-threads") if v in row]
+        ratio = f"{min(cpu) / row['gpu-resident']:.2f}x" if cpu and "gpu-resident" in row else "-"
+        lines.append(f"| {size} | " + " | ".join(cells) + f" | {ratio} |")
+    return "\n".join(lines)
+
+
 def table(group, by_size):
+    if group.startswith("gpu-"):
+        return gpu_table(group, by_size)
     variants = sorted({v for row in by_size.values() for v in row}, key=lambda v: (v != "reference", v))
     lines = [
         f"### {group}",

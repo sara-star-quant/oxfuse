@@ -1,0 +1,34 @@
+[package]
+name = "oxfuse-wgpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "A wgpu compute backend for oxfuse graphs."
+publish = false
+
+[dependencies]
+oxfuse-core.workspace = true
+oxfuse-runtime.workspace = true
+wgpu.workspace = true
+pollster.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true
+rayon.workspace = true
+# The threaded CPU matmul, so the benchmark can compare against it.
+oxfuse-runtime = { workspace = true, features = ["parallel"] }
+# Same version as the front end wgpu runs, so the offline check validates what the device compiles.
+naga = { version = "=30.0.1", features = ["wgsl-in"] }
+
+[[bench]]
+name = "gpu"
+harness = false
+
+[lints]
+workspace = true
