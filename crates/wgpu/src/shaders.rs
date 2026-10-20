@@ -5,9 +5,10 @@
 //! - `@group(0)`: storage inputs first, then the output, then a uniform `Params`
 //!   as the last binding. At most three storage buffers (downlevel devices allow four).
 //! - Linear indices are computed as `config::element_index` does; tile kernels
-//!   take a linear group id `wid.y * x_count + wid.x` and return early when it is
-//!   past `total_groups`. Every thread of a workgroup returns together, so the
-//!   barriers after that line stay uniform.
+//!   take a linear group id `wid.y * x_count + wid.x`. A group past `total_groups` is
+//!   inactive: it still reaches every barrier but guards its loads and stores with
+//!   `in_grid`. Kernels with barriers never return early (the DX12 software adapter
+//!   crashes on an early return before a barrier).
 //! - Kernels that move or classify bits (Relu, Transpose, Permute) read and write
 //!   `u32`, so no float rule (flushing, NaN assumptions) can touch them.
 //! - `MatMul` sums each output in ascending `k` order from one accumulator.
@@ -105,18 +106,18 @@ var<workgroup> tile: array<u32, {cells}>;
 @compute @workgroup_size({t}, {t})
 fn main({ENTRY_1D}) {{
   let g = wid.y * p.x_count + wid.x;
-  if (g >= p.total_groups) {{ return; }}
+  let in_grid = g < p.total_groups;
   let tile_row = g / p.tiles_x;
   let tile_col = g % p.tiles_x;
   let r = tile_row * {t}u + lid.y;
   let c = tile_col * {t}u + lid.x;
-  if (r < p.rows && c < p.cols) {{
+  if (in_grid && r < p.rows && c < p.cols) {{
     tile[lid.y * {stride}u + lid.x] = src[r * p.cols + c];
   }}
   workgroupBarrier();
   let out_row = tile_col * {t}u + lid.y;
   let out_col = tile_row * {t}u + lid.x;
-  if (out_row < p.cols && out_col < p.rows) {{
+  if (in_grid && out_row < p.cols && out_col < p.rows) {{
     dst[out_row * p.rows + out_col] = tile[lid.x * {stride}u + lid.y];
   }}
 }}
@@ -200,7 +201,7 @@ pub fn matmul(cfg: &KernelConfig) -> String {
                 "  {{
     let rr = row0 + lid.y * {r}u + {i}u;
     let cc = col0 + lid.x * {r}u + {j}u;
-    if (rr < p.m && cc < p.n) {{ dst[rr * p.n + cc] = c{i}_{j}; }}
+    if (in_grid && rr < p.m && cc < p.n) {{ dst[rr * p.n + cc] = c{i}_{j}; }}
   }}
 "
             ));
@@ -218,7 +219,7 @@ var<workgroup> b_tile: array<f32, {cells}>;
 @compute @workgroup_size({t}, {t})
 fn main({ENTRY_1D}) {{
   let g = wid.y * p.x_count + wid.x;
-  if (g >= p.total_groups) {{ return; }}
+  let in_grid = g < p.total_groups;
   let row0 = (g / p.tiles_x) * {b}u;
   let col0 = (g % p.tiles_x) * {b}u;
   let tid = lid.y * {t}u + lid.x;
@@ -230,12 +231,12 @@ fn main({ENTRY_1D}) {{
       let gr = row0 + idx / {t}u;
       let gk = k0 + idx % {t}u;
       var v: f32 = 0.0;
-      if (gr < p.m && gk < p.k) {{ v = a[gr * p.k + gk]; }}
+      if (in_grid && gr < p.m && gk < p.k) {{ v = a[gr * p.k + gk]; }}
       a_tile[idx] = v;
       let gk2 = k0 + idx / {b}u;
       let gc = col0 + idx % {b}u;
       var w: f32 = 0.0;
-      if (gk2 < p.k && gc < p.n) {{ w = b[gk2 * p.n + gc]; }}
+      if (in_grid && gk2 < p.k && gc < p.n) {{ w = b[gk2 * p.n + gc]; }}
       b_tile[idx] = w;
     }}
     workgroupBarrier();

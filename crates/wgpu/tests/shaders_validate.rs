@@ -96,3 +96,26 @@ fn shaders_stay_within_the_storage_buffer_budget() {
         );
     }
 }
+
+/// The DX12 software adapter crashes the process when a kernel returns early
+/// before a barrier, even if every thread of the workgroup returns together
+/// (found with the probes in windows_probe.rs). Kernels with barriers must reach
+/// them unconditionally and guard their memory accesses instead.
+#[test]
+fn kernels_with_barriers_never_return_early() {
+    for cfg in configs() {
+        for (name, source) in [
+            ("transpose2d", shaders::transpose2d(&cfg)),
+            ("matmul", shaders::matmul(&cfg)),
+        ] {
+            assert!(
+                source.contains("workgroupBarrier()"),
+                "{name} has no barrier"
+            );
+            assert!(
+                !source.contains("return;"),
+                "{name} returns early in a kernel with barriers:\n{source}"
+            );
+        }
+    }
+}
