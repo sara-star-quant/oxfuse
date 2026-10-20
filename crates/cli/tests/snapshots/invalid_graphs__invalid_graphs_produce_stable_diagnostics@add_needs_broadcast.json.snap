@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/add_needs_broadcast.json
+---
+error[E017]: node `y`: Add: operand shapes [2, 3] and [3] must be equal or one operand must be a scalar (NumPy broadcasting is not supported yet) (at nodes[0])

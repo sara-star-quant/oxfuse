@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "inputs": [
+    { "name": "a", "dtype": "f32", "shape": [2, 2] },
+    { "name": "b", "dtype": "f32", "shape": [2, 2] }
+  ],
+  "constants": [{ "name": "two", "dtype": "f32", "shape": [], "values": [2.0] }],
+  "nodes": [
+    { "name": "sum", "op": "Add", "inputs": ["a", "b"] },
+    { "name": "scaled", "op": "Mul", "inputs": ["sum", "two"] }
+  ],
+  "outputs": ["sum", "scaled"]
+}

@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/zero_dimension.json
+---
+error[E009]: `x`: invalid shape [2, 0]: dimensions must be at least 1 (at inputs[0].shape)

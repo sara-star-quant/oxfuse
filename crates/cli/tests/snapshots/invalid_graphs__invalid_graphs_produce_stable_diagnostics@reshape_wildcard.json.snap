@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/reshape_wildcard.json
+---
+error[E020]: node `y`: Reshape attribute `shape`: entry -1 is not a non-negative integer (the -1 wildcard is not supported) (at nodes[0].attrs.shape)

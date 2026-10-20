@@ -1,0 +1,1 @@
+{"format_version":1,"constants":[{"name":"c","dtype":"f32","shape":[1],"values":[1e39]}],"nodes":[],"outputs":["c"]}

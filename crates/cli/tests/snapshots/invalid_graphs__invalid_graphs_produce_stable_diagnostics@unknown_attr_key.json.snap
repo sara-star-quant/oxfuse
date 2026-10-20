@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/unknown_attr_key.json
+---
+error[E100]: invalid graph JSON: unknown field `axes`, expected `shape` or `perm` at line 1 column 148

@@ -1,0 +1,18 @@
+[package]
+name = "oxfuse-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+description = "Typed tensor-graph IR with shape inference, a verifier and exact optimization passes."
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

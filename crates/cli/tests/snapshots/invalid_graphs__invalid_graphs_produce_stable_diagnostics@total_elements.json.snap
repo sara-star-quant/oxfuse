@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/total_elements.json
+---
+error[E016]: `y2`: total tensor elements is 536903680, maximum is 536870912 (at nodes[1])

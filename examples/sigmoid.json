@@ -1,0 +1,6 @@
+{
+  "format_version": 1,
+  "inputs": [{ "name": "x", "dtype": "f32", "shape": [3] }],
+  "nodes": [{ "name": "y", "op": "Sigmoid", "inputs": ["x"] }],
+  "outputs": ["y"]
+}

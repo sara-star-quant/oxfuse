@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/unknown_field.json
+---
+error[E100]: invalid graph JSON: unknown field `extra`, expected one of `format_version`, `inputs`, `constants`, `nodes`, `outputs` at line 1 column 27

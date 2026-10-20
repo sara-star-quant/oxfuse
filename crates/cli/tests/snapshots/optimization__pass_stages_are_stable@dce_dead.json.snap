@@ -1,0 +1,39 @@
+---
+source: crates/cli/tests/optimization.rs
+expression: text.trim_end()
+input_file: tests/passes/dce_dead.json
+---
+== input ==
+graph {
+  %0 x = input : f32[2]
+  %1 z = input : f32[3]
+  %2 c = const : f32[2] = [1.0, 2.0]
+  %3 live = Relu(%0) : f32[2]
+  %4 dead = Mul(%0, %2) : f32[2]
+  output live = %3
+}
+== after fold (changed 0, values 5 -> 5) ==
+graph {
+  %0 x = input : f32[2]
+  %1 z = input : f32[3]
+  %2 c = const : f32[2] = [1.0, 2.0]
+  %3 live = Relu(%0) : f32[2]
+  %4 dead = Mul(%0, %2) : f32[2]
+  output live = %3
+}
+== after cse (changed 0, values 5 -> 5) ==
+graph {
+  %0 x = input : f32[2]
+  %1 z = input : f32[3]
+  %2 c = const : f32[2] = [1.0, 2.0]
+  %3 live = Relu(%0) : f32[2]
+  %4 dead = Mul(%0, %2) : f32[2]
+  output live = %3
+}
+== after dce (changed 2, values 5 -> 3) ==
+graph {
+  %0 x = input : f32[2]
+  %1 z = input : f32[3]
+  %2 live = Relu(%0) : f32[2]
+  output live = %2
+}

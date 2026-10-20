@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/unsupported_dtype.json
+---
+error[E100]: invalid graph JSON: unknown variant `i64`, expected `f32` at line 1 column 55

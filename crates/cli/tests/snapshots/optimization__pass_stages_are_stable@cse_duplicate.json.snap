@@ -1,0 +1,39 @@
+---
+source: crates/cli/tests/optimization.rs
+expression: text.trim_end()
+input_file: tests/passes/cse_duplicate.json
+---
+== input ==
+graph {
+  %0 x = input : f32[2]
+  %1 p = Relu(%0) : f32[2]
+  %2 q = Relu(%0) : f32[2]
+  %3 y = Add(%1, %2) : f32[2]
+  output y = %3
+  output q = %2
+}
+== after fold (changed 0, values 4 -> 4) ==
+graph {
+  %0 x = input : f32[2]
+  %1 p = Relu(%0) : f32[2]
+  %2 q = Relu(%0) : f32[2]
+  %3 y = Add(%1, %2) : f32[2]
+  output y = %3
+  output q = %2
+}
+== after cse (changed 1, values 4 -> 3) ==
+graph {
+  %0 x = input : f32[2]
+  %1 p = Relu(%0) : f32[2]
+  %2 y = Add(%1, %1) : f32[2]
+  output y = %2
+  output q = %1
+}
+== after dce (changed 0, values 3 -> 3) ==
+graph {
+  %0 x = input : f32[2]
+  %1 p = Relu(%0) : f32[2]
+  %2 y = Add(%1, %1) : f32[2]
+  output y = %2
+  output q = %1
+}

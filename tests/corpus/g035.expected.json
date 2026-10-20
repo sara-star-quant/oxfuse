@@ -1,0 +1,1 @@
+{"tolerance":{"abs":0.0,"rel":0.0},"outputs":[{"name":"n2","shape":[1],"values":[0.5],"tolerance":{"abs":1e-06,"rel":1e-06}},{"name":"n3","shape":[],"values":[0.5],"tolerance":{"abs":1e-06,"rel":1e-06}},{"name":"n4","shape":[1],"values":[0.0]}]}

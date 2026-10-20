@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/shape_overflow.json
+---
+error[E009]: `x`: invalid shape [4294967296, 4294967296]: element count overflows (at inputs[0].shape)

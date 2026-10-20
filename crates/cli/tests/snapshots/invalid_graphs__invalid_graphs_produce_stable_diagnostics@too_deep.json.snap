@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/too_deep.json
+---
+error[E016]: `x`: tensor rank is 9, maximum is 8 (at inputs[0].shape)

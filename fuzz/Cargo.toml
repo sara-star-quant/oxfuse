@@ -1,0 +1,40 @@
+[package]
+name = "oxfuse-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace: fuzzing needs nightly and must not touch the main
+# lockfile, `just ci` or cargo-deny.
+[workspace]
+
+[dependencies]
+arbitrary = "1.5.0"
+libfuzzer-sys = "0.4.13"
+oxfuse = { path = "../crates/cli" }
+oxfuse-core = { path = "../crates/core" }
+oxfuse-runtime = { path = "../crates/runtime" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[[bin]]
+name = "loader"
+path = "fuzz_targets/loader.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "differential"
+path = "fuzz_targets/differential.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "generated"
+path = "fuzz_targets/generated.rs"
+test = false
+doc = false

@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/non_finite_constant.json
+---
+error[E012]: `c` contains a non-finite value (NaN or infinity), which JSON cannot represent (at constants[0].values)

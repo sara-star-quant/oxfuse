@@ -1,0 +1,1 @@
+{"format_version":1,"inputs":[{"name":"x0","dtype":"f32","shape":[2,4]}],"constants":[{"name":"c0","dtype":"f32","shape":[],"values":[0.25]}],"nodes":[{"name":"n1","op":"Relu","inputs":["x0"]},{"name":"n0","op":"Add","inputs":["x0","c0"]},{"name":"n2","op":"Relu","inputs":["n1"]}],"outputs":["n0","n2"]}
