@@ -97,10 +97,12 @@ fn shaders_stay_within_the_storage_buffer_budget() {
     }
 }
 
-/// The DX12 software adapter crashes the process when a kernel returns early
-/// before a barrier, even if every thread of the workgroup returns together
-/// (found with the probes in windows_probe.rs). Kernels with barriers must reach
-/// them unconditionally and guard their memory accesses instead.
+/// The DX12 software adapter (Microsoft Basic Render Driver) crashes the process
+/// with STATUS_ACCESS_VIOLATION when a kernel returns early before a barrier, even
+/// if every thread of the workgroup returns together. Found by running small raw
+/// shaders on a Windows CI runner: a barrier alone, or inside a loop, was fine; an
+/// early return before it was not. Kernels with barriers must reach them
+/// unconditionally and guard their memory accesses instead.
 #[test]
 fn kernels_with_barriers_never_return_early() {
     for cfg in configs() {

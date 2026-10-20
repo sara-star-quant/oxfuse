@@ -14,7 +14,7 @@ use std::sync::Arc;
 fn downlevel() -> Option<WgpuBackend> {
     Context::new(LimitsProfile::Downlevel)
         .ok()
-        .map(|ctx| WgpuBackend::with(Arc::new(ctx), KernelConfig::DEFAULT))
+        .map(|ctx| WgpuBackend::for_context(Arc::new(ctx)))
 }
 
 #[test]
