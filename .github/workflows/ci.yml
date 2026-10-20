@@ -120,6 +120,17 @@ jobs:
             echo "exit=${PIPESTATUS[0]}"
           done
           exit 0
+      - name: raw shader probe, one process per construct
+        shell: bash
+        run: |
+          set +e
+          exe=$(ls -t target/debug/deps/windows_probe-*.exe | head -1)
+          for name in F E A B C D; do
+            echo "=== raw $name"
+            OXFUSE_RAW=$name "$exe" --ignored --nocapture --exact probe_one_raw_shader 2>&1 | grep -E "^probe:|STATUS_|panicked"
+            echo "exit=${PIPESTATUS[0]}"
+          done
+          exit 0
       - name: device_contract with default threads
         shell: bash
         run: |
