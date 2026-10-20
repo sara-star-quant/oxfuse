@@ -18,6 +18,10 @@ pub enum BackendKind {
     /// The fast backend, bit-identical to the reference. See decision 0011.
     #[default]
     Cpu,
+    /// A GPU through wgpu, built with the `wgpu` feature. Not bit-identical to
+    /// the reference on `MatMul` and `Sigmoid`: see docs/semantics.md.
+    #[cfg(feature = "wgpu")]
+    Wgpu,
 }
 
 #[derive(Debug, Clone)]
@@ -153,9 +157,16 @@ fn execute(
     backend: BackendKind,
 ) -> Result<String, CliError> {
     let tensors = bind_inputs(&graph, inputs_path, limits)?;
+    #[cfg(feature = "wgpu")]
+    let wgpu;
     let backend: &dyn Backend = match backend {
         BackendKind::Reference => &ReferenceBackend,
         BackendKind::Cpu => &CpuBackend,
+        #[cfg(feature = "wgpu")]
+        BackendKind::Wgpu => {
+            wgpu = oxfuse_wgpu::WgpuBackend::new()?;
+            &wgpu
+        }
     };
     let outputs = backend.compile(&graph)?.run(&tensors)?;
     let named = graph.output_names().iter().cloned().zip(outputs).collect();
@@ -694,4 +705,16 @@ mod tests {
             "{err}"
         );
     }
+}
+
+/// Measures the first adapter against the reference and renders the report.
+#[cfg(feature = "wgpu")]
+pub fn gpu_selftest(downlevel: bool) -> Result<String, CliError> {
+    let profile = if downlevel {
+        oxfuse_wgpu::LimitsProfile::Downlevel
+    } else {
+        oxfuse_wgpu::LimitsProfile::Adapter
+    };
+    let context = Arc::new(oxfuse_wgpu::Context::new(profile)?);
+    Ok(oxfuse_wgpu::run_selftest(context)?.to_string())
 }

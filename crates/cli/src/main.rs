@@ -29,9 +29,16 @@ enum Command {
         /// Print the IR before and after each pass to stderr
         #[arg(long)]
         dump_ir: bool,
-        /// Which backend executes the graph (both print the same bytes)
+        /// Which backend executes the graph (reference and cpu print the same bytes)
         #[arg(long, value_enum, default_value_t = BackendArg::Cpu)]
         backend: BackendArg,
+    },
+    /// Measure the GPU adapter against the reference and print a report
+    #[cfg(feature = "wgpu")]
+    GpuSelftest {
+        /// Create the device with the smallest limits every device guarantees
+        #[arg(long, value_enum)]
+        limits: Option<LimitsArg>,
     },
     /// Print the IR before and after each optimization pass
     Inspect {
@@ -67,6 +74,10 @@ fn main() -> ExitCode {
                 .map(|out| (out.stdout, out.stderr))
                 .map_err(|failure| (failure.error, failure.stderr))
         }
+        #[cfg(feature = "wgpu")]
+        Command::GpuSelftest { limits } => oxfuse_cli::gpu_selftest(limits.is_some())
+            .map(|text| (text, String::new()))
+            .map_err(|error| (error, String::new())),
         Command::Inspect {
             file,
             no_opt,
@@ -146,6 +157,14 @@ mod tests {
 enum BackendArg {
     Reference,
     Cpu,
+    #[cfg(feature = "wgpu")]
+    Wgpu,
+}
+
+#[cfg(feature = "wgpu")]
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum LimitsArg {
+    Downlevel,
 }
 
 impl From<BackendArg> for oxfuse_cli::BackendKind {
@@ -153,6 +172,8 @@ impl From<BackendArg> for oxfuse_cli::BackendKind {
         match arg {
             BackendArg::Reference => Self::Reference,
             BackendArg::Cpu => Self::Cpu,
+            #[cfg(feature = "wgpu")]
+            BackendArg::Wgpu => Self::Wgpu,
         }
     }
 }
