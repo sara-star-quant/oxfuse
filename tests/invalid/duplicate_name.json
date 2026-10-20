@@ -1,0 +1,1 @@
+{"format_version":1,"inputs":[{"name":"x","dtype":"f32","shape":[1]}],"constants":[{"name":"x","dtype":"f32","shape":[1],"values":[0]}],"nodes":[],"outputs":["x"]}

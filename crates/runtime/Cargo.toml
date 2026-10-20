@@ -1,0 +1,31 @@
+[package]
+name = "oxfuse-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+description = "Tensors, execution plans and the reference CPU backend for oxfuse graphs."
+
+[dependencies]
+oxfuse-core.workspace = true
+rayon = { workspace = true, optional = true }
+
+[features]
+parallel = ["dep:rayon"]
+
+[dev-dependencies]
+criterion.workspace = true
+ndarray.workspace = true
+proptest.workspace = true
+
+[[bench]]
+name = "kernels"
+harness = false
+
+[lints]
+workspace = true

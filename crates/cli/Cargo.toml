@@ -1,0 +1,38 @@
+[package]
+name = "oxfuse"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+exclude = ["tests"]
+keywords.workspace = true
+categories.workspace = true
+description = "Command-line tool for oxfuse: a small tensor graph compiler with a reference and a fast CPU backend. Subcommands: check, run, inspect."
+
+[lib]
+name = "oxfuse_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "oxfuse"
+path = "src/main.rs"
+
+[dependencies]
+oxfuse-core.workspace = true
+oxfuse-runtime.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[features]
+parallel = ["oxfuse-runtime/parallel"]
+
+[lints]
+workspace = true

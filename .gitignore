@@ -1,0 +1,9 @@
+/target
+.DS_Store
+.remember/
+.superpowers/
+/.claude/
+/mutants.out*
+/fuzz/target
+/fuzz/artifacts
+/fuzz/corpus

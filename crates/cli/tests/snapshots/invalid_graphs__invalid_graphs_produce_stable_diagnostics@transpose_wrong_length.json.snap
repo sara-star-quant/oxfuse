@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/transpose_wrong_length.json
+---
+error[E017]: node `y`: Transpose: permutation [0] must have 2 entries (at nodes[0])

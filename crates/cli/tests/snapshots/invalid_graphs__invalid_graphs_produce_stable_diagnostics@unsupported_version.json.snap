@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/unsupported_version.json
+---
+error[E001]: unsupported format_version 2 (supported: 1) (at format_version)

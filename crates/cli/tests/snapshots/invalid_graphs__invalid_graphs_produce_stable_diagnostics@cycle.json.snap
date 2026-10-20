@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/cycle.json
+---
+error[E005]: graph contains a cycle through node `a` (at nodes[0])

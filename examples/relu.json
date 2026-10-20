@@ -1,0 +1,6 @@
+{
+  "format_version": 1,
+  "inputs": [{ "name": "x", "dtype": "f32", "shape": [2, 3] }],
+  "nodes": [{ "name": "y", "op": "Relu", "inputs": ["x"] }],
+  "outputs": ["y"]
+}

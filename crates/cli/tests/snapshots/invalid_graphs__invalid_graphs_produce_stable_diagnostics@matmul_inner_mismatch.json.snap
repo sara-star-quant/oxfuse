@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/matmul_inner_mismatch.json
+---
+error[E017]: node `y`: MatMul: inner dimensions differ: [2, 3] x [4, 5] (at nodes[0])

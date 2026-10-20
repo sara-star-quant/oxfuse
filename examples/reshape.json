@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "inputs": [{ "name": "x", "dtype": "f32", "shape": [2, 3] }],
+  "nodes": [
+    { "name": "r", "op": "Reshape", "inputs": ["x"], "attrs": { "shape": [3, 2] } },
+    { "name": "f", "op": "Reshape", "inputs": ["r"], "attrs": { "shape": [6] } }
+  ],
+  "outputs": ["r", "f"]
+}

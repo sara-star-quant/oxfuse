@@ -1,0 +1,1 @@
+{"format_version":1,"inputs":[{"name":"a","dtype":"f32","shape":[16384,1]},{"name":"b","dtype":"f32","shape":[1,16384]}],"nodes":[{"name":"y1","op":"MatMul","inputs":["a","b"]},{"name":"y2","op":"MatMul","inputs":["a","b"]}],"outputs":["y2"]}

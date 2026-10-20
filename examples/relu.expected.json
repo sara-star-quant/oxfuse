@@ -1,0 +1,4 @@
+{
+  "tolerance": { "abs": 0.0, "rel": 0.0 },
+  "outputs": [{ "name": "y", "shape": [2, 3], "values": [0.0, 0.0, 2.5, 0.0, 3.0, 0.0] }]
+}

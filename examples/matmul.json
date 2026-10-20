@@ -1,0 +1,7 @@
+{
+  "format_version": 1,
+  "inputs": [{ "name": "x", "dtype": "f32", "shape": [2, 2] }],
+  "constants": [{ "name": "w", "dtype": "f32", "shape": [2, 2], "values": [5.0, 6.0, 7.0, 8.0] }],
+  "nodes": [{ "name": "y", "op": "MatMul", "inputs": ["x", "w"] }],
+  "outputs": ["y"]
+}

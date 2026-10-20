@@ -1,0 +1,1 @@
+{"format_version":1,"inputs":[{"name":"x0","dtype":"f32","shape":[1]}],"constants":[{"name":"c0","dtype":"f32","shape":[],"values":[-2.0]}],"nodes":[{"name":"n2","op":"Mul","inputs":["n1","n0"]},{"name":"n1","op":"Reshape","inputs":["x0"],"attrs":{"shape":[1]}},{"name":"n0","op":"Mul","inputs":["x0","c0"]}],"outputs":["n2","n0"]}

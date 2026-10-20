@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/reshape_count.json
+---
+error[E017]: node `y`: Reshape: cannot reshape [2, 3] (6 elements) to [4] (4 elements) (at nodes[0])

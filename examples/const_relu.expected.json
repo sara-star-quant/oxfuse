@@ -1,0 +1,7 @@
+{
+  "tolerance": { "abs": 0.0, "rel": 0.0 },
+  "outputs": [
+    { "name": "s", "shape": [3], "values": [0.0, 2.0, 0.0] },
+    { "name": "c", "shape": [3], "values": [-1.0, 2.0, -3.0] }
+  ]
+}

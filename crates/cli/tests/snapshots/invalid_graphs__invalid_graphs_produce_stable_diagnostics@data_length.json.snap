@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/data_length.json
+---
+error[E008]: `c`: shape [3] needs 3 value(s), got 2 (at constants[0].values)

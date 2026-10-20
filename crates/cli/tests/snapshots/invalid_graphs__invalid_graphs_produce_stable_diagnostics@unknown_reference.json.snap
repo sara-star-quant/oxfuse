@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/unknown_reference.json
+---
+error[E003]: node `y` references unknown value `ghost` (at nodes[0].inputs[0])

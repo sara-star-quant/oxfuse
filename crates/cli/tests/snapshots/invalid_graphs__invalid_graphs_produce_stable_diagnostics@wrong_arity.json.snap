@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/wrong_arity.json
+---
+error[E006]: node `y`: Add takes 2 input(s), got 1 (at nodes[0].inputs)

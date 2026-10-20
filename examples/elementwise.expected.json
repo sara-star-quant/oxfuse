@@ -1,0 +1,7 @@
+{
+  "tolerance": { "abs": 0.0, "rel": 0.0 },
+  "outputs": [
+    { "name": "sum", "shape": [2, 2], "values": [11.0, 22.0, 33.0, 44.0] },
+    { "name": "scaled", "shape": [2, 2], "values": [22.0, 44.0, 66.0, 88.0] }
+  ]
+}

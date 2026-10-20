@@ -1,0 +1,1 @@
+{"format_version":1,"inputs":[{"name":"x0","dtype":"f32","shape":[2,2,2]}],"constants":[{"name":"c0","dtype":"f32","shape":[],"values":[1.75]}],"nodes":[{"name":"n1","op":"Add","inputs":["c0","n0"]},{"name":"n0","op":"Transpose","inputs":["x0"],"attrs":{"perm":[1,2,0]}}],"outputs":["n1"]}
