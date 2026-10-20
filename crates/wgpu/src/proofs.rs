@@ -33,6 +33,12 @@ const TRANSPOSE_FORMULAS: [&str; 4] = [
     "dst[out_row * p.rows + out_col]",
 ];
 #[cfg(test)]
+const PERMUTE_FORMULAS: [&str; 3] = [
+    "let dim = p.dims[0][2];",
+    "off += (rem % dim) * p.strides[0][2];",
+    "rem = rem / dim;",
+];
+#[cfg(test)]
 const ELEMENTWISE_FORMULA: &str = "let i = (wid.y * p.x_count + wid.x) * 256u + lid.x;";
 
 #[cfg(test)]
@@ -52,6 +58,10 @@ mod tests {
         for f in TRANSPOSE_FORMULAS {
             assert!(transpose.contains(f), "transpose shader lost `{f}`");
         }
+        let permute = shaders::permute(3, &cfg);
+        for f in PERMUTE_FORMULAS {
+            assert!(permute.contains(f), "permute shader lost `{f}`");
+        }
         let relu = shaders::unary(shaders::Unary::Relu, &cfg);
         assert!(
             relu.contains(ELEMENTWISE_FORMULA),
@@ -62,7 +72,9 @@ mod tests {
 
 #[cfg(kani)]
 mod harnesses {
-    use crate::config::{MAX_TENSOR_ELEMENTS, element_index, grid_fold};
+    use crate::config::{
+        MAX_TENSOR_ELEMENTS, element_index, grid_fold, permute_layout_into, permute_offset,
+    };
 
     /// Largest matrix side the index lemmas below range over. The lemma is the
     /// identity (r * cols + c) < rows * cols for r < rows, c < cols, whose proof
@@ -227,5 +239,36 @@ mod harnesses {
                 mul_add(out_row, u64::from(rows), out_col).expect("the store index fits u32");
             assert!(u64::from(index) < u64::from(rows) * u64::from(cols));
         }
+    }
+
+    /// The permute walk (`permute_offset`, shared with the model and written out
+    /// in the shader) reads every input element exactly once: for every rank-3
+    /// shape with sides up to 4 and every permutation, each output index maps in
+    /// range and two different output indices never map to the same input
+    /// element. Rank three is the smallest rank where the permutation matters
+    /// beyond a swap; ranks up to four are checked exhaustively on small shapes
+    /// by `permute_offset_visits_every_input_element_exactly_once` and the model
+    /// tests, and ranks five to eight are not covered by proofs.
+    #[kani::proof]
+    #[kani::unwind(5)]
+    #[kani::solver(kissat)]
+    fn permute_walk_reads_every_input_element_exactly_once() {
+        let shape: [u32; 3] = [kani::any(), kani::any(), kani::any()];
+        kani::assume(shape.iter().all(|&d| (1..=4).contains(&d)));
+        let perm: [usize; 3] = [kani::any(), kani::any(), kani::any()];
+        kani::assume(perm.iter().all(|&p| p < 3));
+        kani::assume(perm[0] != perm[1] && perm[0] != perm[2] && perm[1] != perm[2]);
+        let (mut dims, mut strides) = ([0u32; 3], [0u32; 3]);
+        let in_shape = [shape[0] as usize, shape[1] as usize, shape[2] as usize];
+        permute_layout_into(&in_shape, &perm, &mut dims, &mut strides);
+        let n = u64::from(shape[0]) * u64::from(shape[1]) * u64::from(shape[2]);
+        let (i, j): (u64, u64) = (kani::any(), kani::any());
+        kani::assume(i < n && j < n && i != j);
+        let (a, b) = (
+            permute_offset(i, &dims, &strides),
+            permute_offset(j, &dims, &strides),
+        );
+        assert!(a < n && b < n);
+        assert!(a != b);
     }
 }
