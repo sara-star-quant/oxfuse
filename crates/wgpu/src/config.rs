@@ -176,14 +176,44 @@ pub fn tile_grid(rows: u64, cols: u64, tile: u32, max_per_dim: u32) -> Option<Ti
 /// Output dimensions and the input stride each output dimension walks, for a
 /// row-major input permuted by `perm` (`out dim i = in dim perm[i]`).
 pub fn permute_layout(in_shape: &[usize], perm: &[usize]) -> (Vec<u32>, Vec<u32>) {
-    assert_eq!(in_shape.len(), perm.len(), "perm must name every dimension");
-    let mut in_strides = vec![1u32; in_shape.len()];
-    for d in (0..in_shape.len().saturating_sub(1)).rev() {
+    let mut dims = vec![0; perm.len()];
+    let mut strides = vec![0; perm.len()];
+    permute_layout_into(in_shape, perm, &mut dims, &mut strides);
+    (dims, strides)
+}
+
+/// `permute_layout` without allocation, for ranks up to 8. `dims` and `strides`
+/// must have `perm.len()` entries. Kept apart so the proofs can run it.
+pub fn permute_layout_into(
+    in_shape: &[usize],
+    perm: &[usize],
+    dims: &mut [u32],
+    strides: &mut [u32],
+) {
+    let rank = in_shape.len();
+    assert_eq!(rank, perm.len(), "perm must name every dimension");
+    assert!(rank <= 8 && dims.len() == rank && strides.len() == rank);
+    let mut in_strides = [1u32; 8];
+    for d in (0..rank.saturating_sub(1)).rev() {
         in_strides[d] = in_strides[d + 1] * in_shape[d + 1] as u32;
     }
-    let dims = perm.iter().map(|&p| in_shape[p] as u32).collect();
-    let strides = perm.iter().map(|&p| in_strides[p]).collect();
-    (dims, strides)
+    for (k, &p) in perm.iter().enumerate() {
+        dims[k] = in_shape[p] as u32;
+        strides[k] = in_strides[p];
+    }
+}
+
+/// The input element the permute kernel reads for output element `i`: the walk
+/// the shader does, from the last output dimension to the first.
+pub fn permute_offset(i: u64, dims: &[u32], strides: &[u32]) -> u64 {
+    let mut rem = i;
+    let mut off = 0u64;
+    for d in (0..dims.len()).rev() {
+        let dim = u64::from(dims[d]);
+        off += (rem % dim) * u64::from(strides[d]);
+        rem /= dim;
+    }
+    off
 }
 
 #[cfg(test)]
@@ -464,5 +494,36 @@ mod tests {
         assert_eq!(strides, vec![1, 12, 4]);
         let (dims, strides) = permute_layout(&[5], &[0]);
         assert_eq!((dims, strides), (vec![5], vec![1]));
+    }
+
+    #[test]
+    fn permute_offset_walks_the_output_in_row_major_order() {
+        let (dims, strides) = permute_layout(&[2, 3, 4], &[2, 0, 1]);
+        assert_eq!(permute_offset(0, &dims, &strides), 0);
+        assert_eq!(permute_offset(1, &dims, &strides), 4);
+        assert_eq!(permute_offset(3, &dims, &strides), 12);
+    }
+
+    #[test]
+    fn permute_offset_visits_every_input_element_exactly_once() {
+        for (shape, perm) in [
+            (vec![2usize, 3, 4], vec![2usize, 0, 1]),
+            (vec![3, 1, 2], vec![1, 2, 0]),
+            (vec![5], vec![0]),
+            (vec![2, 2, 2, 2], vec![3, 2, 1, 0]),
+        ] {
+            let (dims, strides) = permute_layout(&shape, &perm);
+            let n: u64 = shape.iter().map(|&d| d as u64).product();
+            let mut seen = vec![false; n as usize];
+            for i in 0..n {
+                let off = permute_offset(i, &dims, &strides);
+                assert!(off < n, "{shape:?} {perm:?}: offset {off} for {i}");
+                assert!(
+                    !seen[off as usize],
+                    "{shape:?} {perm:?}: {off} visited twice"
+                );
+                seen[off as usize] = true;
+            }
+        }
     }
 }

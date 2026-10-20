@@ -7,7 +7,7 @@
 //! text matches; the twin tests compare it with a real adapter for that.
 
 use crate::config::{
-    DeviceCaps, KernelConfig, element_index, grid_fold, permute_layout, tile_grid,
+    DeviceCaps, KernelConfig, element_index, grid_fold, permute_layout, permute_offset, tile_grid,
 };
 use crate::shaders::{Binary, Unary};
 
@@ -133,13 +133,7 @@ pub fn permute(
     let (dims, strides) = permute_layout(in_shape, perm);
     let mut out = Out::new(src.len());
     for_each_thread(src.len() as u64, cfg, caps, |i| {
-        let mut rem = i;
-        let mut off = 0u64;
-        for d in (0..dims.len()).rev() {
-            let dim = u64::from(dims[d]);
-            off += (rem % dim) * u64::from(strides[d]);
-            rem /= dim;
-        }
+        let off = permute_offset(i, &dims, &strides);
         out.write(i, read(src, off).to_bits());
     });
     out.finish()
