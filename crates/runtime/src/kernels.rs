@@ -46,7 +46,11 @@ fn relu(input: &[f32]) -> Vec<f32> {
 /// `1 / (1 + exp(-x))` in `f32`. Large negative `x` makes `exp` overflow to
 /// infinity and the result 0 without producing NaN; NaN propagates.
 fn sigmoid(input: &[f32]) -> Vec<f32> {
-    input.iter().map(|&x| 1.0 / (1.0 + (-x).exp())).collect()
+    input.iter().map(|&x| sigmoid_one(x)).collect()
+}
+
+pub(crate) fn sigmoid_one(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
 }
 
 /// Row-major `[m, k] x [k, n]`. Each output element sums in ascending `k`

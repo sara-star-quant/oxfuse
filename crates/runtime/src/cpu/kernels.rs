@@ -14,10 +14,37 @@ pub(super) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
             shapes[1][1],
         ),
         Op::Transpose { perm } => transpose(inputs[0], shapes[0], perm),
-        Op::Relu | Op::Sigmoid | Op::Add | Op::Mul | Op::Reshape { .. } => {
+        Op::Sigmoid => sigmoid(inputs[0]),
+        Op::Relu | Op::Add | Op::Mul | Op::Reshape { .. } => {
             crate::kernels::apply(op, inputs, shapes)
         }
     }
+}
+
+/// Elements below which splitting Sigmoid across threads costs more than it
+/// saves. Only Sigmoid is split: it is bound by `exp`, while Relu, Add and Mul
+/// are bound by memory and got slower when split (see docs/benchmarks.md).
+#[cfg(feature = "parallel")]
+const SIGMOID_PARALLEL_MIN: usize = 1 << 16;
+#[cfg(feature = "parallel")]
+const SIGMOID_CHUNK: usize = 1 << 13;
+
+/// Each element is computed alone, so the bits do not depend on the split.
+fn sigmoid(input: &[f32]) -> Vec<f32> {
+    #[cfg(feature = "parallel")]
+    if input.len() >= SIGMOID_PARALLEL_MIN {
+        use rayon::prelude::*;
+        let mut out = vec![0.0f32; input.len()];
+        out.par_chunks_mut(SIGMOID_CHUNK)
+            .zip(input.par_chunks(SIGMOID_CHUNK))
+            .for_each(|(out, input)| {
+                for (o, &x) in out.iter_mut().zip(input) {
+                    *o = crate::kernels::sigmoid_one(x);
+                }
+            });
+        return out;
+    }
+    crate::kernels::apply(&Op::Sigmoid, &[input], &[])
 }
 
 /// Cache tile sizes. `KC` rows of B by `NC` columns stay hot while every row
