@@ -62,6 +62,13 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   three times slower than no blocking at all). Results stay inside the
   documented bound of the float64 result but are not bit-identical to the
   reference, because the device fuses multiply-add.
+- Executor, buffer reuse: a computed operand that no later step reads and that
+  is not an output is overwritten by Relu, Sigmoid, Add and Mul when it has the
+  result's size, Reshape moves it, and any operand a step read last is freed
+  at once, so peak memory is the live set. The operations and their operand
+  order are unchanged, so the bits are too. The 256 pipeline with threads, 128
+  us to 105 us (the unoptimized graph and single operations have no computed
+  operand to reuse and did not move). Kept.
 - Add, Relu, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Splitting them across threads made them slower

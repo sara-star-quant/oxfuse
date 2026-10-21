@@ -37,10 +37,11 @@ fn zip_scalar(inputs: &[&[f32]], shapes: &[&[usize]], f: impl Fn(f32, f32) -> f3
 
 /// `x > 0 ? x : 0`, with NaN propagating. `-0.0` maps to `+0.0`.
 fn relu(input: &[f32]) -> Vec<f32> {
-    input
-        .iter()
-        .map(|&x| if x.is_nan() || x > 0.0 { x } else { 0.0 })
-        .collect()
+    input.iter().map(|&x| relu_one(x)).collect()
+}
+
+pub(crate) fn relu_one(x: f32) -> f32 {
+    if x.is_nan() || x > 0.0 { x } else { 0.0 }
 }
 
 /// `1 / (1 + exp(-x))` in `f32`. Large negative `x` makes `exp` overflow to
