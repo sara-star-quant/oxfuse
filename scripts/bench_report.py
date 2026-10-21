@@ -35,7 +35,9 @@ fast CPU backend in the same run, on one thread and on all threads. `gpu-cold` i
 compile plus the first run (a driver may cache compiled shaders across samples, so
 it is a lower bound on a first run in a new process). `gpu-resident` keeps inputs
 on the device and times `run_device` until the device is idle, including the copy
-of the outputs. `gpu-with-transfers` is a host `run`: upload, run, download. The
+of the outputs. `gpu-batched` is the resident run with 16 submits per wait, timed
+per run, so the gap to `gpu-resident` is the cost of one submit-and-wait.
+`gpu-with-transfers` is a host `run`: upload, run, download. The
 last column divides the best CPU time by the resident GPU time, so a value below
 1 means the GPU is slower. GPU results are not bit-identical to the CPU rows (see
 `semantics.md`).
@@ -157,7 +159,7 @@ def fmt_time(ns):
     return f"{ns / 1e3:.1f} us" if ns < 1e6 else f"{ns / 1e6:.2f} ms"
 
 
-GPU_ORDER = ["gpu-cold", "gpu-resident", "gpu-with-transfers", "cpu", "cpu-threads"]
+GPU_ORDER = ["gpu-cold", "gpu-resident", "gpu-batched", "gpu-with-transfers", "cpu", "cpu-threads"]
 
 
 def gpu_table(group, by_size):

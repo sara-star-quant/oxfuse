@@ -1,10 +1,12 @@
-//! The GPU backend against the fast CPU backend on the same work, in four ways:
+//! The GPU backend against the fast CPU backend on the same work, in five ways:
 //!
 //! - `gpu-cold`: compile (pipelines, buffers) plus the first run, one fresh
 //!   executable per sample. A driver may cache compiled shaders across samples,
 //!   so this is a lower bound on a true first run in a new process.
 //! - `gpu-resident`: inputs already on the device; times `run_device` until the
 //!   device is idle, including the copy of the outputs into fresh buffers.
+//! - `gpu-batched`: the same resident run, but 16 submits per wait; the time is
+//!   per run, so the gap to `gpu-resident` is the cost of one submit-and-wait.
 //! - `gpu-with-transfers`: host tensors in and out, what `run` costs a caller.
 //! - `cpu` (one thread) and `cpu-threads`: the fast CPU backend, in the same run.
 //!
@@ -16,6 +18,8 @@ use oxfuse_runtime::{Backend, CpuBackend, Executable, Tensor};
 use oxfuse_wgpu::{DeviceTensor, WgpuBackend};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
+
+const BATCH: u32 = 16;
 
 fn data(len: usize, seed: u32) -> Vec<f32> {
     let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
@@ -80,6 +84,18 @@ fn compare(
         b.iter(|| {
             black_box(exe.run_device(&device_inputs).unwrap());
             wait(&gpu);
+        })
+    });
+    group.bench_with_input(BenchmarkId::new("gpu-batched", size), &size, |b, _| {
+        b.iter_custom(|iters| {
+            let start = Instant::now();
+            for _ in 0..iters {
+                for _ in 0..BATCH {
+                    black_box(exe.run_device(&device_inputs).unwrap());
+                }
+                wait(&gpu);
+            }
+            start.elapsed() / BATCH
         })
     });
     group.bench_with_input(
