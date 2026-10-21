@@ -9,7 +9,7 @@ homepage.workspace = true
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
-description = "Typed tensor-graph IR with shape inference, a verifier and exact optimization passes."
+description = "Typed tensor-graph intermediate representation (IR) with shape inference, a verifier and exact optimization passes."
 
 [dependencies]
 thiserror.workspace = true
