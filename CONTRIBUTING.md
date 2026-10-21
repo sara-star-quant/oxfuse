@@ -21,29 +21,9 @@ Oxfuse is a small, deliberately scoped project. See the [roadmap](ROADMAP.md) fo
 - A new op: follow [adding-an-op.md](docs/adding-an-op.md). The test suite fails if an op has no example or no README row.
 - A new pass: follow "Adding a pass" in [optimization-passes.md](docs/optimization-passes.md). Passes must be exact.
 
-## Known equivalent mutants
+## Mutation testing
 
-`cargo mutants` reports these in `crates/runtime/src/cpu/mod.rs` as missed. Neither can change a result: they only decide whether an output buffer is moved or copied, so the bits are the same.
-
-- `uses[slot] += 1` replaced by `*=`: every count stays 0, so every output is copied.
-- the guard `uses[slot] == 1` replaced by `false`: every output is copied.
-
-The opposite mutation (always move) is caught by `same_value_can_be_output_twice`.
-
-In `matmul_rows` (`crates/runtime/src/cpu/kernels.rs`), replacing the leftover-column guard `j < j1` with `j <= j1` is also missed. When `j == j1` the leftover loop runs over empty slices, so nothing changes. A related mutant, `+=` replaced by `*=` in that leftover loop, times out instead of failing: the result is wrong and the run is killed, which counts as caught.
-
-### GPU crate
-
-Mutation testing of the host-side code in `crates/wgpu/src/{config,bounds,model,exec}.rs` (about 450 mutants, run per file with the test binaries that exercise it, on the recorded adapter) leaves only mutants that cannot change an output. The WGSL text is not covered by `cargo mutants`; the kernels are checked by planting bugs in them by hand (see the ledger) and by the device tests.
-
-- `exec.rs`: `|` replaced by `^` on `wgpu::BufferUsages` flags. The flags are disjoint bits, so the result is the same.
-- `exec.rs`: the guard that sends a rank-two `[1, 0]` transpose to the tiled kernel replaced by `false`, or `len() == 2` replaced by `!=`. The generic permute kernel gives the same bits, so only the choice of kernel changes. The identity permutation `[0, 1]` and rank-zero transposes have their own tests.
-- `context.rs`: deleting `power_preference` from the adapter request. It only chooses between several adapters, which a one-adapter machine cannot show.
-- `config.rs`: in `tile_grid`, `rows == 0 || ...` replaced by `&&`. A zero row count still produces zero tiles, which `grid_fold` rejects.
-- `model.rs`: the matmul tile loop bound `k0 < k` replaced by `<=`, or `k - k0` replaced by `k + k0` in `kmax`. The extra iterations read zero-filled tile cells and add `+0.0`, which cannot change a sum that starts at `+0.0`. The same holds for the shader's bound.
-- `model.rs`: `t + 1` replaced by `t * 1` in the transpose tile stride. The padding exists to avoid bank conflicts on a device, which the model does not have.
-- `model.rs`: the `(true, true)` arm of `binary` deleted. The fallback gives the same length.
-- `model.rs`: `k0 += t` replaced by `*=` times out: the loop never ends, which counts as caught.
+`just mutants` runs the tests against small code breakages. The results, how to rerun them and the explained survivors are in [docs/mutation-testing.md](docs/mutation-testing.md). A new survivor gets a test or an entry there.
 
 ## Known test limit
 

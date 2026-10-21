@@ -22,7 +22,7 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 | Correct against an independent implementation | NumPy float64 oracle, seeded random corpus plus all examples |
 | Fast backend equals reference, bit for bit | Contract tests, random-graph tests, differential fuzzing |
 | Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
-| Tests detect real defects | cargo-mutants: 268 of 280 caught, survivors documented |
+| Tests detect real defects | cargo-mutants: 1078 of 1097 viable mutants stopped, the other 19 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
 | GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
 | Builds on Rust 1.88 or newer | MSRV job in CI |
