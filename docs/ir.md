@@ -55,6 +55,12 @@ graph {
 
 ## The JSON file
 
-`format_version` 1 is the only version. The top-level fields are `format_version`, `inputs` (optional), `constants` (optional), `nodes` and `outputs`. Unknown fields are errors. Inputs and constants carry `name`, `dtype` (`"f32"`) and `shape`; constants also carry `values`. Nodes carry `name`, `op`, `inputs` (names) and optional `attrs` (`shape`, `perm`). Nodes may appear in any order. JSON cannot express NaN or infinity, so values from files are finite. A graph is limited to 64 MiB of file, 100,000 values, 2^28 elements per tensor and 2^29 elements in total.
+`format_version` is 1 today. The top-level fields are `format_version`, `inputs` (optional), `constants` (optional), `nodes` and `outputs`. Unknown fields are errors. Inputs and constants carry `name`, `dtype` (`"f32"`) and `shape`; constants also carry `values`. Nodes carry `name`, `op`, `inputs` (names) and optional `attrs` (`shape`, `perm`). Nodes may appear in any order. JSON cannot express NaN or infinity, so values from files are finite. By default a graph can be 64 MiB of file, 100,000 values, 2^28 elements per tensor and 2^29 elements in total, with tensors up to rank 8.
 
-Version 1 is frozen once published: a breaking change bumps the version and the loader keeps reading the old one.
+These are defaults, not part of the format. They live in `Limits`, so a library user can pass higher ones without any format change, and the command-line tool could get flags for them later.
+
+The format has its own number, separate from the crate version. Files written for a version keep loading: when the format changes, the new version gets a new number and later releases read both. The releases are listed on [GitHub](https://github.com/sara-star-quant/oxfuse/releases).
+
+| `format_version` | Since | Read by |
+|---|---|---|
+| 1 | 0.1.0 | every release |
