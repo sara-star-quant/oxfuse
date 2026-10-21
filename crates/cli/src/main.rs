@@ -142,6 +142,19 @@ mod tests {
     }
 
     #[test]
+    fn each_backend_argument_selects_its_own_backend() {
+        use oxfuse_cli::BackendKind;
+        // Reference and cpu print the same bytes, so only a direct check can tell them apart.
+        assert_eq!(
+            BackendKind::from(BackendArg::Reference),
+            BackendKind::Reference
+        );
+        assert_eq!(BackendKind::from(BackendArg::Cpu), BackendKind::Cpu);
+        #[cfg(feature = "wgpu")]
+        assert_eq!(BackendKind::from(BackendArg::Wgpu), BackendKind::Wgpu);
+    }
+
+    #[test]
     fn any_other_write_error_fails() {
         for kind in [io::ErrorKind::PermissionDenied, io::ErrorKind::WriteZero] {
             assert_eq!(
