@@ -69,6 +69,15 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   order are unchanged, so the bits are too. The 256 pipeline with threads, 128
   us to 105 us (the unoptimized graph and single operations have no computed
   operand to reuse and did not move). Kept.
+- Transpose, rank 2: tiles of 16 rows, each writing a run of 16 contiguous
+  output floats, instead of 32 x 32 tiles. 590 us to 465 us at 1024 x 1024
+  (1.27x). With the `parallel` feature the output rows are also split into
+  bands of 64 across threads above 2^18 elements: 280 us (2.1x). Kept. Tried
+  and dropped: a 4 x 4 register block and 8, 16 and 32 element blocks copied
+  through a local array (630 to 715 us, slower than the baseline), and
+  rectangular tiles. In a harness where the dimensions were compile-time
+  constants the 16-row tile reached 300 us, but that came from the compiler
+  specializing the strides, not from the loop, so it is not a result.
 - Add, Relu, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Splitting them across threads made them slower
