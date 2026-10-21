@@ -1,6 +1,6 @@
 # Optimization passes
 
-`oxfuse run` and `oxfuse inspect` run three passes once, in this order: `fold`, `cse`, `dce`. Every pass is exact: the optimized graph computes bit-identical outputs to the unoptimized one on the reference backend, including NaN, infinity and signed zero. Errors are identical too: an output that overflows fails the same way with and without optimization, and an overflowing dead node fails in neither.
+`oxfuse run` and `oxfuse inspect` run four passes once, in this order: `fold`, `layout`, `cse`, `dce`. Every pass is exact: the optimized graph computes bit-identical outputs to the unoptimized one on the reference backend, including NaN, infinity and signed zero. Errors are identical too: an output that overflows fails the same way with and without optimization, and an overflowing dead node fails in neither.
 
 The `PassManager` enforces the rules around the passes:
 
@@ -8,7 +8,7 @@ The `PassManager` enforces the rules around the passes:
 - a pass that returns an invalid graph is rejected, naming the pass;
 - a pass that changes the graph interface (input names, order and types; output names, order and types) is rejected, naming the pass. Output names are stored in the graph, so merging or folding a value never renames an output.
 
-Usage: `oxfuse inspect FILE` shows the IR before and after each pass. `oxfuse run FILE --dump-ir` prints the same stages to stderr, before the error line when the run fails (if a pass itself fails, only the input stage is shown). `--no-opt` skips every pass. `--disable-pass NAME` skips one (`fold`, `cse`, `dce`); an unknown name is an error even with `--no-opt`.
+Usage: `oxfuse inspect FILE` shows the IR before and after each pass. `oxfuse run FILE --dump-ir` prints the same stages to stderr, before the error line when the run fails (if a pass itself fails, only the input stage is shown). `--no-opt` skips every pass. `--disable-pass NAME` skips one (`fold`, `layout`, `cse`, `dce`); an unknown name is an error even with `--no-opt`.
 
 ## fold: constant folding
 
@@ -18,6 +18,15 @@ Usage: `oxfuse inspect FILE` shows the IR before and after each pass. `oxfuse ru
 - **Postconditions:** same values, same names, same outputs. Folded nodes are now constants; the constants they consumed may be unused.
 - **Risks:** a different evaluator would change results (use the backend's kernels); folding a huge node spends compile-time memory and time (hence the cap on outputs and inputs; for a `MatMul` whose operands and result each have at most n elements the work is at most n^1.5 multiply-adds, about 2^30 at the cap); a non-finite folded constant is legal and behaves like the run-time NaN or infinity.
 - **Tests:** `passes/fold.rs` unit tests; `runtime/tests/folding.rs` against the real kernels; the `fold_chain` snapshot; the property tests; the error-parity test in `cli/tests/optimization.rs`.
+
+## layout: layout elision
+
+- **Purpose:** drop copies that only move bits and cancel out.
+- **Rule:** two `Transpose` nodes in a row become one `Transpose` with the composed permutation (output dimension `i` is input dimension `inner[outer[i]]`), or nothing when it is the identity. Two `Reshape` nodes in a row become one `Reshape` of the first input, or nothing when the final shape equals the first input's shape. A single `Transpose` with the identity permutation or a `Reshape` to the shape it already has is aliased to its input. Longer chains collapse because the pass looks through the already rewritten node.
+- **Not combined:** a `Transpose` followed by a `Reshape`, or the reverse; any other op in between. An intermediate that another node or an output reads stays; dead-code elimination removes it when nothing does.
+- **Postconditions:** same values and bits, same names and outputs; fewer nodes.
+- **Risks:** composing the permutations in the wrong order, which only shows on rank 3 or more with two different permutations (the unit tests and `runtime/tests/layout_equivalence.rs` use such a pair); losing an output name.
+- **Tests:** `passes/layout.rs` unit tests; `runtime/tests/layout_equivalence.rs` against the unoptimized graph on the reference backend; the property tests.
 
 ## cse: common-subexpression elimination
 

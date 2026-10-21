@@ -28,7 +28,7 @@ enum Command {
         /// Skip every optimization pass
         #[arg(long)]
         no_opt: bool,
-        /// Disable one pass by name (fold, cse, dce); repeatable
+        /// Disable one pass by name (fold, layout, cse, dce); repeatable
         #[arg(long = "disable-pass")]
         disable_pass: Vec<String>,
         /// Print the IR before and after each pass to stderr

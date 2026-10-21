@@ -6,7 +6,7 @@ Oxfuse is three crates, an optional fourth for GPUs, and a one-way pipeline.
 JSON file
    |  oxfuse (crates/cli): loader, GraphFile types, commands
    v
-Graph  --- PassManager (fold, cse, dce) --->  Graph      oxfuse-core
+Graph  --- PassManager (fold, layout, cse, dce) --->  Graph      oxfuse-core
    |
    |  Plan::build                                         oxfuse-runtime
    v
@@ -28,7 +28,7 @@ Dependencies point one way: core knows nothing about files or backends. That is 
 ## What happens to a graph
 
 1. **Load.** The loader checks the file size, parses the JSON (unknown fields are errors), checks names, orders the nodes topologically, and drives the `GraphBuilder`. The builder infers every type with the shape rules and enforces the `Limits`, so a `Graph` that exists is already well typed. Errors carry a stable code and, where a place in the file is known, a JSON path.
-2. **Optimize.** `PassManager` runs `fold`, `cse`, `dce` once, in that order. It verifies the graph and its limits before the first pass and after each one, and rejects a pass that changes the graph's interface. Passes rebuild the graph instead of editing it. See [optimization-passes.md](optimization-passes.md).
+2. **Optimize.** `PassManager` runs `fold`, `layout`, `cse`, `dce` once, in that order. It verifies the graph and its limits before the first pass and after each one, and rejects a pass that changes the graph's interface. Passes rebuild the graph instead of editing it. See [optimization-passes.md](optimization-passes.md).
 3. **Plan.** `Plan::build` turns the graph into topologically ordered steps over numbered buffer slots, with constants and input bindings resolved up front. No name or hash lookup happens at run time.
 4. **Execute.** A backend compiles the plan and runs it on host tensors.
 

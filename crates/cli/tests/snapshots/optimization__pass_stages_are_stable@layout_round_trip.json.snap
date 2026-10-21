@@ -1,0 +1,50 @@
+---
+source: crates/cli/tests/optimization.rs
+expression: text.trim_end()
+input_file: tests/passes/layout_round_trip.json
+---
+== input ==
+graph {
+  %0 x = input : f32[2, 3]
+  %1 t = Transpose[perm=[1, 0]](%0) : f32[3, 2]
+  %2 u = Transpose[perm=[1, 0]](%1) : f32[2, 3]
+  %3 r = Reshape[shape=[6]](%2) : f32[6]
+  %4 s = Reshape[shape=[3, 2]](%3) : f32[3, 2]
+  %5 y = Relu(%4) : f32[3, 2]
+  output y = %5
+}
+== after fold (changed 0, values 6 -> 6) ==
+graph {
+  %0 x = input : f32[2, 3]
+  %1 t = Transpose[perm=[1, 0]](%0) : f32[3, 2]
+  %2 u = Transpose[perm=[1, 0]](%1) : f32[2, 3]
+  %3 r = Reshape[shape=[6]](%2) : f32[6]
+  %4 s = Reshape[shape=[3, 2]](%3) : f32[3, 2]
+  %5 y = Relu(%4) : f32[3, 2]
+  output y = %5
+}
+== after layout (changed 2, values 6 -> 5) ==
+graph {
+  %0 x = input : f32[2, 3]
+  %1 t = Transpose[perm=[1, 0]](%0) : f32[3, 2]
+  %2 r = Reshape[shape=[6]](%0) : f32[6]
+  %3 s = Reshape[shape=[3, 2]](%0) : f32[3, 2]
+  %4 y = Relu(%3) : f32[3, 2]
+  output y = %4
+}
+== after cse (changed 0, values 5 -> 5) ==
+graph {
+  %0 x = input : f32[2, 3]
+  %1 t = Transpose[perm=[1, 0]](%0) : f32[3, 2]
+  %2 r = Reshape[shape=[6]](%0) : f32[6]
+  %3 s = Reshape[shape=[3, 2]](%0) : f32[3, 2]
+  %4 y = Relu(%3) : f32[3, 2]
+  output y = %4
+}
+== after dce (changed 2, values 5 -> 3) ==
+graph {
+  %0 x = input : f32[2, 3]
+  %1 s = Reshape[shape=[3, 2]](%0) : f32[3, 2]
+  %2 y = Relu(%1) : f32[3, 2]
+  output y = %2
+}

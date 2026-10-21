@@ -5,11 +5,13 @@
 mod cse;
 mod dce;
 mod fold;
+mod layout;
 mod rebuild;
 
 pub use cse::CommonSubexpressionElimination;
 pub use dce::DeadCodeElimination;
 pub use fold::{ConstEvaluator, ConstantFolding};
+pub use layout::LayoutElision;
 
 use crate::{Error, Graph, Limits, TensorType};
 use std::sync::Arc;
@@ -166,13 +168,15 @@ fn check(graph: &Graph, limits: &Limits, context: &str) -> Result<(), Error> {
         .map_err(|e| Error::Verify(format!("{context}: {e}")))
 }
 
-/// The standard pipeline: fold constants, merge duplicates, drop what the
-/// outputs no longer need. The order is deliberate: folding creates
-/// constants that leave their inputs dead, and dead-code elimination runs
-/// last to collect them.
+/// The standard pipeline: fold constants, remove layout round trips, merge
+/// duplicates, drop what the outputs no longer need. The order is deliberate:
+/// folding creates constants that leave their inputs dead, layout elision can
+/// make two nodes identical for CSE, and dead-code elimination runs last to
+/// collect what the others leave unused.
 pub fn default_pipeline(limits: Limits, evaluator: Arc<dyn ConstEvaluator>) -> PassManager {
     PassManager::new(limits.clone())
         .add(ConstantFolding::new(evaluator, limits.clone()))
+        .add(LayoutElision::new(limits.clone()))
         .add(CommonSubexpressionElimination::new(limits.clone()))
         .add(DeadCodeElimination::new(limits))
 }
@@ -355,7 +359,10 @@ mod tests {
             }
         }
         let manager = default_pipeline(Limits::default(), std::sync::Arc::new(Never));
-        assert_eq!(manager.pass_names(), ["fold", "cse", "dce"]);
-        assert_eq!(manager.without("cse").pass_names(), ["fold", "dce"]);
+        assert_eq!(manager.pass_names(), ["fold", "layout", "cse", "dce"]);
+        assert_eq!(
+            manager.without("cse").pass_names(),
+            ["fold", "layout", "dce"]
+        );
     }
 }

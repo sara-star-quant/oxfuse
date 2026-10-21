@@ -653,7 +653,7 @@ mod tests {
         assert_eq!(err.code(), "E106");
         assert_eq!(
             err.to_string(),
-            "unknown pass `nope` (known: fold, cse, dce)"
+            "unknown pass `nope` (known: fold, layout, cse, dce)"
         );
     }
 
