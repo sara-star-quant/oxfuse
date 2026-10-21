@@ -10,7 +10,7 @@ readme = "README.md"
 exclude = ["tests"]
 keywords.workspace = true
 categories.workspace = true
-description = "Command-line tool for oxfuse: a small tensor graph compiler with a reference and a fast CPU backend. Subcommands: check, run, inspect."
+description = "Command-line tool for oxfuse: a small tensor graph compiler with reference and fast CPU backends and an optional wgpu GPU backend. Subcommands: check, run, inspect, gpu-selftest."
 
 [lib]
 name = "oxfuse_cli"
