@@ -8,7 +8,7 @@ Every claim this project makes about itself, with the evidence behind it. A clai
 | The reference backend agrees with an independent NumPy float64 oracle on every example and corpus graph | `scripts/gen_expected.py`, `tests/corpus`, `crates/cli/tests/examples.rs` | `just oracle-check && cargo test -p oxfuse --test examples` |
 | `MatMul` stays within the documented rounding bound | `crates/runtime/src/kernels.rs`, `tests/corpus` | `cargo test -p oxfuse --test examples` |
 | The fast CPU backend returns exactly the reference backend's bits, on every shipped graph and on random graphs | `crates/runtime/tests/backend_contract.rs`, `crates/runtime/tests/cpu_equivalence.rs`, `crates/cli/tests/backends.rs` | `cargo test --workspace` |
-| `oxfuse run` defaults to the fast backend, and the output is the reference's bytes | `crates/cli/tests/backends.rs`, `docs/decisions/0011-default-backend.md` | `cargo test -p oxfuse --test backends` |
+| `oxfuse run` defaults to the fast backend, and the output is the reference's bytes | `crates/cli/tests/backends.rs`, `docs/architecture.md` | `cargo test -p oxfuse --test backends` |
 | The threaded matmul returns the same bits at any thread count | `crates/runtime/src/cpu/kernels.rs` | `just test-parallel` |
 | `Sigmoid` on the fast backend needs no separate accuracy bound because it runs the reference code | `crates/runtime/src/cpu/kernels.rs` | read the dispatch in `apply` |
 | Shapes are inferred for every op, and every IR invariant is re-checked after each pass | `crates/core/src/shape.rs`, `crates/core/src/verify.rs`, `crates/core/src/passes/mod.rs` | `cargo test -p oxfuse-core` |

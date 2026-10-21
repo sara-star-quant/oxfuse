@@ -218,8 +218,7 @@ pub fn matmul(
             );
             // One accumulator per output a thread owns, indexed [thread][i][j].
             let mut acc = vec![0.0f32; (t * t * r * r) as usize];
-            let mut k0 = 0;
-            while k0 < k {
+            for k0 in (0..k).step_by(usize::try_from(t).expect("a tile edge fits usize")) {
                 // Workgroup memory starts undefined; reading a cell nobody loaded panics.
                 let cells = (block * t) as usize;
                 let mut a_tile: Vec<Option<f32>> = vec![None; cells];
@@ -261,7 +260,6 @@ pub fn matmul(
                     }
                 }
                 // barrier
-                k0 += t;
             }
             for ly in 0..t {
                 for lx in 0..t {

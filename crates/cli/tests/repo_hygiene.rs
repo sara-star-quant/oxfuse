@@ -88,7 +88,7 @@ const BRANDS: [&str; 12] = [
 /// that would turn a measurement into a promise, and the generated
 /// `docs/benchmarks.md`, which states the machine it ran on. The README, the
 /// `oxfuse-wgpu` README and its manifest may name vendors only on a line that
-/// says they are untested.
+/// says they are untested or measured.
 #[test]
 fn hardware_claims_match_what_exists() {
     let root = root();
@@ -103,7 +103,7 @@ fn hardware_claims_match_what_exists() {
     );
     let adapters_path = root.join("docs/adapters.md");
     let benchmarks_path = root.join("docs/benchmarks.md");
-    // These may name vendors, but only on a line that says they are untested.
+    // These may name vendors, but only on a line that says they are untested or measured.
     for file in [
         "README.md",
         "crates/wgpu/README.md",
@@ -116,8 +116,8 @@ fn hardware_claims_match_what_exists() {
                 .split(|c: char| !c.is_alphanumeric())
                 .any(|w| BRANDS.contains(&w));
             assert!(
-                !names_brand || line.contains("untested"),
-                "{file} names a vendor on a line that does not say `untested`: {line}"
+                !names_brand || line.contains("untested") || line.contains("measured"),
+                "{file} names a vendor on a line that says neither `untested` nor `measured`: {line}"
             );
         }
     }

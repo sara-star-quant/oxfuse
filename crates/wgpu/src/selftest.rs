@@ -100,13 +100,19 @@ fn bits(v: &[f32]) -> Vec<u32> {
 }
 
 /// Every exponent and sign, a handful of mantissas each.
+/// The bits of an `f32` from its sign, exponent and mantissa fields. The fields
+/// do not overlap, so adding them is the same as or-ing them and a wrong shift shows.
+fn bit_pattern(sign: u32, exponent: u32, mantissa: u32) -> u32 {
+    (sign << 31) + (exponent << 23) + mantissa
+}
+
 fn pattern_sweep() -> Vec<f32> {
     let mantissas = [0u32, 1, 2, 0x40_0000, 0x55_5555, 0x7f_fffe, 0x7f_ffff];
     let mut out = Vec::new();
     for sign in [0u32, 1] {
         for exponent in 0..=255u32 {
             for m in mantissas {
-                out.push(f32::from_bits(sign << 31 | exponent << 23 | m));
+                out.push(f32::from_bits(bit_pattern(sign, exponent, m)));
             }
         }
     }
@@ -336,6 +342,16 @@ mod tests {
             [0x3f80_0000, 0x8000_0000, 0x7f80_0000]
         );
         assert!(bits(&[]).is_empty());
+    }
+
+    #[test]
+    fn bit_pattern_places_each_field() {
+        assert_eq!(bit_pattern(0, 0, 0), 0);
+        assert_eq!(bit_pattern(1, 0, 0), 0x8000_0000);
+        assert_eq!(bit_pattern(0, 1, 0), 0x0080_0000);
+        assert_eq!(bit_pattern(0, 0, 1), 1);
+        assert_eq!(bit_pattern(1, 255, 0x7f_ffff), u32::MAX);
+        assert_eq!(f32::from_bits(bit_pattern(0, 127, 0)), 1.0);
     }
 
     #[test]

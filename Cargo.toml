@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/core", "crates/runtime", "crates/cli", "crates/wgpu", "crates/onnx"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -16,8 +16,8 @@ categories = ["compilers", "mathematics", "science"]
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 ndarray = "0.17.2"
 rayon = "1.12.0"
-oxfuse-core = { path = "crates/core", version = "0.2.1" }
-oxfuse-runtime = { path = "crates/runtime", version = "0.2.1" }
+oxfuse-core = { path = "crates/core", version = "0.3.0" }
+oxfuse-runtime = { path = "crates/runtime", version = "0.3.0" }
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -26,8 +26,8 @@ insta = { version = "1.49.0", features = ["glob"] }
 proptest = "1.12.0"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "metal", "vulkan", "dx12", "wgsl"] }
 pollster = "1.0.1"
-oxfuse-wgpu = { path = "crates/wgpu", version = "0.2.1" }
-oxfuse-onnx = { path = "crates/onnx", version = "0.2.1" }
+oxfuse-wgpu = { path = "crates/wgpu", version = "0.3.0" }
+oxfuse-onnx = { path = "crates/onnx", version = "0.3.0" }
 prost = { version = "0.14.4", default-features = false, features = ["derive", "std"] }
 
 [workspace.lints.rust]

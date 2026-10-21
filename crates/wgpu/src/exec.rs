@@ -306,7 +306,7 @@ impl WgpuExecutable {
                     scratch[step.output] = Some(device.create_buffer(&wgpu::BufferDescriptor {
                         label: None,
                         size: out_elements * 4,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                        usage: wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
                         mapped_at_creation: false,
                     }));
                     Some(Dispatch {
@@ -334,7 +334,7 @@ impl WgpuExecutable {
                 let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: None,
                     contents: &bytes,
-                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                    usage: wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
                 });
                 (*slot, buffer)
             })
@@ -368,7 +368,7 @@ impl WgpuExecutable {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
                 contents: &bytes,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                usage: wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
             });
         self.check_device()?;
         Ok(DeviceTensor {
@@ -383,7 +383,7 @@ impl WgpuExecutable {
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::MAP_READ.union(wgpu::BufferUsages::COPY_DST),
             mapped_at_creation: false,
         });
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -502,8 +502,8 @@ impl WgpuExecutable {
                 label: None,
                 size,
                 usage: wgpu::BufferUsages::STORAGE
-                    | wgpu::BufferUsages::COPY_SRC
-                    | wgpu::BufferUsages::COPY_DST,
+                    .union(wgpu::BufferUsages::COPY_SRC)
+                    .union(wgpu::BufferUsages::COPY_DST),
                 mapped_at_creation: false,
             });
             encoder.copy_buffer_to_buffer(
