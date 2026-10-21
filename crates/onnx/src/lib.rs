@@ -1,5 +1,18 @@
 //! ONNX import for oxfuse: decode a model, check its structure, lower the
-//! supported float32 subset into the oxfuse IR.
+//! supported float32 subset into the oxfuse IR. Anything outside the subset
+//! is an error that names the node and the reason, never an approximation.
+//!
+//! Part of [oxfuse](https://github.com/sara-star-quant/oxfuse). The imported
+//! graph runs on any oxfuse backend:
+//!
+//! ```no_run
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let bytes = std::fs::read("model.onnx")?;
+//! let graph = oxfuse_onnx::import(&bytes, &oxfuse_onnx::ImportOptions::default())?;
+//! # let _ = graph;
+//! # Ok(())
+//! # }
+//! ```
 
 mod decode;
 mod error;

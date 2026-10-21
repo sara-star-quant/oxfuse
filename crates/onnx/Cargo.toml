@@ -6,10 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-categories.workspace = true
+categories = ["artificial-intelligence", "parser-implementations", "compilers"]
 description = "ONNX import for oxfuse: a small float32 operator subset lowered into the oxfuse IR, with every unsupported feature rejected by a named error."
 readme = "README.md"
-keywords = ["onnx", "tensor", "import", "compiler", "ir"]
+keywords = ["onnx", "tensor", "inference", "import", "ml"]
 exclude = ["tests"]
 
 [dependencies]

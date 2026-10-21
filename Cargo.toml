@@ -9,8 +9,8 @@ rust-version = "1.88"
 license = "Apache-2.0"
 repository = "https://github.com/sara-star-quant/oxfuse"
 homepage = "https://github.com/sara-star-quant/oxfuse"
-keywords = ["tensor", "compiler", "ir", "optimization", "graph"]
-categories = ["compilers", "mathematics", "science"]
+keywords = ["tensor", "inference", "onnx", "compiler", "deterministic"]
+categories = ["artificial-intelligence", "compilers", "mathematics"]
 
 [workspace.dependencies]
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }

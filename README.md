@@ -6,7 +6,18 @@
 [![MSRV](https://img.shields.io/crates/msrv/oxfuse)](https://crates.io/crates/oxfuse)
 [![license](https://img.shields.io/crates/l/oxfuse.svg)](LICENSE)
 
-A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimizes it without changing results, and runs it on the CPU or, optionally, on a GPU through wgpu. Experimental, not for production use.
+A tensor-graph compiler in Rust. Define a tensor graph once (JSON, or an ONNX model), type-check it, optimize it without changing results, and run it on the reference CPU backend, the fast CPU backend or, optionally, a GPU through wgpu (Vulkan, Metal, DX12). Experimental, not for production use.
+
+## Who it is for
+
+Oxfuse is a small tensor graph compiler whose claims come with evidence. It fits when you want:
+
+- **Exact, reproducible results** for small float32 graphs and ONNX models: the CPU backends return the same bits on every machine and thread count.
+- **An oracle for other runtimes**: golden outputs for tests, or a check that another stack's result is right.
+- **A GPU numerical probe**: `oxfuse gpu-selftest` reports FMA use, subnormal flushing, NaN behavior and ulp error on any wgpu adapter.
+- **A readable reference** for how a typed IR, a verifier and exact optimization passes fit together.
+
+It is not for production inference, large models, training, or speed-critical CPU work. For those, use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`. The operator set is seven float32 ops plus a small ONNX subset, with no broadcasting beyond a scalar operand.
 
 ## What it does
 
@@ -53,9 +64,11 @@ The GPU backend runs on wgpu. It is measured on an Apple M1 Pro (Metal), a Tesla
 
 ## Install
 
-    cargo install oxfuse                    # CPU backends
-    cargo install oxfuse --features wgpu    # adds the GPU backend
-    cargo install oxfuse --features onnx    # adds ONNX model import
+```sh
+cargo install oxfuse                    # CPU backends
+cargo install oxfuse --features wgpu    # adds the GPU backend
+cargo install oxfuse --features onnx    # adds ONNX model import
+```
 
 As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend and `oxfuse-onnx` for ONNX import.
 

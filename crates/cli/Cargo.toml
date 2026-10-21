@@ -8,9 +8,9 @@ repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
 exclude = ["tests"]
-keywords.workspace = true
-categories.workspace = true
-description = "Command-line tool for oxfuse: a small tensor graph compiler with reference and fast CPU backends and an optional wgpu GPU backend. Optional ONNX import. Subcommands: check, run, inspect, gpu-selftest."
+keywords = ["onnx", "tensor", "inference", "wgpu", "compiler"]
+categories = ["command-line-utilities", "artificial-intelligence", "compilers"]
+description = "Tensor graph compiler and runner: ONNX import, bit-exact CPU backends, optional wgpu GPU backend. Commands: check, run, inspect, gpu-selftest."
 
 [lib]
 name = "oxfuse_cli"
@@ -40,3 +40,6 @@ onnx = ["dep:oxfuse-onnx"]
 
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

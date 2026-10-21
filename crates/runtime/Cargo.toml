@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
-keywords.workspace = true
+keywords = ["tensor", "inference", "deterministic", "cpu", "ml"]
 categories.workspace = true
-description = "Tensors, execution plans and the reference CPU backend for oxfuse graphs."
+description = "Tensors, execution plans and bit-exact CPU backends (reference and fast) for oxfuse graphs."
 
 [dependencies]
 oxfuse-core.workspace = true

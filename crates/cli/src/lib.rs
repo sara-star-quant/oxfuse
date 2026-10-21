@@ -1,4 +1,6 @@
-//! Command-line front end: JSON graph format, loader and commands.
+//! Command-line front end: JSON graph format, loader and commands. This crate
+//! is the `oxfuse` binary; most users want `cargo install oxfuse` and the
+//! [repository README](https://github.com/sara-star-quant/oxfuse).
 
 mod commands;
 mod error;
