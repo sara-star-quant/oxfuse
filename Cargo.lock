@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "insta",
@@ -941,14 +941,14 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "oxfuse-runtime"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "criterion",
  "ndarray",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-wgpu"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "criterion",
  "naga",
