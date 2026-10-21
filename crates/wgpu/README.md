@@ -4,6 +4,10 @@ An optional GPU backend for [oxfuse](https://github.com/sara-star-quant/oxfuse) 
 
 The command-line tool builds it with `--features wgpu` (`oxfuse run --backend wgpu`, `oxfuse gpu-selftest`). `gpu-selftest` measures any adapter against the reference backend.
 
+A complete example, with the bound check and the device-resident path, is `examples/matmul.rs`:
+
+    cargo run --release -p oxfuse-wgpu --example matmul
+
 Experimental. No device or vendor support is claimed.
 
 Licensed under Apache-2.0.
