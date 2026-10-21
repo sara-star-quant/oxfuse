@@ -20,13 +20,17 @@ Run on an Apple M1 Pro on 2026-10-21. Rows without a tree note ran on crates tre
 
 Of the 1337 mutants that compile, 1326 were stopped (99.2%) and the other 11 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
 
-Reproduce:
+Reproduce with `just mutants` (the first two commands below) and `just mutants-gpu crates/wgpu/src/exec.rs` (one GPU host file, needs an adapter). They run:
 
     cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu --test-workspace true -j 2 --timeout 120
     cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
     cargo mutants -p oxfuse-wgpu -f crates/wgpu/src/exec.rs --test-package oxfuse-wgpu -j 2 --timeout 180
 
 The second command is per file; the GPU tests need an adapter, otherwise most of them do nothing. Use `-j 2` and `CARGO_INCREMENTAL=0`, because every worker builds its own copy and four workers fill a laptop disk.
+
+## In CI
+
+`.github/workflows/mutants.yml` reports and never gates. A pull request runs only the mutants that overlap its diff (`--in-diff`), in one job for the CPU-side crates and one for `oxfuse-wgpu` on a software Vulkan adapter. A weekly run covers every mutant of the CPU-side crates in four shards. The missed list is the artifact `mutants.out`. A missed mutant in a changed region needs a test or an entry below. The WGSL text and a second hardware adapter stay outside it, see the end of this page.
 
 ## Survivors
 

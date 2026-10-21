@@ -1,0 +1,92 @@
+name: mutants
+
+# Mutation testing is a measurement, never a gate: the 11 known survivors are
+# explained in docs/mutation-testing.md, so a missed mutant in a touched region
+# is reviewed, not an automatic failure.
+on:
+  pull_request:
+    paths: ["crates/**", "Cargo.toml", "Cargo.lock"]
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # Only the mutants that overlap the pull request's diff.
+  diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-mutants@27.1.0
+      - run: git diff origin/${{ github.base_ref }}.. > pr.diff
+      # The GPU crate needs an adapter; its own job below runs it on software Vulkan.
+      - run: cargo mutants --in-diff pr.diff --exclude 'crates/wgpu/**' --test-workspace true -j 2 --timeout 120
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-diff
+          path: mutants.out
+
+  diff-gpu:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    env:
+      OXFUSE_REQUIRE_ADAPTER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-mutants@27.1.0
+      - run: git diff origin/${{ github.base_ref }}.. > pr.diff
+      - run: cargo mutants --in-diff pr.diff -p oxfuse-wgpu --test-package oxfuse-wgpu -j 2 --timeout 180
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-diff-gpu
+          path: mutants.out
+
+  # Every mutant of the CPU-side crates, split four ways. All shards must use the
+  # same arguments and the same shard count.
+  full:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-mutants@27.1.0
+      - run: cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse -p oxfuse-onnx --features oxfuse/onnx --test-workspace true -j 2 --timeout 120 --shard ${{ matrix.shard }}/4
+        continue-on-error: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-full-${{ matrix.shard }}
+          path: mutants.out

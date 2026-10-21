@@ -44,9 +44,15 @@ corpus:
     python3 -I scripts/gen_expected.py corpus
 
 # Mutation testing: break the code in small ways and list the breakages no test notices.
-# Slow (about 16 minutes); needs `cargo install cargo-mutants`. Results land in mutants.out/.
+# Slow (about 16 minutes for the first line); needs `cargo install cargo-mutants`.
+# Results land in mutants.out/. Two workers, because every worker builds its own copy.
 mutants:
-    cargo mutants --test-workspace true -j 4 --timeout 120
+    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu --test-workspace true -j 2 --timeout 120
+    cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
+
+# Mutants of one GPU host file, for example `just mutants-gpu crates/wgpu/src/exec.rs`. Needs an adapter.
+mutants-gpu file:
+    cargo mutants -p oxfuse-wgpu -f {{file}} --test-package oxfuse-wgpu -j 2 --timeout 180
 
 # Full benchmark run. Slow, noisy on a busy machine; close other apps first.
 bench:
