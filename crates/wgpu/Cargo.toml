@@ -6,10 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-keywords.workspace = true
 categories.workspace = true
-description = "A wgpu compute backend for oxfuse graphs."
-publish = false
+description = "A wgpu GPU compute backend for oxfuse tensor graphs, with a documented numerical contract and a self-test for any adapter."
+readme = "README.md"
+keywords = ["tensor", "gpu", "wgpu", "wgsl", "compute"]
+exclude = ["tests"]
 
 [dependencies]
 oxfuse-core.workspace = true

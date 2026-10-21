@@ -83,9 +83,10 @@ Re-measured at the end of the hardening stage with all targets (`cargo check --w
 
 ## Releasing
 
-Not done yet: no crate is published. The manifests are ready, and `cargo publish --workspace --dry-run --locked` passes. A release, in order:
+Version 0.1.0 of `oxfuse-core`, `oxfuse-runtime` and `oxfuse` was published first. Version 0.2.0 adds `oxfuse-wgpu` and `Error::Backend`, which breaks exhaustive matches on `Error`, so all four crates move together. A release, in order:
 
-1. The repository is public, so the crate pages link somewhere real.
-2. Publish from GitHub Actions with crates.io trusted publishing, or with a token scoped to `publish-new` and `publish-update` for these names.
-3. `cargo publish --workspace --locked` publishes `oxfuse-core`, `oxfuse-runtime`, then `oxfuse` (the command-line tool).
-4. Add the `sara-star-quant` team as an owner of all three crates.
+1. Run the gate: `just ci && just test-parallel && just test-wgpu && just oracle-check && just msrv`, and `cargo publish --workspace --dry-run --locked`.
+2. Publish with a token scoped to `publish-new` and `publish-update` for these names (or with crates.io trusted publishing from GitHub Actions): `cargo publish --workspace --locked`. It publishes `oxfuse-core`, `oxfuse-runtime`, `oxfuse-wgpu`, then `oxfuse` (the command-line tool).
+3. Tag the commit and create a GitHub release.
+4. In a clean directory with no path dependencies, run `cargo install oxfuse --version <new>` and a small consumer crate against the registry versions, and check docs.rs built every crate.
+5. Add the `sara-star-quant` team as an owner of all four crates.
