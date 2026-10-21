@@ -35,9 +35,9 @@ Dependencies point one way: core knows nothing about files or backends. That is 
 ## Backends
 
 - **`ReferenceBackend`** uses naive loops that are meant to be obviously right. It is never optimized, and its kernels are the oracle for everything else.
-- **`CpuBackend`** has its own executor and its own kernels (`crates/runtime/src/cpu/`). Its contract is stronger than a tolerance: for every op it returns the same bits as the reference, including NaN, infinity and signed zero, at any thread count. The fast matmul reorders loops for cache and SIMD but keeps each output element's sum in ascending `k` order from `+0.0`, with no fused multiply-add and no zero skipping. It is the default backend ([decisions/0011-default-backend.md](decisions/0011-default-backend.md)); constant folding still uses the reference kernels. Ops where a custom kernel gained nothing still call the reference kernel; [benchmarks.md](benchmarks.md) records which.
+- **`CpuBackend`** has its own executor and its own kernels (`crates/runtime/src/cpu/`). Its contract is stronger than a tolerance: for every op it returns the same bits as the reference, including NaN, infinity and signed zero, at any thread count. The fast matmul reorders loops for cache and SIMD but keeps each output element's sum in ascending `k` order from `+0.0`, with no fused multiply-add and no zero skipping. It is the default backend; constant folding still uses the reference kernels. Ops where a custom kernel gained nothing still call the reference kernel; [benchmarks.md](benchmarks.md) records which.
 
-- **`WgpuBackend`** (optional feature, crate `oxfuse-wgpu`) runs the plan as compute dispatches on a device. Shapes are static, so compile fixes every buffer, pipeline and dispatch size. It keeps intermediate tensors on the device, offers an explicit `upload`, `run_device` and `download`, and copies results into fresh buffers so they stay valid after the next run ([decisions/0012-device-memory-api.md](decisions/0012-device-memory-api.md)). Its numerical contract has two tiers: [semantics.md](semantics.md). Measured devices: [adapters.md](adapters.md).
+- **`WgpuBackend`** (optional feature, crate `oxfuse-wgpu`) runs the plan as compute dispatches on a device. Shapes are static, so compile fixes every buffer, pipeline and dispatch size. It keeps intermediate tensors on the device, offers an explicit `upload`, `run_device` and `download`, and copies results into fresh buffers so they stay valid after the next run. Its numerical contract has two tiers: [semantics.md](semantics.md). Measured devices: [adapters.md](adapters.md).
 
 The CPU executor borrows inputs and constants and moves computed output buffers out instead of copying. The optional `parallel` feature splits matmul by output rows only, which is why the thread count cannot change a result.
 
@@ -55,6 +55,6 @@ The oracle is independent code in another language, so a bug shared by both back
 
 ## Known limits
 
-- The `Backend` trait assumes host tensors ([decisions/0001-backend-trait-host-tensors.md](decisions/0001-backend-trait-host-tensors.md)). The wgpu executable adds its device API beside it instead of changing the trait; see decision 0012.
+- The `Backend` trait assumes host tensors. The wgpu executable adds its device API beside it instead of changing the trait; see decision 0012.
 - Because the fast backend is bit-identical to the reference by design, no test on outputs can show that a fast kernel was actually dispatched. Only the benchmarks show it. See "Known test limit" in `CONTRIBUTING.md`.
 - Oxfuse is CPU by default. The wgpu backend is optional and is measured, not promised, on the devices in [adapters.md](adapters.md).

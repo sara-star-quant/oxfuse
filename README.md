@@ -23,7 +23,7 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 | Correct against an independent implementation | NumPy float64 oracle, seeded random corpus plus all examples |
 | Fast backend equals reference, bit for bit | Contract tests, random-graph tests, differential fuzzing |
 | Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
-| Tests detect real defects | cargo-mutants: 1332 of 1352 viable mutants stopped, the other 20 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
+| Tests detect real defects | cargo-mutants: 1326 of 1337 viable mutants stopped, the other 11 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
 | GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
 | ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
@@ -49,7 +49,7 @@ Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `
 
 ## GPUs
 
-The GPU backend runs on wgpu, so it should also work on NVIDIA, AMD and Intel Arc cards through Vulkan or DX12, but that is untested so far. So far it is measured on an Apple M1 Pro (Metal) and on software adapters, see [docs/adapters.md](docs/adapters.md). If you try your card, run `oxfuse gpu-selftest` and share the report in an issue.
+The GPU backend runs on wgpu. It is measured on an Apple M1 Pro (Metal), a Tesla T4 (NVIDIA, Vulkan, a free notebook) and on software adapters, see [docs/adapters.md](docs/adapters.md). AMD and Intel Arc cards should work through Vulkan or DX12 but are untested. If you try your card, run `oxfuse gpu-selftest` and share the report in an issue.
 
 ## Install
 
@@ -97,6 +97,6 @@ Full gate: `just ci`. Oracle check: `just oracle-check` (needs `numpy`, see `scr
 
 ## Documentation
 
-[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Design decisions](docs/decisions) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
+[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
 
 Apache-2.0. See [LICENSE](LICENSE).

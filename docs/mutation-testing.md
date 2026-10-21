@@ -4,21 +4,21 @@
 
 ## Result
 
-Run on an Apple M1 Pro on 2026-10-21. Rows marked "crates tree 026fd4c" ran on that tree, `selftest.rs` ran on tree da4eea4 after its tests were added (`git rev-parse --short HEAD:crates` names the tree).
+Run on an Apple M1 Pro on 2026-10-21. Rows without a tree note ran on crates tree 026fd4c; rows with one ran on that tree (`git rev-parse --short HEAD:crates` names the tree).
 
 | Scope | Mutants | Caught | Timed out (counts as caught) | Unviable (do not compile) | Missed |
 |---|---|---|---|---|---|
 | `oxfuse-core`, `oxfuse-runtime`, `oxfuse` (CLI, built with the GPU feature) | 594 | 538 | 4 | 49 | 3 |
 | `oxfuse-wgpu` `config.rs` | 100 | 98 | 0 | 1 | 1 |
 | `oxfuse-wgpu` `bounds.rs` | 45 | 45 | 0 | 0 | 0 |
-| `oxfuse-wgpu` `model.rs` | 250 | 243 | 1 | 2 | 4 |
-| `oxfuse-wgpu` `exec.rs` | 81 | 58 | 0 | 15 | 8 |
+| `oxfuse-wgpu` `model.rs` (tree 2e3e5d7) | 245 | 240 | 0 | 2 | 3 |
+| `oxfuse-wgpu` `exec.rs` (tree 2e3e5d7) | 69 | 52 | 0 | 15 | 2 |
 | `oxfuse-wgpu` `context.rs` | 12 | 7 | 0 | 4 | 1 |
-| `oxfuse-wgpu` `selftest.rs` (tree da4eea4) | 89 | 84 | 0 | 3 | 2 |
+| `oxfuse-wgpu` `selftest.rs` (tree 2e3e5d7) | 91 | 88 | 0 | 3 | 0 |
 | `oxfuse-onnx` (tree 521c719) | 273 | 254 | 0 | 18 | 1 |
-| Total | 1444 | 1327 | 5 | 92 | 20 |
+| Total | 1429 | 1322 | 4 | 92 | 11 |
 
-Of the 1352 mutants that compile, 1332 were stopped (98.5%) and the other 20 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
+Of the 1337 mutants that compile, 1326 were stopped (99.2%) and the other 11 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
 
 Reproduce:
 
@@ -39,16 +39,12 @@ The second command is per file; the GPU tests need an adapter, otherwise most of
 
 - `lower.rs`, `resolve_reshape`: the guard `v > 0` replaced by `v >= 0`. The `0` entry is matched by the arm above it, so the guard never sees zero. The first run of this crate missed 19; they led to tests for the absent-output rule, operand counts, error reasons, expansion strides and attribute types, and to a fix: a Dropout with an empty second output name (the mask left out) was rejected. A review of the finished crate then found a panic on a node without outputs, a `beta = 0` Gemm that let infinity in `C` through, and int64 initializers listed as inputs being rejected; each got a test that failed first, and the attribute value check they led to got its own tests.
 
-### GPU host code (16)
+### GPU host code (7)
 
-- `exec.rs` (6): `|` replaced by `^` on `wgpu::BufferUsages` flags, in `build`, `upload`, `download` and `run_device`. The flags are disjoint bits, so the result is the same.
 - `exec.rs` (2): the guard that sends a rank-two `[1, 0]` transpose to the tiled kernel replaced by `false`, or `==` by `!=`. The generic permute kernel gives the same bits, so only the choice of kernel changes. The identity permutation and rank-zero transposes have their own tests.
 - `context.rs` (1): deleting `power_preference` from the adapter request. It only chooses between several adapters, which a one-adapter machine cannot show.
 - `config.rs` (1): in `tile_grid`, `rows == 0 || cols == 0` with `||` replaced by `&&`. A zero row count still produces zero tiles, which `grid_fold` rejects. Each zero argument has its own test.
-- `model.rs` (4): the matmul tile loop bound `k0 < k` replaced by `<=`, and `k - k0` replaced by `k + k0` in `kmax`. The extra iterations read zero-filled tile cells and add `+0.0`. `t + 1` replaced by `t * 1` in the transpose tile stride: the padding avoids bank conflicts on a device, which the model does not have. The `(true, true)` arm of `binary` deleted: the fallback gives the same length.
-- `selftest.rs` (2): `|` replaced by `^` when `pattern_sweep` builds a bit pattern from sign, exponent and mantissa. The fields do not overlap.
-
-One more mutant, `k0 += t` replaced by `*=` in the model's matmul loop, never ends and times out. A timeout counts as caught.
+- `model.rs` (3): `k - k0` replaced by `k + k0` in `kmax`. The extra iterations read zero-filled tile cells and add `+0.0`. `t + 1` replaced by `t * 1` in the transpose tile stride: the padding avoids bank conflicts on a device, which the model does not have. The `(true, true)` arm of `binary` deleted: the fallback gives the same length.
 
 ## What mutation testing does not cover
 

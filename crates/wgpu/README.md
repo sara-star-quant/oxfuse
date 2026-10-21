@@ -8,7 +8,7 @@ A complete example, with the bound check and the device-resident path, is `examp
 
     cargo run --release -p oxfuse-wgpu --example matmul
 
-The GPU backend runs on wgpu, so it should also work on NVIDIA, AMD and Intel Arc cards through Vulkan or DX12, but that is untested so far. So far it is measured on an Apple M1 Pro (Metal) and on software adapters. If you try your card, run `oxfuse gpu-selftest` and share the report.
+The GPU backend runs on wgpu. It is measured on an Apple M1 Pro (Metal), a Tesla T4 (NVIDIA, Vulkan) and on software adapters. AMD and Intel Arc cards should work through Vulkan or DX12 but are untested. If you try your card, run `oxfuse gpu-selftest` and share the report.
 
 Experimental. No device or vendor support is claimed.
 
