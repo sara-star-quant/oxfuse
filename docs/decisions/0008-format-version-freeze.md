@@ -1,4 +1,4 @@
-# 0008: format version 1 is frozen once published
+# 0008: published format versions keep loading
 
 Date: 2026-10-20. Status: accepted.
 
@@ -8,10 +8,10 @@ The JSON file is the interface users depend on. A format that changes silently m
 
 ## Decision
 
-`format_version` is required and must be 1. Once the format is published, a breaking change bumps the version and the loader keeps reading the old one. Unknown fields are errors, so a typo is never ignored.
+`format_version` is required and must be 1 today. Once a version is published it does not change. A change that would break existing files gets a new number, and later releases read both. Unknown fields are errors, so a typo is never ignored.
 
 ## Consequences
 
 - Files written today keep loading. New fields arrive as a new version, not as a quiet extension.
 - Strict parsing means a field added in a later version fails loudly in an older reader instead of being dropped.
-- Nothing is published yet. The freeze takes effect at the first public release.
+- Version 1 has been public since release 0.1.0, so it is fixed.
