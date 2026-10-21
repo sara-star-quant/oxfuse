@@ -1,0 +1,39 @@
+{
+ "dims": {},
+ "inputs": [
+  {
+   "data": [
+    -1.0,
+    -0.75,
+    -1.75,
+    -0.25
+   ],
+   "name": "x",
+   "shape": [
+    2,
+    2
+   ]
+  }
+ ],
+ "name": "initializer_listed_as_input",
+ "opset": 13,
+ "outputs": [
+  {
+   "data": [
+    -2.0,
+    1.0,
+    -0.75,
+    -0.25
+   ],
+   "name": "y",
+   "shape": [
+    2,
+    2
+   ]
+  }
+ ],
+ "tolerance": {
+  "abs": 0.0,
+  "rel": 0.0
+ }
+}

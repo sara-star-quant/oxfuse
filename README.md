@@ -13,6 +13,7 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 - **Compiles** a JSON graph to an IR (intermediate representation: the graph as typed values and operations that the passes rewrite) with shape inference and a verifier that re-checks every invariant after each pass.
 - **Optimizes** with three exact passes: constant folding, common-subexpression elimination, dead-code elimination. Output bits never change.
 - **Runs** on two CPU backends and an optional GPU backend (`--features wgpu`). The fast CPU backend returns the same bits as the reference backend and is the default.
+- **Imports** float32 ONNX models made of a small operator subset (`--features onnx`), checked against two independent ONNX implementations ([docs/onnx.md](docs/onnx.md)).
 - **Rejects** malformed graphs with a stable error code and the JSON path of the offender.
 
 ## Evidence
@@ -22,9 +23,10 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 | Correct against an independent implementation | NumPy float64 oracle, seeded random corpus plus all examples |
 | Fast backend equals reference, bit for bit | Contract tests, random-graph tests, differential fuzzing |
 | Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
-| Tests detect real defects | cargo-mutants: 1078 of 1097 viable mutants stopped, the other 19 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
+| Tests detect real defects | cargo-mutants: 1332 of 1352 viable mutants stopped, the other 20 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
 | GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
+| ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
 | Builds on Rust 1.88 or newer | MSRV job in CI |
 
 Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.49x of `ndarray`'s speed on the recorded machine.
@@ -53,8 +55,9 @@ The GPU backend runs on wgpu, so it should also work on NVIDIA, AMD and Intel Ar
 
     cargo install oxfuse                    # CPU backends
     cargo install oxfuse --features wgpu    # adds the GPU backend
+    cargo install oxfuse --features onnx    # adds ONNX model import
 
-As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend.
+As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend and `oxfuse-onnx` for ONNX import.
 
 ## A first run
 
@@ -94,6 +97,6 @@ Full gate: `just ci`. Oracle check: `just oracle-check` (needs `numpy`, see `scr
 
 ## Documentation
 
-[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Design decisions](docs/decisions) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
+[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Design decisions](docs/decisions) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
 
 Apache-2.0. See [LICENSE](LICENSE).

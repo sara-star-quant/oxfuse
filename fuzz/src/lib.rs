@@ -3,6 +3,7 @@
 //! generator of valid graph files.
 
 pub mod gpu;
+pub mod onnx;
 
 use arbitrary::{Result as ArbResult, Unstructured};
 use oxfuse_core::passes::default_pipeline;
@@ -69,10 +70,15 @@ pub fn load_error(text: &str) -> Option<String> {
 /// matches the reference, and that the optimized graph matches the original.
 /// Returns whether a graph was actually compared.
 pub fn compare(text: &str, seed: usize) -> bool {
-    let limits = small();
-    let Ok(graph) = oxfuse_cli::load_graph(text, &limits) else {
+    let Ok(graph) = oxfuse_cli::load_graph(text, &small()) else {
         return false;
     };
+    compare_graph(&graph, seed)
+}
+
+/// The checks of `compare` on a graph that is already loaded.
+pub fn compare_graph(graph: &Graph, seed: usize) -> bool {
+    let limits = small();
     graph
         .verify_limits(&limits)
         .expect("a loaded graph stays inside the limits");
@@ -90,13 +96,13 @@ pub fn compare(text: &str, seed: usize) -> bool {
         })
         .collect();
 
-    let reference = run(&ReferenceBackend, &graph, &inputs);
-    let fast = run(&CpuBackend, &graph, &inputs);
+    let reference = run(&ReferenceBackend, graph, &inputs);
+    let fast = run(&CpuBackend, graph, &inputs);
     assert_eq!(reference, fast, "fast backend differs from the reference");
 
     // A pass error can legitimately replace a run-time error, so it ends the
     // comparison instead of failing it.
-    let Ok(optimized) = default_pipeline(limits, Arc::new(ReferenceEvaluator)).run(&graph) else {
+    let Ok(optimized) = default_pipeline(limits, Arc::new(ReferenceEvaluator)).run(graph) else {
         return true;
     };
     let optimized = optimized.graph;

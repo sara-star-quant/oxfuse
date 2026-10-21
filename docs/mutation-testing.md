@@ -15,13 +15,15 @@ Run on an Apple M1 Pro on 2026-10-21. Rows marked "crates tree 026fd4c" ran on t
 | `oxfuse-wgpu` `exec.rs` | 81 | 58 | 0 | 15 | 8 |
 | `oxfuse-wgpu` `context.rs` | 12 | 7 | 0 | 4 | 1 |
 | `oxfuse-wgpu` `selftest.rs` (tree da4eea4) | 89 | 84 | 0 | 3 | 2 |
-| Total | 1171 | 1073 | 5 | 74 | 19 |
+| `oxfuse-onnx` (tree 521c719) | 273 | 254 | 0 | 18 | 1 |
+| Total | 1444 | 1327 | 5 | 92 | 20 |
 
-Of the 1097 mutants that compile, 1078 were stopped (98.3%) and the other 19 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
+Of the 1352 mutants that compile, 1332 were stopped (98.5%) and the other 20 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
 
 Reproduce:
 
     cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu --test-workspace true -j 2 --timeout 120
+    cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
     cargo mutants -p oxfuse-wgpu -f crates/wgpu/src/exec.rs --test-package oxfuse-wgpu -j 2 --timeout 180
 
 The second command is per file; the GPU tests need an adapter, otherwise most of them do nothing. Use `-j 2` and `CARGO_INCREMENTAL=0`, because every worker builds its own copy and four workers fill a laptop disk.
@@ -32,6 +34,10 @@ The second command is per file; the GPU tests need an adapter, otherwise most of
 
 - `cpu/mod.rs`: `uses[slot] += 1` replaced by `*=`, and the guard `uses[slot] == 1` replaced by `false`. They only decide whether an output buffer is moved or copied, so the bits are the same. The opposite mutation (always move) is caught by `same_value_can_be_output_twice`.
 - `cpu/kernels.rs`, `matmul_rows`: the leftover-column guard `j < j1` replaced by `j <= j1`. When `j == j1` the leftover loop runs over empty slices.
+
+### ONNX importer (1)
+
+- `lower.rs`, `resolve_reshape`: the guard `v > 0` replaced by `v >= 0`. The `0` entry is matched by the arm above it, so the guard never sees zero. The first run of this crate missed 19; they led to tests for the absent-output rule, operand counts, error reasons, expansion strides and attribute types, and to a fix: a Dropout with an empty second output name (the mask left out) was rejected. A review of the finished crate then found a panic on a node without outputs, a `beta = 0` Gemm that let infinity in `C` through, and int64 initializers listed as inputs being rejected; each got a test that failed first, and the attribute value check they led to got its own tests.
 
 ### GPU host code (16)
 

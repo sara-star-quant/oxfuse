@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/runtime", "crates/cli", "crates/wgpu"]
+members = ["crates/core", "crates/runtime", "crates/cli", "crates/wgpu", "crates/onnx"]
 
 [workspace.package]
 version = "0.2.1"
@@ -27,6 +27,8 @@ proptest = "1.12.0"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "metal", "vulkan", "dx12", "wgsl"] }
 pollster = "1.0.1"
 oxfuse-wgpu = { path = "crates/wgpu", version = "0.2.1" }
+oxfuse-onnx = { path = "crates/onnx", version = "0.2.1" }
+prost = { version = "0.14.4", default-features = false, features = ["derive", "std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -29,6 +29,13 @@ pub enum CliError {
     UnknownInput { name: String },
     #[error("unknown pass `{name}` (known: {known})")]
     UnknownPass { name: String, known: String },
+    #[cfg(feature = "onnx")]
+    #[error(transparent)]
+    Onnx(#[from] oxfuse_onnx::OnnxError),
+    #[error("`{path}` is an ONNX model; this build cannot read it (rebuild with --features onnx)")]
+    OnnxDisabled { path: String },
+    #[error("--dim `{name}` is given more than once")]
+    DuplicateDim { name: String },
 }
 
 impl CliError {
@@ -43,6 +50,10 @@ impl CliError {
             CliError::MissingInput { .. } => "E104",
             CliError::UnknownInput { .. } => "E105",
             CliError::UnknownPass { .. } => "E106",
+            #[cfg(feature = "onnx")]
+            CliError::Onnx(e) => e.code(),
+            CliError::OnnxDisabled { .. } => "E107",
+            CliError::DuplicateDim { .. } => "E108",
         }
     }
 }
