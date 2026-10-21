@@ -10,7 +10,7 @@ readme = "README.md"
 exclude = ["tests"]
 keywords.workspace = true
 categories.workspace = true
-description = "Command-line tool for oxfuse: a small tensor graph compiler with reference and fast CPU backends and an optional wgpu GPU backend. Subcommands: check, run, inspect, gpu-selftest."
+description = "Command-line tool for oxfuse: a small tensor graph compiler with reference and fast CPU backends and an optional wgpu GPU backend. Optional ONNX import. Subcommands: check, run, inspect, gpu-selftest."
 
 [lib]
 name = "oxfuse_cli"
@@ -24,6 +24,7 @@ path = "src/main.rs"
 oxfuse-core.workspace = true
 oxfuse-runtime.workspace = true
 oxfuse-wgpu = { workspace = true, optional = true }
+oxfuse-onnx = { workspace = true, optional = true }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -35,6 +36,7 @@ insta.workspace = true
 [features]
 parallel = ["oxfuse-runtime/parallel"]
 wgpu = ["dep:oxfuse-wgpu"]
+onnx = ["dep:oxfuse-onnx"]
 
 [lints]
 workspace = true

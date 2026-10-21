@@ -32,6 +32,13 @@ oracle-check:
     python3 -I scripts/gen_expected.py examples --check
     python3 -I scripts/gen_expected.py corpus --check
 
+# Check the committed ONNX fixtures against onnxruntime and the onnx reference
+# evaluator. Needs the virtualenv: `uv venv --python 3.14 .venv-onnx` (onnxruntime
+# has no wheel for newer Pythons), then `uv pip install --python .venv-onnx/bin/python -r scripts/requirements-onnx.txt`.
+onnx-check:
+    .venv-onnx/bin/python -I scripts/test_gen_onnx_fixtures.py
+    .venv-onnx/bin/python -I scripts/gen_onnx_fixtures.py --check
+
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:
     python3 -I scripts/gen_expected.py corpus
@@ -68,7 +75,8 @@ fuzz_toolchain := "nightly-2026-05-22"
 
 # Copy every shipped graph into the fuzz corpus.
 fuzz-seed:
-    mkdir -p fuzz/corpus/loader fuzz/corpus/differential
+    mkdir -p fuzz/corpus/loader fuzz/corpus/differential fuzz/corpus/onnx
+    cp crates/onnx/tests/fixtures/*.onnx fuzz/corpus/onnx/
     for dir in examples tests/corpus tests/invalid tests/passes; do \
       for f in $dir/*.json; do \
         case "$f" in *.inputs.json|*.expected.json) continue;; esac; \

@@ -18,6 +18,8 @@ oxfuse = { path = "../crates/cli" }
 oxfuse-core = { path = "../crates/core" }
 oxfuse-runtime = { path = "../crates/runtime" }
 oxfuse-wgpu = { path = "../crates/wgpu" }
+oxfuse-onnx = { path = "../crates/onnx" }
+prost = "0.14.4"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -43,5 +45,17 @@ doc = false
 [[bin]]
 name = "gpu_generated"
 path = "fuzz_targets/gpu_generated.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "onnx"
+path = "fuzz_targets/onnx.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "onnx_generated"
+path = "fuzz_targets/onnx_generated.rs"
 test = false
 doc = false
