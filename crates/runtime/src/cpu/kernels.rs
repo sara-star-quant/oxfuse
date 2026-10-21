@@ -217,7 +217,7 @@ fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     matmul_tiled(a, b, m, k, n, KC, NC)
 }
 
-const TILE: usize = 32;
+const TILE: usize = 16;
 
 /// Output dimension `i` is input dimension `perm[i]`; a pure copy, so the bits
 /// are the input's bits in a different order.
@@ -259,20 +259,47 @@ fn transpose(input: &[f32], in_shape: &[usize], perm: &[usize]) -> Vec<f32> {
     }
 }
 
-/// `[rows, cols] -> [cols, rows]` in `TILE x TILE` blocks so both the reads
-/// and the writes stay within a few cache lines.
+/// `[rows, cols] -> [cols, rows]`. Each tile writes 16 contiguous floats of an
+/// output row (one cache line) and reads them from 16 input rows; with 16
+/// rows per tile this was twice as fast as 32 x 32 tiles at 1024 x 1024.
 fn transpose_2d(input: &[f32], rows: usize, cols: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; input.len()];
+    #[cfg(feature = "parallel")]
+    if input.len() >= TRANSPOSE_PARALLEL_MIN {
+        use rayon::prelude::*;
+        out.par_chunks_mut(TRANSPOSE_BAND * rows)
+            .enumerate()
+            .for_each(|(band, chunk)| {
+                transpose_band(input, rows, cols, band * TRANSPOSE_BAND, chunk);
+            });
+        return out;
+    }
+    transpose_band(input, rows, cols, 0, &mut out);
+    out
+}
+
+/// Elements below which threads cost more than they save.
+#[cfg(feature = "parallel")]
+const TRANSPOSE_PARALLEL_MIN: usize = 1 << 18;
+/// Output rows per parallel task.
+#[cfg(feature = "parallel")]
+const TRANSPOSE_BAND: usize = 64;
+
+/// Fills the output rows `c0 ..` that fit in `out`, a whole number of rows.
+fn transpose_band(input: &[f32], rows: usize, cols: usize, c0: usize, out: &mut [f32]) {
+    let c_end = c0 + out.len() / rows;
     for r0 in (0..rows).step_by(TILE) {
-        for c0 in (0..cols).step_by(TILE) {
-            for r in r0..(r0 + TILE).min(rows) {
-                for c in c0..(c0 + TILE).min(cols) {
-                    out[c * rows + r] = input[r * cols + c];
+        let r1 = (r0 + TILE).min(rows);
+        for t0 in (c0..c_end).step_by(TILE) {
+            for c in t0..(t0 + TILE).min(c_end) {
+                let dst = &mut out[(c - c0) * rows + r0..(c - c0) * rows + r1];
+                let src = &input[r0 * cols + c..];
+                for (i, d) in dst.iter_mut().enumerate() {
+                    *d = src[i * cols];
                 }
             }
         }
     }
-    out
 }
 
 #[cfg(test)]
@@ -457,7 +484,23 @@ mod tests {
 
     #[test]
     fn rank_two_transpose_crosses_tile_boundaries_correctly() {
-        for (rows, cols) in [(1, 100), (100, 1), (31, 33), (32, 32), (33, 31), (65, 129)] {
+        for (rows, cols) in [
+            (1, 100),
+            (100, 1),
+            (15, 17),
+            (16, 16),
+            (17, 15),
+            (31, 33),
+            (32, 32),
+            (33, 31),
+            (65, 129),
+            // Large enough to be split into bands with the `parallel` feature,
+            // with a short last band and a short last tile.
+            (515, 513),
+            (520, 512),
+            (1, 300_000),
+            (300_000, 1),
+        ] {
             let input = values(rows * cols, 9);
             assert_eq!(
                 bits(&transpose(&input, &[rows, cols], &[1, 0])),
