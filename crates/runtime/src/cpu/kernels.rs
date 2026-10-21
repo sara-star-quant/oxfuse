@@ -47,6 +47,49 @@ fn sigmoid(input: &[f32]) -> Vec<f32> {
     crate::kernels::apply(&Op::Sigmoid, &[input], &[])
 }
 
+fn sigmoid_in_place(buf: &mut [f32]) {
+    #[cfg(feature = "parallel")]
+    if buf.len() >= SIGMOID_PARALLEL_MIN {
+        use rayon::prelude::*;
+        buf.par_chunks_mut(SIGMOID_CHUNK).for_each(|chunk| {
+            chunk
+                .iter_mut()
+                .for_each(|x| *x = crate::kernels::sigmoid_one(*x))
+        });
+        return;
+    }
+    buf.iter_mut()
+        .for_each(|x| *x = crate::kernels::sigmoid_one(*x));
+}
+
+/// Computes an elementwise `op` into `buf`, which holds one operand and is
+/// overwritten with the result. `other` is the second operand of Add and Mul
+/// (one element for a scalar); `buf_first` says which operand `buf` held, so
+/// the operation sees the operands in the same order as the reference.
+pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>, buf_first: bool) {
+    let zip = |buf: &mut [f32], other: &[f32], f: fn(f32, f32) -> f32| {
+        let at = |i: usize| other[if other.len() == 1 { 0 } else { i }];
+        for (i, v) in buf.iter_mut().enumerate() {
+            *v = if buf_first {
+                f(*v, at(i))
+            } else {
+                f(at(i), *v)
+            };
+        }
+    };
+    match op {
+        Op::Relu => buf
+            .iter_mut()
+            .for_each(|x| *x = crate::kernels::relu_one(*x)),
+        Op::Sigmoid => sigmoid_in_place(buf),
+        Op::Add => zip(buf, other.expect("Add has two operands"), |x, y| x + y),
+        Op::Mul => zip(buf, other.expect("Mul has two operands"), |x, y| x * y),
+        Op::Reshape { .. } | Op::MatMul | Op::Transpose { .. } => {
+            unreachable!("not an in-place op")
+        }
+    }
+}
+
 /// Cache tile sizes. `KC` rows of B by `NC` columns stay hot while every row
 /// of A streams past them.
 const KC: usize = 256;
