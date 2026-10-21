@@ -62,10 +62,15 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   three times slower than no blocking at all). Results stay inside the
   documented bound of the float64 result but are not bit-identical to the
   reference, because the device fuses multiply-add.
-- Add, Relu, Sigmoid, Mul, Reshape: the reference loops already vectorize
+- Add, Relu, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
-  call the reference kernels. Sigmoid also keeps std's exp, so it is
-  identical by construction.
+  call the reference kernels. Splitting them across threads made them slower
+  at 2^20 elements (Add 122 us to 222 us, Relu 69 us to 214 us), because they
+  are bound by memory and the split adds a copy. Dropped.
+- Sigmoid (feature `parallel`): the same `exp`-based formula as the reference
+  (std's exp, so the bits are identical by construction), split into chunks of
+  8192 elements across threads above 65536 elements. 1.73 ms to 0.42 ms at
+  2^20 on this 8-core machine. Kept, off by default.
 
 ## Environment
 

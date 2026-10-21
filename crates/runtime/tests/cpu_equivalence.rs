@@ -33,3 +33,41 @@ proptest! {
         prop_assert_eq!(bits(&reference), bits(&cpu));
     }
 }
+
+/// Above the size where Sigmoid is split across threads (with the `parallel`
+/// feature), including a length that leaves a short last chunk.
+#[test]
+fn a_large_sigmoid_returns_the_reference_bits() {
+    use oxfuse_core::{GraphBuilder, Op};
+    use oxfuse_runtime::Tensor;
+    const SPECIAL: [f32; 8] = [
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        -0.0,
+        0.0,
+        -90.0,
+        88.5,
+        f32::MIN_POSITIVE / 2.0,
+    ];
+    for len in [65_535usize, 65_536, 200_003] {
+        let data: Vec<f32> = (0..len)
+            .map(|i| match i % 11 {
+                0 => SPECIAL[(i / 11) % SPECIAL.len()],
+                _ => (i as f32 * 0.37).sin() * 20.0,
+            })
+            .collect();
+        let mut b = GraphBuilder::new(Limits::default());
+        let x = b.input("x", vec![len]).unwrap();
+        let y = b.node("y", Op::Sigmoid, &[x]).unwrap();
+        let graph = b.finish(&[y]).unwrap();
+        let inputs = [Tensor::new(vec![len], data).unwrap()];
+        let reference = ReferenceBackend
+            .compile(&graph)
+            .unwrap()
+            .run(&inputs)
+            .unwrap();
+        let cpu = CpuBackend.compile(&graph).unwrap().run(&inputs).unwrap();
+        assert_eq!(bits(&reference), bits(&cpu), "length {len}");
+    }
+}
