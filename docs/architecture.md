@@ -20,7 +20,7 @@ Plan --- Backend::compile ---> Executable::run(&[Tensor]) -> Vec<Tensor>
 |---|---|---|
 | `oxfuse-core` | the IR (`Graph`, `Op`, `TensorType`), shape inference, the builder, the verifier, `Limits`, the error type, the optimization passes | nothing in the workspace |
 | `oxfuse-runtime` | `Tensor`, `Plan`, the `Backend` and `Executable` traits, `ReferenceBackend`, `CpuBackend`, `ReferenceEvaluator` | `oxfuse-core` |
-| `oxfuse-wgpu` (directory `crates/wgpu`) | the wgpu backend: generated WGSL kernels, a CPU model of their grids, device tensors, the self-test report. Not yet published; the CLI builds it only with `--features wgpu` | `oxfuse-core`, `oxfuse-runtime` |
+| `oxfuse-wgpu` (directory `crates/wgpu`) | the wgpu backend: generated WGSL kernels, a CPU model of their grids, device tensors, the self-test report. The CLI builds it only with `--features wgpu` | `oxfuse-core`, `oxfuse-runtime` |
 | `oxfuse` (directory `crates/cli`, library `oxfuse_cli`) | the JSON format, the loader, the commands and the `oxfuse` binary | both |
 
 Dependencies point one way: core knows nothing about files or backends. That is why constant folding takes a `ConstEvaluator` trait object from the caller. The CLI hands it `ReferenceEvaluator`, so folding runs the same reference kernels the reference backend runs, without core depending on runtime.
