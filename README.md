@@ -22,7 +22,7 @@ It is not for production inference, large models, training, or speed-critical CP
 ## What it does
 
 - **Compiles** a JSON graph to an IR (intermediate representation: the graph as typed values and operations that the passes rewrite) with shape inference and a verifier that re-checks every invariant after each pass.
-- **Optimizes** with three exact passes: constant folding, common-subexpression elimination, dead-code elimination. Output bits never change.
+- **Optimizes** with four exact passes: constant folding, layout elision (transpose and reshape round trips), common-subexpression elimination, dead-code elimination. Output bits never change.
 - **Runs** on two CPU backends and an optional GPU backend (`--features wgpu`). The fast CPU backend returns the same bits as the reference backend and is the default.
 - **Imports** float32 ONNX models made of a small operator subset (`--features onnx`), checked against two independent ONNX implementations ([docs/onnx.md](docs/onnx.md)).
 - **Rejects** malformed graphs with a stable error code and the JSON path of the offender.

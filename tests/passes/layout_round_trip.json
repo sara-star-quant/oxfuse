@@ -1,0 +1,12 @@
+{
+  "format_version": 1,
+  "inputs": [{ "name": "x", "dtype": "f32", "shape": [2, 3] }],
+  "nodes": [
+    { "name": "t", "op": "Transpose", "inputs": ["x"], "attrs": { "perm": [1, 0] } },
+    { "name": "u", "op": "Transpose", "inputs": ["t"], "attrs": { "perm": [1, 0] } },
+    { "name": "r", "op": "Reshape", "inputs": ["u"], "attrs": { "shape": [6] } },
+    { "name": "s", "op": "Reshape", "inputs": ["r"], "attrs": { "shape": [3, 2] } },
+    { "name": "y", "op": "Relu", "inputs": ["s"] }
+  ],
+  "outputs": ["y"]
+}

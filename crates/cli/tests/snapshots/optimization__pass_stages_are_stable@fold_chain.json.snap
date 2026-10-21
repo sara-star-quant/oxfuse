@@ -23,6 +23,16 @@ graph {
   %5 y = Add(%0, %4) : f32[2]
   output y = %5
 }
+== after layout (changed 0, values 6 -> 6) ==
+graph {
+  %0 x = input : f32[2]
+  %1 a = const : f32[2] = [1.0, -2.0]
+  %2 b = const : f32[2] = [3.0, 4.0]
+  %3 s = const : f32[2] = [4.0, 2.0]
+  %4 r = const : f32[2] = [4.0, 2.0]
+  %5 y = Add(%0, %4) : f32[2]
+  output y = %5
+}
 == after cse (changed 0, values 6 -> 6) ==
 graph {
   %0 x = input : f32[2]

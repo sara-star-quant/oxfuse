@@ -4,7 +4,7 @@
 //! with a constant. Names and output names carry over, so the graph
 //! interface cannot change by accident.
 
-use crate::{Error, Graph, GraphBuilder, Limits, Source, ValueId};
+use crate::{Error, Graph, GraphBuilder, Limits, Op, Source, ValueId};
 use std::sync::Arc;
 
 pub(crate) struct Rebuilder<'g> {
@@ -48,6 +48,19 @@ impl<'g> Rebuilder<'g> {
                 self.builder.node(&name, op.clone(), &inputs)?
             }
         };
+        self.alias(old, new);
+        Ok(new)
+    }
+
+    /// Replaces `old` (a node) with a different node over already-built inputs.
+    pub(crate) fn replace_with_node(
+        &mut self,
+        old: ValueId,
+        op: Op,
+        inputs: &[ValueId],
+    ) -> Result<ValueId, Error> {
+        let name = self.graph.label(old);
+        let new = self.builder.node(&name, op, inputs)?;
         self.alias(old, new);
         Ok(new)
     }
