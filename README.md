@@ -45,6 +45,13 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 
 Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, a GPU in the default build. No device or vendor support is claimed or implied.
 
+## Install
+
+    cargo install oxfuse                    # CPU backends
+    cargo install oxfuse --features wgpu    # adds the GPU backend
+
+As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend.
+
 ## A first run
 
 A graph is named inputs, constants and nodes. This one is `relu(x @ w + b)` (`examples/tiny_mlp.json`):
