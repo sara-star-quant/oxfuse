@@ -67,11 +67,28 @@ fn there_is_exactly_one_licence_and_it_is_apache_2_0() {
     );
 }
 
+const BRANDS: [&str; 12] = [
+    "nvidia",
+    "cuda",
+    "tenstorrent",
+    "rocm",
+    "tpu",
+    "amd",
+    "intel",
+    "qualcomm",
+    "adreno",
+    "mali",
+    "radeon",
+    "geforce",
+];
+
 /// Public docs must not name an accelerator vendor, so none reads as a support
 /// claim. The exceptions are the two records of measurements: `docs/adapters.md`,
 /// whose first line says "measured, not supported" and which may not use the words
 /// that would turn a measurement into a promise, and the generated
-/// `docs/benchmarks.md`, which states the machine it ran on.
+/// `docs/benchmarks.md`, which states the machine it ran on. The README, the
+/// `oxfuse-wgpu` README and its manifest may name vendors only on a line that
+/// says they are untested.
 #[test]
 fn hardware_claims_match_what_exists() {
     let root = root();
@@ -86,7 +103,25 @@ fn hardware_claims_match_what_exists() {
     );
     let adapters_path = root.join("docs/adapters.md");
     let benchmarks_path = root.join("docs/benchmarks.md");
-    let mut public = vec![readme, fs::read_to_string(root.join("ROADMAP.md")).unwrap()];
+    // These may name vendors, but only on a line that says they are untested.
+    for file in [
+        "README.md",
+        "crates/wgpu/README.md",
+        "crates/wgpu/Cargo.toml",
+    ] {
+        let text = fs::read_to_string(root.join(file)).unwrap();
+        for line in text.lines() {
+            let names_brand = line
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|w| BRANDS.contains(&w));
+            assert!(
+                !names_brand || line.contains("untested"),
+                "{file} names a vendor on a line that does not say `untested`: {line}"
+            );
+        }
+    }
+    let mut public = vec![fs::read_to_string(root.join("ROADMAP.md")).unwrap()];
     let mut dirs = vec![root.join("docs")];
     while let Some(dir) = dirs.pop() {
         for entry in fs::read_dir(dir).unwrap() {
@@ -98,25 +133,11 @@ fn hardware_claims_match_what_exists() {
             }
         }
     }
-    let brands = [
-        "nvidia",
-        "cuda",
-        "tenstorrent",
-        "rocm",
-        "tpu",
-        "amd",
-        "intel",
-        "qualcomm",
-        "adreno",
-        "mali",
-        "radeon",
-        "geforce",
-    ];
     for text in public {
         for word in text.split(|c: char| !c.is_alphanumeric()) {
             let word = word.to_lowercase();
             assert!(
-                !brands.contains(&word.as_str()),
+                !BRANDS.contains(&word.as_str()),
                 "public docs name `{word}` outside docs/adapters.md"
             );
         }

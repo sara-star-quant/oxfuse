@@ -45,6 +45,10 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 
 Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, a GPU in the default build. No device or vendor support is claimed or implied.
 
+## GPUs
+
+The GPU backend runs on wgpu, so it should also work on NVIDIA, AMD and Intel Arc cards through Vulkan or DX12, but that is untested so far. So far it is measured on an Apple M1 Pro (Metal) and on software adapters, see [docs/adapters.md](docs/adapters.md). If you try your card, run `oxfuse gpu-selftest` and share the report in an issue.
+
 ## Install
 
     cargo install oxfuse                    # CPU backends
