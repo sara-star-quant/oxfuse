@@ -6,8 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-categories.workspace = true
-description = "A wgpu GPU compute backend for oxfuse tensor graphs over Vulkan, Metal and DX12 (measured on an NVIDIA Tesla T4 and an Apple M1 Pro; AMD and Intel cards untested), with a documented numerical contract and a self-test for any adapter."
+categories = ["artificial-intelligence", "mathematics", "hardware-support"]
+description = "wgpu GPU backend for oxfuse tensor graphs (Vulkan, Metal, DX12) with a documented numerical contract and a self-test for any adapter."
 readme = "README.md"
 keywords = ["tensor", "gpu", "wgpu", "wgsl", "compute"]
 exclude = ["tests"]
@@ -33,3 +33,6 @@ harness = false
 
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

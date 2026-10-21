@@ -1,4 +1,9 @@
-//! A wgpu compute backend for oxfuse graphs.
+//! A wgpu compute backend for oxfuse graphs (Vulkan, Metal, DX12).
+//!
+//! Part of [oxfuse](https://github.com/sara-star-quant/oxfuse). Results are
+//! exact where the shading language allows and inside a documented bound
+//! elsewhere; `oxfuse gpu-selftest` measures any adapter against the
+//! reference backend. See `examples/matmul.rs` for a complete run.
 
 mod bounds;
 mod config;
