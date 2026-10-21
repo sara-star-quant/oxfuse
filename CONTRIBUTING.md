@@ -6,6 +6,7 @@ Oxfuse is a small, deliberately scoped project. See the [roadmap](ROADMAP.md) fo
 
     rustup show          # installs the toolchain pinned in rust-toolchain.toml
     just ci              # format, lint, tests, docs (install just: https://just.systems)
+    just onnx-check      # ONNX fixtures vs onnxruntime and the onnx reference evaluator (needs .venv-onnx, see the recipe in the justfile)
     just oracle-check    # cross-checks examples and the corpus against NumPy (pip install -r scripts/requirements.txt)
     just mutants         # optional, about 16 minutes: lists breakages no test notices (cargo install cargo-mutants)
 
@@ -48,10 +49,12 @@ By contributing you agree that your work is licensed under Apache-2.0, as the re
 | `loader` | arbitrary text never panics the loader, and a graph that loads stays inside its limits |
 | `differential` | arbitrary text that happens to load gives the same bits on the reference backend, the fast backend, and with and without the optimization passes |
 | `generated` | the same comparison on graphs generated to be valid (sizes that reach the fast matmul's register block, inputs that include infinity and NaN), so nearly every execution compares something |
+| `onnx` | arbitrary bytes into the ONNX importer never panic or hang, and a model that imports gives the same bits on both backends (a model carrying a non-canonical NaN is imported but not compared, because which NaN payload survives is unspecified) |
+| `onnx_generated` | models built from `prost` structs, valid by construction: the importer must accept every one and the backends must agree on it |
 
 Raw bytes rarely form a valid graph: in a 60 second `differential` run about 0.2% of executions loaded one. Quote `generated` for evidence about the backends, and use `differential` for the loader's behavior on near-valid text.
 
-`just fuzz loader 60`, `just fuzz differential 60` and `just fuzz generated 60` run one target for that many seconds, seeded from the shipped graphs. A weekly workflow (`fuzz.yml`) runs all three for five minutes. A crash lands in `fuzz/artifacts/`: minimise it, add it as a graph under `tests/invalid/` or a regression test, fix the cause with a test that fails first, then rerun. Pass errors end the differential comparison on purpose, because a pass can turn a run-time error into a fold-time one.
+`just fuzz loader 60`, `just fuzz differential 60`, `just fuzz generated 60`, `just fuzz onnx 60` and `just fuzz onnx_generated 60` run one target for that many seconds, seeded from the shipped graphs. A weekly workflow (`fuzz.yml`) runs all five for five minutes. A crash lands in `fuzz/artifacts/`: minimise it, add it as a graph under `tests/invalid/` or a regression test, fix the cause with a test that fails first, then rerun. Pass errors end the differential comparison on purpose, because a pass can turn a run-time error into a fold-time one.
 
 The claims ledger records how long each target has actually run. A short run proves little; the number is stated next to the claim.
 

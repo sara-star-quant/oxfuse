@@ -10,7 +10,7 @@ A stage is marked done only when it is implemented and tested.
 | 4 | Fast CPU backend (blocked matmul, optional threads), benchmarks against `matrixmultiply` | done |
 | 5 | Located diagnostics, fuzzing, architecture and semantics docs, decision records, register-blocked matmul, fast backend as default | done |
 | 6 | Optional wgpu GPU backend, checked against the CPU reference and the oracle, with a two-tier numerical contract and a self-test for other devices | done |
-| 7 | ONNX import for a small operator subset, validated against an independent runtime | next, not started |
+| 7 | ONNX import for a small operator subset, validated against an independent runtime | done |
 
 ## Not planned
 

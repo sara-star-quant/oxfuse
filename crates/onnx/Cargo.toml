@@ -1,0 +1,25 @@
+[package]
+name = "oxfuse-onnx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+categories.workspace = true
+description = "ONNX import for oxfuse: a small float32 operator subset lowered into the oxfuse IR, with every unsupported feature rejected by a named error."
+readme = "README.md"
+keywords = ["onnx", "tensor", "import", "compiler", "ir"]
+exclude = ["tests"]
+
+[dependencies]
+oxfuse-core.workspace = true
+prost.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+oxfuse-runtime.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

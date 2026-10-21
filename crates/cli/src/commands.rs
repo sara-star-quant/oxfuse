@@ -6,10 +6,26 @@ use crate::{CliError, load_graph};
 use oxfuse_core::passes::{PassManager, default_pipeline};
 use oxfuse_core::{Error, Graph, Limits, Source};
 use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, ReferenceEvaluator, Tensor};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
+
+/// Values for the named dimensions of an ONNX model (`--dim NAME=VALUE`).
+pub type Dims = BTreeMap<String, usize>;
+
+/// Collect `--dim` arguments; naming a dimension twice is a mistake to
+/// report, not a value to pick silently.
+pub fn dims_from_args(args: &[(String, usize)]) -> Result<Dims, CliError> {
+    let mut dims = Dims::new();
+    for (name, value) in args {
+        if dims.insert(name.clone(), *value).is_some() {
+            return Err(CliError::DuplicateDim { name: name.clone() });
+        }
+    }
+    Ok(dims)
+}
 
 /// Non-exhaustive: the `Wgpu` variant exists only when the `wgpu` feature is on,
 /// so downstream code must not match this enum exhaustively.
@@ -33,6 +49,8 @@ pub struct RunOptions {
     pub optimize: bool,
     pub disabled: Vec<String>,
     pub dump_ir: bool,
+    /// Named dimensions of an ONNX model; ignored for JSON graphs.
+    pub dims: Dims,
 }
 
 impl Default for RunOptions {
@@ -42,6 +60,7 @@ impl Default for RunOptions {
             optimize: true,
             disabled: Vec::new(),
             dump_ir: false,
+            dims: Dims::new(),
         }
     }
 }
@@ -74,7 +93,7 @@ fn pipeline(options: &RunOptions, limits: &Limits) -> Result<PassManager, CliErr
 
 pub fn inspect(path: &Path, options: &RunOptions) -> Result<String, CliError> {
     let limits = Limits::default();
-    let graph = load_graph(&read_limited(path, &limits)?, &limits)?;
+    let graph = load_path(path, &limits, &options.dims)?;
     let manager = pipeline(
         &RunOptions {
             dump_ir: true,
@@ -86,8 +105,12 @@ pub fn inspect(path: &Path, options: &RunOptions) -> Result<String, CliError> {
 }
 
 pub fn check(path: &Path) -> Result<String, CliError> {
+    check_with(path, &Dims::new())
+}
+
+pub fn check_with(path: &Path, dims: &Dims) -> Result<String, CliError> {
     let limits = Limits::default();
-    let graph = load_graph(&read_limited(path, &limits)?, &limits)?;
+    let graph = load_path(path, &limits, dims)?;
     let nodes = graph
         .values()
         .iter()
@@ -134,8 +157,7 @@ pub fn run_with(
     options: &RunOptions,
 ) -> Result<RunOutput, RunFailure> {
     let limits = Limits::default();
-    let text = read_limited(graph_path, &limits).map_err(RunFailure::bare)?;
-    let graph = load_graph(&text, &limits).map_err(RunFailure::bare)?;
+    let graph = load_path(graph_path, &limits, &options.dims).map_err(RunFailure::bare)?;
     let manager = pipeline(options, &limits).map_err(RunFailure::bare)?;
     let optimized = manager.run(&graph).map_err(|error| RunFailure {
         error: error.into(),
@@ -176,10 +198,51 @@ fn execute(
     render_outputs(named)
 }
 
+/// A graph from a file: ONNX when the extension says so (and the build
+/// can read it), the JSON format otherwise.
+fn load_path(path: &Path, limits: &Limits, dims: &Dims) -> Result<Graph, CliError> {
+    let is_onnx = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("onnx"));
+    if !is_onnx {
+        return load_graph(&read_limited(path, limits)?, limits);
+    }
+    #[cfg(feature = "onnx")]
+    {
+        let options = oxfuse_onnx::ImportOptions {
+            limits: limits.clone(),
+            dims: dims.clone(),
+        };
+        Ok(oxfuse_onnx::import(
+            &read_bytes_limited(path, limits)?,
+            &options,
+        )?)
+    }
+    #[cfg(not(feature = "onnx"))]
+    {
+        let _ = (limits, dims);
+        Err(CliError::OnnxDisabled {
+            path: path.display().to_string(),
+        })
+    }
+}
+
 /// Checks the size from metadata first so an oversized regular file is never
 /// read, then reads at most one byte past the limit so pipes, FIFOs and
 /// devices (which report length 0) cannot bypass it.
 fn read_limited(path: &Path, limits: &Limits) -> Result<String, CliError> {
+    let bytes = read_bytes_limited(path, limits)?;
+    String::from_utf8(bytes).map_err(|_| CliError::Io {
+        path: path.display().to_string(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        ),
+    })
+}
+
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
+fn read_bytes_limited(path: &Path, limits: &Limits) -> Result<Vec<u8>, CliError> {
     let io = |source| CliError::Io {
         path: path.display().to_string(),
         source,
@@ -196,16 +259,16 @@ fn read_limited(path: &Path, limits: &Limits) -> Result<String, CliError> {
     if len > limit as u64 {
         return Err(oversized(usize::try_from(len).unwrap_or(usize::MAX)));
     }
-    let mut text = String::new();
+    let mut bytes = Vec::new();
     fs::File::open(path)
         .map_err(io)?
         .take(limit as u64 + 1)
-        .read_to_string(&mut text)
+        .read_to_end(&mut bytes)
         .map_err(io)?;
-    if text.len() > limit {
-        return Err(oversized(text.len()));
+    if bytes.len() > limit {
+        return Err(oversized(bytes.len()));
     }
-    Ok(text)
+    Ok(bytes)
 }
 
 fn bind_inputs(
