@@ -27,6 +27,7 @@ jobs:
           tool: just@1.59.0
       - run: just ci
       - run: just test-parallel
+      - run: cargo run -q -p oxfuse-runtime --example optimize_and_run --locked
       - if: matrix.os == 'ubuntu-latest'
         run: just bench-check
       - name: gpu self-test report (a measurement, never a gate)
