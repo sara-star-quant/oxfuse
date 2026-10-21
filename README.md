@@ -6,13 +6,13 @@
 [![MSRV](https://img.shields.io/crates/msrv/oxfuse)](https://crates.io/crates/oxfuse)
 [![license](https://img.shields.io/crates/l/oxfuse.svg)](LICENSE)
 
-A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimizes it without changing results, and runs it on the CPU. Experimental, not for production use.
+A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimizes it without changing results, and runs it on the CPU or, optionally, on a GPU through wgpu. Experimental, not for production use.
 
 ## What it does
 
-- **Compiles** a JSON graph to a typed IR with shape inference and a verifier that re-checks every invariant after each pass.
+- **Compiles** a JSON graph to an IR (intermediate representation: the graph as typed values and operations that the passes rewrite) with shape inference and a verifier that re-checks every invariant after each pass.
 - **Optimizes** with three exact passes: constant folding, common-subexpression elimination, dead-code elimination. Output bits never change.
-- **Runs** on two CPU backends. The fast backend returns the same bits as the reference backend. It is the default.
+- **Runs** on two CPU backends and an optional GPU backend (`--features wgpu`). The fast CPU backend returns the same bits as the reference backend and is the default.
 - **Rejects** malformed graphs with a stable error code and the JSON path of the offender.
 
 ## Evidence
@@ -24,7 +24,7 @@ A tensor-graph compiler in Rust. It takes a JSON graph, type-checks it, optimize
 | Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
 | Tests detect real defects | cargo-mutants: 268 of 280 caught, survivors documented |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
-| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani proofs of the dispatch fold and the matmul, transpose and permute indexing |
+| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
 | Builds on Rust 1.88 or newer | MSRV job in CI |
 
 Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.49x of `ndarray`'s speed on the recorded machine.
@@ -71,6 +71,11 @@ A graph is named inputs, constants and nodes. This one is `relu(x @ w + b)` (`ex
 
     $ cargo run -q -p oxfuse -- inspect examples/tiny_mlp.json    # typed IR and pass effects
     $ cargo run -q -p oxfuse -- run  examples/relu.json --inputs examples/relu.inputs.json --backend reference --no-opt
+
+As a library, there is a runnable example for each backend family:
+
+    $ cargo run --release -p oxfuse-runtime --example optimize_and_run   # passes, then reference and fast CPU backends
+    $ cargo run --release -p oxfuse-wgpu --example matmul                # GPU, with the bound check and device-resident run
 
 Errors carry a code and a location: ``error[E017]: node `y`: MatMul: inner dimensions differ: [2, 3] x [4, 5] (at nodes[0])``.
 
