@@ -86,11 +86,13 @@ fn micro_rows<S: Simd>(
 /// multiply-add each (no reassociation). That is exactly the reference's sum,
 /// so the bits match.
 ///
-/// Columns that do not fill a vector are handled by copying that tile of B,
-/// zero padded, into a small buffer and running the same micro-kernel on a
-/// padded copy of the C block. The padded lanes compute values nobody reads
-/// (an infinity in A gives NaN there), and only the real columns are copied
-/// back.
+/// Columns that do not fill a vector run through the same micro-kernel on a
+/// padded copy of the C block. The kernel reads a full vector of B from the
+/// first tail column, which runs on into the next row of B: those lanes
+/// compute values nobody reads (an infinity in A gives NaN there), and only
+/// the real columns are copied back. Only the last few rows of B, where a full
+/// vector would read past the end of the slice, are copied into a zero padded
+/// buffer first; they come last in `k`, so the order of the sums is unchanged.
 #[simd]
 #[allow(clippy::too_many_arguments)]
 fn matmul_rows_simd<S: Simd>(
@@ -112,12 +114,24 @@ fn matmul_rows_simd<S: Simd>(
         for k0 in (0..k).step_by(kc) {
             let k1 = (k0 + kc).min(k);
             let klen = k1 - k0;
-            if tail > 0 {
+            // Rows `p` of this k-tile whose vector at the first tail column
+            // fits in `b`; the rest go through `packed`.
+            let direct = if tail == 0 {
+                klen
+            } else if b.len() < j_full + W {
+                0
+            } else {
+                ((b.len() - j_full - W) / n + 1)
+                    .saturating_sub(k0)
+                    .min(klen)
+            };
+            if direct < klen {
                 packed.clear();
-                packed.resize(klen * W, 0.0f32);
-                for p in 0..klen {
+                packed.resize((klen - direct) * W, 0.0f32);
+                for p in direct..klen {
                     let from = (k0 + p) * n + j_full;
-                    packed[p * W..p * W + tail].copy_from_slice(&b[from..from + tail]);
+                    let to = (p - direct) * W;
+                    packed[to..to + tail].copy_from_slice(&b[from..from + tail]);
                 }
             }
             for i in (0..m).step_by(R) {
@@ -142,7 +156,15 @@ fn matmul_rows_simd<S: Simd>(
                         let from = (i + r) * n + j_full;
                         edge[r * W..r * W + tail].copy_from_slice(&c[from..from + tail]);
                     }
-                    micro_rows(simd, rows, a_block, k, &packed, W, &mut edge, W, klen);
+                    if direct > 0 {
+                        let b_tail = &b[k0 * n + j_full..];
+                        micro_rows(simd, rows, a_block, k, b_tail, n, &mut edge, W, direct);
+                    }
+                    if direct < klen {
+                        let a_rest = &a[i * k + k0 + direct..];
+                        let rest = klen - direct;
+                        micro_rows(simd, rows, a_rest, k, &packed, W, &mut edge, W, rest);
+                    }
                     for r in 0..rows {
                         let to = (i + r) * n + j_full;
                         c[to..to + tail].copy_from_slice(&edge[r * W..r * W + tail]);

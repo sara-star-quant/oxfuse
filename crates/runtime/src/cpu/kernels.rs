@@ -190,6 +190,27 @@ mod tests {
         }
     }
 
+    /// Tail columns read a full vector of B that runs into the next row; the
+    /// last rows, where that would leave `b`, take another path. Every width
+    /// around that edge, with k-tiles that split the rows differently.
+    #[test]
+    fn matmul_is_exact_where_the_tail_vector_would_leave_b() {
+        for n in 1..=40 {
+            for k in 1..=5 {
+                let m = 7;
+                let (a, b) = (values(m * k, 61), values(k * n, 62));
+                let want = bits(&reference_matmul(&a, &b, m, k, n));
+                for (kc, nc) in [(1, NC), (2, W + 3), (3, 2 * W), (KC, NC)] {
+                    assert_eq!(
+                        bits(&matmul_tiled(&a, &b, m, k, n, kc, nc)),
+                        want,
+                        "n={n} k={k} kc={kc} nc={nc}"
+                    );
+                }
+            }
+        }
+    }
+
     /// The multiply-add rounds once in the register block, in the column tail
     /// and in the row tail: the same lost `2^-24` as in the reference test.
     #[test]
