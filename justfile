@@ -54,6 +54,12 @@ mutants:
 mutants-gpu file:
     cargo mutants -p oxfuse-wgpu -f {{file}} --test-package oxfuse-wgpu -j 2 --timeout 180
 
+# Compare a benchmark filter between a base commit and the working tree, interleaved over several rounds,
+# so a result is judged against the run-to-run spread. Example:
+# just bench-ab 'sigmoid/cpu' --package oxfuse-runtime --features parallel
+bench-ab filter *args:
+    python3 -I scripts/bench_ab.py {{args}} '{{filter}}'
+
 # Full benchmark run. Slow, noisy on a busy machine; close other apps first.
 bench:
     cargo bench -p oxfuse-runtime --locked
