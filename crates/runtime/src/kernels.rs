@@ -1,6 +1,8 @@
 //! Naive reference kernels. Obviously correct beats fast here: these are the
 //! oracle the optimized backend is tested against.
 
+use fearless_simd::{Level, Simd, dispatch};
+use fearless_simd_macros::simd;
 use oxfuse_core::Op;
 
 /// Applies `op`. `inputs` and `shapes` are parallel slices. The graph was
@@ -61,6 +63,23 @@ pub(crate) fn sigmoid_one(x: f32) -> f32 {
 /// kernel itself is held to the documented bound against the float64 oracle.
 fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; m * n];
+    dispatch!(Level::new(), simd => matmul_loops(simd, a, b, (m, k, n), &mut out));
+    out
+}
+
+/// The plain triple loop. It runs inside the wrapper `#[simd]` generates, which
+/// compiles it with the CPU's FMA feature where there is one, so `mul_add`
+/// becomes one instruction and not a call into the math library (17 times
+/// slower on x86 without it). The code is still scalar and the bits are the
+/// same either way.
+#[simd]
+fn matmul_loops<S: Simd>(
+    _simd: S,
+    a: &[f32],
+    b: &[f32],
+    (m, k, n): (usize, usize, usize),
+    out: &mut [f32],
+) {
     for i in 0..m {
         for j in 0..n {
             let mut acc = 0.0f32;
@@ -70,7 +89,6 @@ fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
             out[i * n + j] = acc;
         }
     }
-    out
 }
 
 /// Output dimension `i` is input dimension `perm[i]`. Walks the output in
