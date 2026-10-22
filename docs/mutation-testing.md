@@ -4,7 +4,7 @@
 
 ## Result
 
-Run on an Apple M1 Pro on 2026-10-21. Rows without a tree note ran on crates tree 026fd4c; rows with one ran on that tree (`git rev-parse --short HEAD:crates` names the tree).
+Run on an Apple M1 Pro on 2026-10-21, except the `exec.rs` and `context.rs` rows, rerun on 2026-10-22 after the host path was reworked. Rows without a tree note ran on crates tree 026fd4c; rows with one ran on that tree (`git rev-parse --short HEAD:crates` names the tree).
 
 | Scope | Mutants | Caught | Timed out (counts as caught) | Unviable (do not compile) | Missed |
 |---|---|---|---|---|---|
@@ -12,13 +12,13 @@ Run on an Apple M1 Pro on 2026-10-21. Rows without a tree note ran on crates tre
 | `oxfuse-wgpu` `config.rs` | 100 | 98 | 0 | 1 | 1 |
 | `oxfuse-wgpu` `bounds.rs` | 45 | 45 | 0 | 0 | 0 |
 | `oxfuse-wgpu` `model.rs` (tree 2e3e5d7) | 245 | 240 | 0 | 2 | 3 |
-| `oxfuse-wgpu` `exec.rs` (tree 2e3e5d7) | 69 | 52 | 0 | 15 | 2 |
-| `oxfuse-wgpu` `context.rs` | 12 | 7 | 0 | 4 | 1 |
+| `oxfuse-wgpu` `exec.rs` (tree 6204ce2) | 100 | 74 | 0 | 24 | 2 |
+| `oxfuse-wgpu` `context.rs` (tree 6204ce2) | 33 | 23 | 0 | 9 | 1 |
 | `oxfuse-wgpu` `selftest.rs` (tree 2e3e5d7) | 91 | 88 | 0 | 3 | 0 |
 | `oxfuse-onnx` (tree 521c719) | 273 | 254 | 0 | 18 | 1 |
-| Total | 1429 | 1322 | 4 | 92 | 11 |
+| Total | 1481 | 1360 | 4 | 106 | 11 |
 
-Of the 1337 mutants that compile, 1326 were stopped (99.2%) and the other 11 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
+Of the 1375 mutants that compile, 1364 were stopped (99.2%) and the other 11 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
 
 Reproduce with `just mutants` (the first two commands below) and `just mutants-gpu crates/wgpu/src/exec.rs` (one GPU host file, needs an adapter). They run:
 

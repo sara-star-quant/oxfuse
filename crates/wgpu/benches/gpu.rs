@@ -173,8 +173,36 @@ fn multi_output(c: &mut Criterion) {
     group.finish();
 }
 
+/// 16 host runs one after another against `run_many` on the same 16 inputs.
+fn many(c: &mut Criterion) {
+    let Ok(gpu) = WgpuBackend::new() else { return };
+    let mut group = c.benchmark_group("gpu-many");
+    group
+        .sample_size(20)
+        .measurement_time(Duration::from_secs(3));
+    for n in [128usize, 512] {
+        let graph = graph(Op::MatMul, &[&[n, n], &[n, n]]);
+        let exe = gpu.compile_device(&graph).unwrap();
+        let batches: Vec<Vec<Tensor>> = (0..16)
+            .map(|k| vec![tensor(&[n, n], k), tensor(&[n, n], k + 100)])
+            .collect();
+        group.bench_with_input(BenchmarkId::new("loop-of-16-runs", n), &n, |b, _| {
+            b.iter(|| {
+                for inputs in &batches {
+                    black_box(exe.run(inputs).unwrap());
+                }
+            })
+        });
+        group.bench_with_input(BenchmarkId::new("run-many-16", n), &n, |b, _| {
+            b.iter(|| black_box(exe.run_many(&batches).unwrap()))
+        });
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     record_adapter();
+    many(c);
     multi_output(c);
     for n in [128usize, 256, 512, 1024, 2048] {
         let g = graph(Op::MatMul, &[&[n, n], &[n, n]]);
