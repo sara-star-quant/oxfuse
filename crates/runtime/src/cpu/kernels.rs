@@ -2,6 +2,11 @@
 //! the reference kernel returns. An arm delegates to the reference kernel
 //! until a benchmark shows an optimized version is faster.
 
+use super::matmul::matmul;
+#[cfg(test)]
+use super::matmul::{KC, NC, W, matmul_tiled};
+#[cfg(all(test, feature = "parallel"))]
+use super::matmul::{PARALLEL_MIN_MACS, matmul_parallel, use_threads};
 use oxfuse_core::Op;
 
 pub(super) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32> {
@@ -14,207 +19,11 @@ pub(super) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
             shapes[1][1],
         ),
         Op::Transpose { perm } => transpose(inputs[0], shapes[0], perm),
-        Op::Sigmoid => sigmoid(inputs[0]),
+        Op::Sigmoid => super::elementwise::sigmoid(inputs[0]),
         Op::Relu | Op::Add | Op::Mul | Op::Reshape { .. } => {
             crate::kernels::apply(op, inputs, shapes)
         }
     }
-}
-
-/// Elements below which splitting Sigmoid across threads costs more than it
-/// saves. Only Sigmoid is split: it is bound by `exp`, while Relu, Add and Mul
-/// are bound by memory and got slower when split (see docs/benchmarks.md).
-#[cfg(feature = "parallel")]
-const SIGMOID_PARALLEL_MIN: usize = 1 << 16;
-#[cfg(feature = "parallel")]
-const SIGMOID_CHUNK: usize = 1 << 13;
-
-/// Each element is computed alone, so the bits do not depend on the split.
-fn sigmoid(input: &[f32]) -> Vec<f32> {
-    #[cfg(feature = "parallel")]
-    if input.len() >= SIGMOID_PARALLEL_MIN {
-        use rayon::prelude::*;
-        let mut out = vec![0.0f32; input.len()];
-        out.par_chunks_mut(SIGMOID_CHUNK)
-            .zip(input.par_chunks(SIGMOID_CHUNK))
-            .for_each(|(out, input)| {
-                for (o, &x) in out.iter_mut().zip(input) {
-                    *o = crate::kernels::sigmoid_one(x);
-                }
-            });
-        return out;
-    }
-    crate::kernels::apply(&Op::Sigmoid, &[input], &[])
-}
-
-fn sigmoid_in_place(buf: &mut [f32]) {
-    #[cfg(feature = "parallel")]
-    if buf.len() >= SIGMOID_PARALLEL_MIN {
-        use rayon::prelude::*;
-        buf.par_chunks_mut(SIGMOID_CHUNK).for_each(|chunk| {
-            chunk
-                .iter_mut()
-                .for_each(|x| *x = crate::kernels::sigmoid_one(*x))
-        });
-        return;
-    }
-    buf.iter_mut()
-        .for_each(|x| *x = crate::kernels::sigmoid_one(*x));
-}
-
-/// Computes an elementwise `op` into `buf`, which holds one operand and is
-/// overwritten with the result. `other` is the second operand of Add and Mul
-/// (one element for a scalar); `buf_first` says which operand `buf` held, so
-/// the operation sees the operands in the same order as the reference.
-pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>, buf_first: bool) {
-    let zip = |buf: &mut [f32], other: &[f32], f: fn(f32, f32) -> f32| {
-        let at = |i: usize| other[if other.len() == 1 { 0 } else { i }];
-        for (i, v) in buf.iter_mut().enumerate() {
-            *v = if buf_first {
-                f(*v, at(i))
-            } else {
-                f(at(i), *v)
-            };
-        }
-    };
-    match op {
-        Op::Relu => buf
-            .iter_mut()
-            .for_each(|x| *x = crate::kernels::relu_one(*x)),
-        Op::Sigmoid => sigmoid_in_place(buf),
-        Op::Add => zip(buf, other.expect("Add has two operands"), |x, y| x + y),
-        Op::Mul => zip(buf, other.expect("Mul has two operands"), |x, y| x * y),
-        Op::Reshape { .. } | Op::MatMul | Op::Transpose { .. } => {
-            unreachable!("not an in-place op")
-        }
-    }
-}
-
-/// Cache tile sizes. `KC` rows of B by `NC` columns stay hot while every row
-/// of A streams past them.
-const KC: usize = 256;
-const NC: usize = 512;
-/// Rows and columns of C held in registers by the micro-kernel.
-const R: usize = 4;
-const W: usize = 16;
-
-/// Row-major `[m, k] x [k, n]`, bit-identical to the reference kernel.
-///
-/// The loop order is j-tile, k-tile, row, k, j. For any one output element
-/// the contributions still arrive with `k` ascending (k-tiles run in order,
-/// and `p` ascends inside a tile), starting from `+0.0`, one multiply and one
-/// add each (no fused multiply-add, no reassociation). That is exactly the
-/// reference's sum, so the bits match. The innermost loop runs along a row of
-/// B and a row of C, which the compiler turns into SIMD.
-fn matmul_rows(a: &[f32], b: &[f32], k: usize, n: usize, c: &mut [f32], kc: usize, nc: usize) {
-    let m = c.len() / n;
-    for j0 in (0..n).step_by(nc) {
-        let j1 = (j0 + nc).min(n);
-        for k0 in (0..k).step_by(kc) {
-            let k1 = (k0 + kc).min(k);
-            let full = m - m % R;
-            for i in (0..full).step_by(R) {
-                let mut j = j0;
-                while j + W <= j1 {
-                    // A 4 x W block of C lives in registers for the whole
-                    // k-tile instead of being loaded and stored per step. The
-                    // adds into each element are the same, in the same order.
-                    let mut acc = [[0.0f32; W]; R];
-                    for (r, row) in acc.iter_mut().enumerate() {
-                        row.copy_from_slice(&c[(i + r) * n + j..(i + r) * n + j + W]);
-                    }
-                    for p in k0..k1 {
-                        let bv: &[f32; W] = b[p * n + j..p * n + j + W]
-                            .try_into()
-                            .expect("slice is W long");
-                        for (r, row) in acc.iter_mut().enumerate() {
-                            let x = a[(i + r) * k + p];
-                            for (acc_j, &b_j) in row.iter_mut().zip(bv) {
-                                *acc_j += x * b_j;
-                            }
-                        }
-                    }
-                    for (r, row) in acc.iter().enumerate() {
-                        c[(i + r) * n + j..(i + r) * n + j + W].copy_from_slice(row);
-                    }
-                    j += W;
-                }
-                if j < j1 {
-                    for r in 0..R {
-                        let c_row = &mut c[(i + r) * n + j..(i + r) * n + j1];
-                        for p in k0..k1 {
-                            let a_ip = a[(i + r) * k + p];
-                            let b_row = &b[p * n + j..p * n + j1];
-                            for (c_ij, &b_pj) in c_row.iter_mut().zip(b_row) {
-                                *c_ij += a_ip * b_pj;
-                            }
-                        }
-                    }
-                }
-            }
-            for i in full..m {
-                let c_row = &mut c[i * n + j0..i * n + j1];
-                for p in k0..k1 {
-                    let a_ip = a[i * k + p];
-                    let b_row = &b[p * n + j0..p * n + j1];
-                    for (c_ij, &b_pj) in c_row.iter_mut().zip(b_row) {
-                        *c_ij += a_ip * b_pj;
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn matmul_tiled(
-    a: &[f32],
-    b: &[f32],
-    m: usize,
-    k: usize,
-    n: usize,
-    kc: usize,
-    nc: usize,
-) -> Vec<f32> {
-    let mut c = vec![0.0f32; m * n];
-    matmul_rows(a, b, k, n, &mut c, kc, nc);
-    c
-}
-
-/// Rows per parallel task. Threads split the output by rows only; the sum
-/// for each element is never split across threads, so the bits do not
-/// depend on the thread count.
-#[cfg(feature = "parallel")]
-const ROWS_PER_TASK: usize = 16;
-
-/// Multiply-adds below which threads cost more than they save. Set from the
-/// benchmark crossover recorded in docs/benchmarks.md.
-#[cfg(feature = "parallel")]
-const PARALLEL_MIN_MACS: usize = 1 << 21;
-
-#[cfg(feature = "parallel")]
-fn use_threads(m: usize, k: usize, n: usize) -> bool {
-    m.saturating_mul(k).saturating_mul(n) >= PARALLEL_MIN_MACS
-}
-
-#[cfg(feature = "parallel")]
-fn matmul_parallel(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
-    use rayon::prelude::*;
-    let mut c = vec![0.0f32; m * n];
-    c.par_chunks_mut(ROWS_PER_TASK * n)
-        .enumerate()
-        .for_each(|(task, rows)| {
-            let first = task * ROWS_PER_TASK;
-            matmul_rows(&a[first * k..], b, k, n, rows, KC, NC);
-        });
-    c
-}
-
-fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
-    #[cfg(feature = "parallel")]
-    if use_threads(m, k, n) {
-        return matmul_parallel(a, b, m, k, n);
-    }
-    matmul_tiled(a, b, m, k, n, KC, NC)
 }
 
 const TILE: usize = 16;
