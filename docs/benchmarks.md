@@ -61,7 +61,8 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   array indexed inside a loop, about 55 ms (the device spills it to memory,
   three times slower than no blocking at all). Results stay inside the
   documented bound of the float64 result but are not bit-identical to the
-  reference, because the device fuses multiply-add.
+  reference of that time, because the device fuses multiply-add. The reference
+  fuses now, and the Metal result is bit-identical to it.
 - Executor, buffer reuse: a computed operand that no later step reads and that
   is not an output is overwritten by Relu, Sigmoid, Add and Mul when it has the
   result's size, Reshape moves it, and any operand a step read last is freed

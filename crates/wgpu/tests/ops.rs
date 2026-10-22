@@ -2,10 +2,10 @@
 
 mod common;
 
-use common::{available, bits, data, device, measurements_dir, reference, tensor};
+use common::{available, bits, data, device, gpu, measurements_dir, reference, tensor};
 use oxfuse_core::Op;
 use oxfuse_runtime::Tensor;
-use oxfuse_wgpu::{gpu_matmul_bound, ulp_distance};
+use oxfuse_wgpu::{gpu_matmul_bound, matmul_exact_on, ulp_distance};
 
 // Around the 16-thread tile and the 64-wide block of the default configuration.
 const EDGES: [usize; 8] = [1, 15, 16, 17, 33, 63, 64, 65];
@@ -131,6 +131,24 @@ fn matmul_with_subnormal_products_stays_inside_the_flush_aware_bound() {
         f32::MIN_POSITIVE,
         "the reference is exact"
     );
+}
+
+/// The reference fuses every multiply-add. A device that fuses the same way, in
+/// the same order, returns the same bits, and the recorded adapter does.
+#[test]
+fn matmul_is_bit_identical_to_the_fused_reference_where_the_adapter_fuses() {
+    if !available() || !matmul_exact_on(&gpu().context().info().name) {
+        return;
+    }
+    for (m, k, n) in matmul_cases() {
+        let a = tensor(&[m, k], (m * 7 + k) as u64, true);
+        let b = tensor(&[k, n], (n * 13 + k) as u64, true);
+        assert_eq!(
+            bits(&device(Op::MatMul, &[a.clone(), b.clone()])),
+            bits(&reference(Op::MatMul, &[a, b])),
+            "{m}x{k}x{n}"
+        );
+    }
 }
 
 #[test]

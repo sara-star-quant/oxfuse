@@ -43,6 +43,18 @@ pub fn gpu_matmul_bound(a_row: &[f32], b_col: &[f32]) -> f64 {
     matmul_bound(a_row, b_col) + 2.0 * a_row.len() as f64 * f64::from(f32::MIN_POSITIVE)
 }
 
+/// Adapters whose `MatMul` was measured bit-identical to the reference on zero
+/// and normal inputs. The reference fuses each multiply-add, and these devices
+/// do the same, in the same ascending `k` order from one accumulator. Another
+/// adapter may or may not fuse: `oxfuse gpu-selftest` reports its distance and
+/// the plain bound of `gpu_matmul_bound` is all that is promised there.
+const MATMUL_EXACT_ADAPTERS: [&str; 2] = ["Apple M1 Pro", "Tesla T4"];
+
+/// Whether `MatMul` on `adapter` is held to bit equality with the reference.
+pub fn matmul_exact_on(adapter: &str) -> bool {
+    MATMUL_EXACT_ADAPTERS.contains(&adapter)
+}
+
 /// Largest ulp distance from the reference that Sigmoid may have on normal
 /// results: 65, measured over all finite `f32` inputs by `sweep_exhaustive` on an
 /// Apple M1 Pro (Metal) on 2026-10-20, worst at x = -86.64 where the device `exp`
@@ -180,6 +192,14 @@ mod tests {
         assert!(!sigmoid_matches(f32::NAN, 0.5, 1000));
         assert!(!sigmoid_matches(0.5, f32::NAN, 1000));
         assert!(!sigmoid_matches(f32::INFINITY, 1.0, 1000));
+    }
+
+    #[test]
+    fn matmul_bit_equality_is_enforced_only_on_adapters_that_were_measured() {
+        assert!(matmul_exact_on("Apple M1 Pro"));
+        assert!(matmul_exact_on("Tesla T4"));
+        assert!(!matmul_exact_on("llvmpipe (LLVM 19.1.1, 256 bits)"));
+        assert!(!matmul_exact_on(""));
     }
 
     #[test]
