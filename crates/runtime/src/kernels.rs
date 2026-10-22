@@ -49,11 +49,18 @@ pub(crate) fn relu_one(x: f32) -> f32 {
 /// `1 / (1 + exp(-x))` in `f32`. Large negative `x` makes `exp` overflow to
 /// infinity and the result 0 without producing NaN; NaN propagates.
 fn sigmoid(input: &[f32]) -> Vec<f32> {
-    input.iter().map(|&x| sigmoid_one(x)).collect()
+    let mut out = vec![0.0f32; input.len()];
+    dispatch!(Level::new(), simd => sigmoid_loop(simd, input, &mut out));
+    out
 }
 
-pub(crate) fn sigmoid_one(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
+/// The plain scalar loop, inside the wrapper `#[simd]` generates so that
+/// `mul_add` is one instruction on x86 (see `matmul_loops`).
+#[simd]
+fn sigmoid_loop<S: Simd>(_simd: S, input: &[f32], out: &mut [f32]) {
+    for (o, &x) in out.iter_mut().zip(input) {
+        *o = crate::math::sigmoid(x);
+    }
 }
 
 /// Row-major `[m, k] x [k, n]`. Each output element sums in ascending `k`

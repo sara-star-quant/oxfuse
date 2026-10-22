@@ -6,6 +6,8 @@
 //! 3 percent) after the in-place kernels were added, and moving them out
 //! restored it (docs/benchmarks.md).
 
+use super::vecmath;
+use fearless_simd::Level;
 use oxfuse_core::Op;
 
 /// Elements below which splitting Sigmoid across threads costs more than it
@@ -18,35 +20,30 @@ const SIGMOID_CHUNK: usize = 1 << 13;
 
 /// Each element is computed alone, so the bits do not depend on the split.
 pub(super) fn sigmoid(input: &[f32]) -> Vec<f32> {
+    let level = Level::new();
+    let mut out = vec![0.0f32; input.len()];
     #[cfg(feature = "parallel")]
     if input.len() >= SIGMOID_PARALLEL_MIN {
         use rayon::prelude::*;
-        let mut out = vec![0.0f32; input.len()];
         out.par_chunks_mut(SIGMOID_CHUNK)
             .zip(input.par_chunks(SIGMOID_CHUNK))
-            .for_each(|(out, input)| {
-                for (o, &x) in out.iter_mut().zip(input) {
-                    *o = crate::kernels::sigmoid_one(x);
-                }
-            });
+            .for_each(|(out, input)| vecmath::sigmoid_into(level, input, out));
         return out;
     }
-    crate::kernels::apply(&Op::Sigmoid, &[input], &[])
+    vecmath::sigmoid_into(level, input, &mut out);
+    out
 }
 
 fn sigmoid_in_place(buf: &mut [f32]) {
+    let level = Level::new();
     #[cfg(feature = "parallel")]
     if buf.len() >= SIGMOID_PARALLEL_MIN {
         use rayon::prelude::*;
-        buf.par_chunks_mut(SIGMOID_CHUNK).for_each(|chunk| {
-            chunk
-                .iter_mut()
-                .for_each(|x| *x = crate::kernels::sigmoid_one(*x))
-        });
+        buf.par_chunks_mut(SIGMOID_CHUNK)
+            .for_each(|chunk| vecmath::sigmoid_in_place(level, chunk));
         return;
     }
-    buf.iter_mut()
-        .for_each(|x| *x = crate::kernels::sigmoid_one(*x));
+    vecmath::sigmoid_in_place(level, buf);
 }
 
 /// Computes an elementwise `op` into `buf`, which holds one operand and is
