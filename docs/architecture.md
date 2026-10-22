@@ -58,3 +58,16 @@ The oracle is independent code in another language, so a bug shared by both back
 - The `Backend` trait assumes host tensors. The wgpu executable adds its device API beside it instead of changing the trait; see decision 0012.
 - Because the fast backend is bit-identical to the reference by design, no test on outputs can show that a fast kernel was actually dispatched. Only the benchmarks show it. See "Known test limit" in `CONTRIBUTING.md`.
 - Oxfuse is CPU by default. The wgpu backend is optional and is measured, not promised, on the devices in [adapters.md](adapters.md).
+
+## Memory bounds and when to revisit them
+
+`Limits` caps every tensor at 2^28 elements and all values of a graph together at 2^29 elements (2 GiB of `f32`), and the loader refuses a file over 64 MiB. Every allocation a backend makes is a function of those caps, so a graph that loads has a known worst case and the backends do not guard individual allocations. Allocating beyond what the machine has still aborts the process on the CPU backends (`vec![0.0; n]`), and the buffer reuse in the fast backend lowers the peak but does not change this. On the GPU, an out-of-memory error from the device is captured per call and returned as `Error::Backend`.
+
+This is a deliberate trade: a fallible allocation path (`try_reserve_exact` on every output, and a new `Error` variant, which is a breaking change to a public enum) adds code and a test matrix to guard a case the caps make unlikely. Revisit it when any of these becomes true:
+
+- The caps are raised so that the worst case passes 4 GiB, or a caller sets `Limits` that large.
+- Oxfuse is run on a laptop or a small board where 2 GiB is a large share of free memory.
+- It is run on an integrated GPU. The GPU shares system memory, so the host copy, the device buffers and the staging buffers of `run()` all count against the same pool, and one tensor can cost three times its size at once. Keeping tensors resident with `run_device` avoids the copies.
+- A device reports a `max_buffer_size` or storage binding limit smaller than a tensor the caps allow (the checks in `check_tensor` already return an error for that case).
+
+The plan for that day: compute the peak from the execution plan before running (the liveness the buffer reuse already uses), compare it with a configurable budget, and fail with a named error before allocating anything; then switch the large allocations to `try_reserve_exact`.
