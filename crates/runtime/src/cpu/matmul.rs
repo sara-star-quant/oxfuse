@@ -7,17 +7,17 @@
 pub(super) const KC: usize = 256;
 pub(super) const NC: usize = 512;
 /// Rows and columns of C held in registers by the micro-kernel.
-const R: usize = 4;
+pub(super) const R: usize = 6;
 pub(super) const W: usize = 16;
 
 /// Row-major `[m, k] x [k, n]`, bit-identical to the reference kernel.
 ///
 /// The loop order is j-tile, k-tile, row, k, j. For any one output element
 /// the contributions still arrive with `k` ascending (k-tiles run in order,
-/// and `p` ascends inside a tile), starting from `+0.0`, one multiply and one
-/// add each (no fused multiply-add, no reassociation). That is exactly the
-/// reference's sum, so the bits match. The innermost loop runs along a row of
-/// B and a row of C, which the compiler turns into SIMD.
+/// and `p` ascends inside a tile), starting from `+0.0`, one fused
+/// multiply-add each (no reassociation). That is exactly the reference's sum,
+/// so the bits match. The innermost loop runs along a row of B and a row of C,
+/// which the compiler turns into SIMD.
 fn matmul_rows(a: &[f32], b: &[f32], k: usize, n: usize, c: &mut [f32], kc: usize, nc: usize) {
     let m = c.len() / n;
     for j0 in (0..n).step_by(nc) {
@@ -28,7 +28,7 @@ fn matmul_rows(a: &[f32], b: &[f32], k: usize, n: usize, c: &mut [f32], kc: usiz
             for i in (0..full).step_by(R) {
                 let mut j = j0;
                 while j + W <= j1 {
-                    // A 4 x W block of C lives in registers for the whole
+                    // An R x W block of C lives in registers for the whole
                     // k-tile instead of being loaded and stored per step. The
                     // adds into each element are the same, in the same order.
                     let mut acc = [[0.0f32; W]; R];
@@ -42,7 +42,7 @@ fn matmul_rows(a: &[f32], b: &[f32], k: usize, n: usize, c: &mut [f32], kc: usiz
                         for (r, row) in acc.iter_mut().enumerate() {
                             let x = a[(i + r) * k + p];
                             for (acc_j, &b_j) in row.iter_mut().zip(bv) {
-                                *acc_j += x * b_j;
+                                *acc_j = x.mul_add(b_j, *acc_j);
                             }
                         }
                     }
@@ -58,7 +58,7 @@ fn matmul_rows(a: &[f32], b: &[f32], k: usize, n: usize, c: &mut [f32], kc: usiz
                             let a_ip = a[(i + r) * k + p];
                             let b_row = &b[p * n + j..p * n + j1];
                             for (c_ij, &b_pj) in c_row.iter_mut().zip(b_row) {
-                                *c_ij += a_ip * b_pj;
+                                *c_ij = a_ip.mul_add(b_pj, *c_ij);
                             }
                         }
                     }
@@ -70,7 +70,7 @@ fn matmul_rows(a: &[f32], b: &[f32], k: usize, n: usize, c: &mut [f32], kc: usiz
                     let a_ip = a[i * k + p];
                     let b_row = &b[p * n + j0..p * n + j1];
                     for (c_ij, &b_pj) in c_row.iter_mut().zip(b_row) {
-                        *c_ij += a_ip * b_pj;
+                        *c_ij = a_ip.mul_add(b_pj, *c_ij);
                     }
                 }
             }

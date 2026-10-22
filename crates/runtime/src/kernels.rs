@@ -55,7 +55,9 @@ pub(crate) fn sigmoid_one(x: f32) -> f32 {
 }
 
 /// Row-major `[m, k] x [k, n]`. Each output element sums in ascending `k`
-/// order in `f32`. The fast backend must return these exact bits; this
+/// order in `f32`, one fused multiply-add (a single rounding) per step.
+/// `f32::mul_add` is exact on every platform, in hardware or in software, so
+/// the bits do not depend on the CPU. The fast backend must return these exact bits; this
 /// kernel itself is held to the documented bound against the float64 oracle.
 fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; m * n];
@@ -63,7 +65,7 @@ fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
         for j in 0..n {
             let mut acc = 0.0f32;
             for p in 0..k {
-                acc += a[i * k + p] * b[p * n + j];
+                acc = a[i * k + p].mul_add(b[p * n + j], acc);
             }
             out[i * n + j] = acc;
         }
@@ -246,6 +248,18 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `x = 1 + 2^-12` squares to `1 + 2^-11 + 2^-24`, which rounds to `1 + 2^-11`.
+    /// Adding the second product to the first with one rounding keeps the lost
+    /// `2^-24`; a separate multiply and add loses it and returns zero.
+    #[test]
+    fn matmul_rounds_once_per_multiply_add() {
+        let x = 1.0 + 2f32.powi(-12);
+        let a = [1.0 + 2f32.powi(-11), x];
+        let b = [1.0, -x];
+        let out = apply(&Op::MatMul, &[&a, &b], &[&[1, 2], &[2, 1]]);
+        assert_eq!(out[0], -(2f32.powi(-24)));
     }
 
     #[test]

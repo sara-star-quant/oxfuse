@@ -4,7 +4,7 @@
 
 use super::matmul::matmul;
 #[cfg(test)]
-use super::matmul::{KC, NC, W, matmul_tiled};
+use super::matmul::{KC, NC, R, W, matmul_tiled};
 #[cfg(all(test, feature = "parallel"))]
 use super::matmul::{PARALLEL_MIN_MACS, matmul_parallel, use_threads};
 use oxfuse_core::Op;
@@ -138,7 +138,9 @@ mod tests {
 
     #[test]
     fn matmul_is_bit_identical_for_awkward_sizes() {
-        let sizes = [1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 33, 64, 65];
+        let sizes = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 16, 17, 31, 33, 64, 65,
+        ];
         for &m in &sizes {
             for &k in &sizes {
                 for &n in &[1, 2, 5, 8, 9, 16, 17, 33, 40] {
@@ -162,6 +164,58 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    /// Rows below, at and above one and two register blocks, each with a full
+    /// block of columns, a tail of columns and a k that spans two k-tiles.
+    #[test]
+    fn matmul_covers_every_row_remainder_of_the_register_block() {
+        for m in 1..=2 * R + 1 {
+            for n in [1, W - 1, W, W + 1, 2 * W + 3] {
+                let k = 5;
+                let (a, b) = (values(m * k, 31), values(k * n, 32));
+                let want = bits(&reference_matmul(&a, &b, m, k, n));
+                for (kc, nc) in [(2, W), (KC, NC)] {
+                    assert_eq!(
+                        bits(&matmul_tiled(&a, &b, m, k, n, kc, nc)),
+                        want,
+                        "m={m} n={n} kc={kc} nc={nc}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The multiply-add rounds once in the register block, in the column tail
+    /// and in the row tail: the same lost `2^-24` as in the reference test.
+    #[test]
+    fn matmul_rounds_once_in_every_part_of_the_kernel() {
+        let x = 1.0 + 2f32.powi(-12);
+        for (m, n) in [
+            (R, W),
+            (R, W + 1),
+            (R + 1, W),
+            (1, 1),
+            (2 * R + 1, 2 * W + 3),
+        ] {
+            let mut a = vec![0.0f32; m * 2];
+            let mut b = vec![0.0f32; 2 * n];
+            for i in 0..m {
+                a[i * 2] = 1.0 + 2f32.powi(-11);
+                a[i * 2 + 1] = x;
+            }
+            for j in 0..n {
+                b[j] = 1.0;
+                b[n + j] = -x;
+            }
+            for (kc, nc) in [(1, W), (2, 2 * W), (KC, NC)] {
+                let out = matmul_tiled(&a, &b, m, 2, n, kc, nc);
+                assert!(
+                    out.iter().all(|&v| v == -(2f32.powi(-24))),
+                    "m={m} n={n} kc={kc} nc={nc}: {out:?}"
+                );
             }
         }
     }
@@ -196,7 +250,7 @@ mod tests {
 
     #[test]
     fn special_values_inside_the_register_block_match_the_reference_bits() {
-        // Sizes that fill the 4 x W block, with leftover rows and columns.
+        // Sizes that fill the R x W block, with leftover rows and columns.
         let special = [
             f32::NAN,
             f32::INFINITY,

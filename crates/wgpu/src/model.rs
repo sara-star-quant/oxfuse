@@ -253,7 +253,8 @@ pub fn matmul(
                                 for j in 0..r {
                                     let bv = b_tile[(kk * block + lx * r + j) as usize]
                                         .expect("a b tile cell was never loaded");
-                                    acc[(((ly * t + lx) * r + i) * r + j) as usize] += av * bv;
+                                    let at = (((ly * t + lx) * r + i) * r + j) as usize;
+                                    acc[at] = av.mul_add(bv, acc[at]);
                                 }
                             }
                         }
