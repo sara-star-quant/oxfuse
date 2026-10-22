@@ -68,11 +68,16 @@ jobs:
           path: mutants.out
 
   # Every mutant of the CPU-side crates, split four ways. All shards must use the
-  # same arguments and the same shard count.
-  full:
+  # same arguments and the same shard count. The commands are the ones in
+  # `just mutants` (docs/mutation-testing.md). A miss or a failed baseline shows
+  # as a failed job, which does not block anything.
+  full-cpu:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    continue-on-error: true
+    env:
+      OXFUSE_REQUIRE_ADAPTER: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -81,12 +86,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-mutants@27.1.0
-      - run: cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse -p oxfuse-onnx --features oxfuse/onnx --test-workspace true -j 2 --timeout 120 --shard ${{ matrix.shard }}/4
-        continue-on-error: true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - run: cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu --test-workspace true -j 2 --timeout 120 --shard ${{ matrix.shard }}/4
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mutants-full-${{ matrix.shard }}
+          name: mutants-full-cpu-${{ matrix.shard }}
+          path: mutants.out
+
+  full-onnx:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-mutants@27.1.0
+      - run: cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-full-onnx
           path: mutants.out
