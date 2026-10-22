@@ -604,6 +604,86 @@ impl WgpuExecutable {
         Ok(results)
     }
 
+    /// `run_many` in one submission: every run's kernels and output copies share
+    /// one command buffer and one wait. The runs share the scratch buffers; the
+    /// passes execute in order, so each sees its own intermediates.
+    fn run_many_unscoped(&self, batches: &[Vec<Tensor>]) -> Result<Vec<Vec<Tensor>>, Error> {
+        let plan = &self.plan;
+        if batches.is_empty() {
+            return Ok(Vec::new());
+        }
+        for inputs in batches {
+            let shapes: Vec<&[usize]> = inputs.iter().map(|t| t.shape()).collect();
+            self.check_inputs(&shapes)?;
+        }
+        let caps = caps_of(self.ctx.limits());
+        let usage = wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC);
+        let mut uploads = Vec::with_capacity(batches.len());
+        for inputs in batches {
+            let mut uploaded = Vec::with_capacity(inputs.len());
+            for tensor in inputs {
+                check_tensor(elements(tensor.shape()), &caps).map_err(backend_error)?;
+                uploaded.push(self.ctx.buffer_from_f32(tensor.data(), usage)?);
+            }
+            uploads.push(uploaded);
+        }
+        let scratch = self.scratch.lock().unwrap();
+        let mut encoder = self
+            .ctx
+            .device()
+            .create_command_encoder(&Default::default());
+        // Per run: which staged tensor holds each output slot.
+        let mut staging_of: Vec<HashMap<usize, usize>> = Vec::with_capacity(batches.len());
+        let mut staged = Vec::new();
+        for uploaded in &uploads {
+            let buffers: Vec<&wgpu::Buffer> = uploaded.iter().collect();
+            let mut slots = self.bind_slots(&scratch, &buffers);
+            self.encode_pass(&mut encoder, &mut slots);
+            staging_of.push(self.stage_outputs(&mut encoder, &slots, &mut staged));
+        }
+        let submission = self.ctx.queue().submit([encoder.finish()]);
+        drop(scratch);
+        let tensors = self.read_staged(submission, staged)?;
+        Ok(staging_of
+            .iter()
+            .map(|of| {
+                plan.outputs
+                    .iter()
+                    .map(|slot| tensors[of[slot]].clone())
+                    .collect()
+            })
+            .collect())
+    }
+
+    /// Copies each distinct output slot into a new staging buffer appended to
+    /// `staged`; returns the position of each slot's staging buffer.
+    fn stage_outputs(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        slots: &[Option<wgpu::Buffer>],
+        staged: &mut Vec<(wgpu::Buffer, Vec<usize>)>,
+    ) -> HashMap<usize, usize> {
+        let plan = &self.plan;
+        let mut staging_of: HashMap<usize, usize> = HashMap::new();
+        for &slot in &plan.outputs {
+            if staging_of.contains_key(&slot) {
+                continue;
+            }
+            let size = elements(&plan.slot_shapes[slot]) * 4;
+            let staging = self.staging_buffer(size);
+            encoder.copy_buffer_to_buffer(
+                slots[slot].as_ref().expect("output is bound"),
+                0,
+                &staging,
+                0,
+                size,
+            );
+            staging_of.insert(slot, staged.len());
+            staged.push((staging, plan.slot_shapes[slot].clone()));
+        }
+        staging_of
+    }
+
     /// `run` in one submission: the kernels and the copies of the outputs into
     /// staging buffers share a command buffer, and one wait covers every output.
     fn run_to_host_unscoped(&self, inputs: &[Tensor]) -> Result<Vec<Tensor>, Error> {
@@ -626,24 +706,8 @@ impl WgpuExecutable {
             .create_command_encoder(&Default::default());
         self.encode_pass(&mut encoder, &mut slots);
         // One staging buffer per distinct output slot; a slot listed twice is read once.
-        let mut staging_of: HashMap<usize, usize> = HashMap::new();
         let mut staged = Vec::new();
-        for &slot in &plan.outputs {
-            if staging_of.contains_key(&slot) {
-                continue;
-            }
-            let size = elements(&plan.slot_shapes[slot]) * 4;
-            let staging = self.staging_buffer(size);
-            encoder.copy_buffer_to_buffer(
-                slots[slot].as_ref().expect("output is bound"),
-                0,
-                &staging,
-                0,
-                size,
-            );
-            staging_of.insert(slot, staged.len());
-            staged.push((staging, plan.slot_shapes[slot].clone()));
-        }
+        let staging_of = self.stage_outputs(&mut encoder, &slots, &mut staged);
         let submission = self.ctx.queue().submit([encoder.finish()]);
         drop(scratch);
         let tensors = self.read_staged(submission, staged)?;
@@ -663,6 +727,10 @@ fn fold(elements: u64, cfg: &KernelConfig, caps: &DeviceCaps) -> Result<(u32, u3
 impl Executable for WgpuExecutable {
     fn run(&self, inputs: &[Tensor]) -> Result<Vec<Tensor>, Error> {
         self.ctx.scoped(|| self.run_to_host_unscoped(inputs))
+    }
+
+    fn run_many(&self, batches: &[Vec<Tensor>]) -> Result<Vec<Vec<Tensor>>, Error> {
+        self.ctx.scoped(|| self.run_many_unscoped(batches))
     }
 }
 
@@ -868,6 +936,70 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Runs of one batch share the scratch buffers inside one command buffer;
+    /// each must still see only its own intermediates.
+    #[test]
+    fn run_many_equals_separate_runs_on_a_graph_with_intermediates() {
+        use oxfuse_core::{GraphBuilder, Limits};
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let mut b = GraphBuilder::new(Limits::default());
+        let x = b.input("x", vec![8]).unwrap();
+        let c = b.constant("c", vec![8], vec![0.5; 8]).unwrap();
+        let y = b.node("y", Op::Relu, &[x]).unwrap();
+        let z = b.node("z", Op::Add, &[y, c]).unwrap();
+        let w = b.node("w", Op::Mul, &[z, z]).unwrap();
+        let graph = b.finish(&[w, y, w]).unwrap();
+        let exe = backend.compile_device(&graph).unwrap();
+        let batches: Vec<Vec<Tensor>> = (0..5)
+            .map(|k| {
+                let data: Vec<f32> = (0..8)
+                    .map(|i| (i as f32 - 3.0) * (k as f32 + 1.0))
+                    .collect();
+                vec![Tensor::new(vec![8], data).unwrap()]
+            })
+            .collect();
+        let many = exe.run_many(&batches).unwrap();
+        assert_eq!(many.len(), batches.len());
+        let bits = |t: &Tensor| t.data().iter().map(|v| v.to_bits()).collect::<Vec<_>>();
+        for (batch, got) in batches.iter().zip(&many) {
+            let want = exe.run(batch).unwrap();
+            assert_eq!(got.len(), want.len());
+            for (g, w) in got.iter().zip(&want) {
+                assert_eq!(g.shape(), w.shape());
+                assert_eq!(bits(g), bits(w));
+            }
+        }
+        // An empty batch does nothing, a batch of one equals run.
+        assert!(exe.run_many(&[]).unwrap().is_empty());
+        let one = exe.run_many(&batches[..1]).unwrap();
+        assert_eq!(bits(&one[0][0]), bits(&exe.run(&batches[0]).unwrap()[0]));
+    }
+
+    #[test]
+    fn run_many_validates_every_batch_before_running_any() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let exe = backend.compile_device(&relu_graph(4)).unwrap();
+        let good = vec![Tensor::new(vec![4], vec![1.0; 4]).unwrap()];
+        let wrong = vec![Tensor::new(vec![5], vec![1.0; 5]).unwrap()];
+        let missing: Vec<Tensor> = Vec::new();
+        assert!(matches!(
+            exe.run_many(&[good.clone(), wrong]),
+            Err(Error::InputShape { .. })
+        ));
+        assert!(matches!(
+            exe.run_many(&[good.clone(), missing]),
+            Err(Error::InputCount {
+                expected: 1,
+                found: 0
+            })
+        ));
+        assert_eq!(exe.run_many(&[good]).unwrap().len(), 1);
     }
 
     #[test]

@@ -94,6 +94,33 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   run-to-run spread of about 8 percent). The memory-bound Add at 16M varied
   from 3.8 to 5.3 ms before and 4.0 to 4.4 ms after. Kept for the small sizes
   and the saved memory; the large-size gain is not established.
+- GPU `run`, one submission: the kernels and the copies of the outputs into
+  staging buffers share a command buffer, and one wait covers every output
+  (before, each output was copied, submitted and waited for on its own). With
+  `just bench-ab` against the previous commit, five interleaved rounds: a graph
+  with 8 outputs 1.92 ms to 0.48 ms (-75 percent, spread 25 percent); a single
+  output (matmul 128 and 512, Add 1M) did not change beyond the spread. Kept.
+- GPU `run_many` (a trait method; the default runs `run` per element): the
+  whole batch is one command buffer and one wait. 16 matmuls of 128 x 128, host
+  to host: 6.3 ms as a loop of `run`, 3.4 ms with `run_many` (-45 percent); at
+  512 x 512, 21.9 ms to 19.3 ms (-12 percent), because upload and compute then
+  dominate. Memory grows with the batch (inputs, outputs and staging for every
+  element are alive together). Kept.
+- GPU `run_device`, where the CPU time goes (matmul 128, 1000 runs, spans
+  around each call, temporary instrumentation): about 30 us per call in total,
+  of which `finish` 10 us, `submit` 11 us, creating the output buffer 7 us,
+  recording the pass 2 us (a bind group 1.2 us, the layout lookup 0.1 us). The
+  error scopes added for reliability cost 0.2 us per call. Caching bind groups
+  or layouts could save at most 1.3 us of 30, so they were not built. The
+  figure of 90 to 110 us per call measured earlier included waiting on a full
+  queue.
+- GPU outputs mapped directly on unified memory: not built. The staging copy of
+  a 64 MB download costs about 3.6 ms of a call that takes 11 to 14 ms (the f32
+  conversion costs 3.7 ms and does not go away), about 9 percent of a 39 ms
+  host `run` of Add 16M, below the 31 percent spread of that case. Uploads were
+  not faster either way: `write_buffer` into a persistent buffer took 15 ms for
+  64 MB against 10 ms for a fresh `create_buffer_init`. For large tensors keep
+  them resident with `run_device`; the host path is bound by memory bandwidth.
 - Add, Relu, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Splitting them across threads made them slower

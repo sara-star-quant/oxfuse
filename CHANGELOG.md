@@ -4,6 +4,9 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `Executable::run_many` runs a batch of inputs; the GPU backend submits the batch at once and waits once. The default implementation calls `run` per element.
+- GPU backend: `run` records the kernels and the output copies in one command buffer and waits once for all outputs.
+- `just bench-ab` compares a benchmark filter between a base commit and the working tree over interleaved rounds.
 - GPU backend: a lost device is reported as `Error::Backend("device lost ...")` by every call, and a later call no longer panics inside wgpu; validation and out-of-memory errors are attributed to the thread and call that caused them; uploads write straight into the mapped buffer; `Context::with_timeout` replaces the fixed 30 second wait.
 - The weekly fuzz run also compares generated graphs on a software Vulkan device (`gpu_generated`).
 - GPU backend: executables on one device share compiled pipelines, so compiling many graphs no longer recompiles the same shaders.
