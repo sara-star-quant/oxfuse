@@ -97,9 +97,10 @@ fuzz-seed:
       done; \
     done
 
-# `just fuzz loader 60` runs one target for that many seconds.
+# `just fuzz loader 60` runs one target for that many seconds. The target triple is the compiler's host, because a
+# cargo-fuzz installed as a static musl binary (as in CI) would otherwise build for musl, where sanitizers fail.
 fuzz target seconds="60": fuzz-seed
-    cd fuzz && cargo +{{fuzz_toolchain}} fuzz run {{ if target =~ '^gpu' { '--sanitizer none' } else { '' } }} {{target}} -- -max_total_time={{seconds}}
+    cd fuzz && cargo +{{fuzz_toolchain}} fuzz run --target "$(rustc +{{fuzz_toolchain}} -vV | sed -n 's/host: //p')" {{ if target =~ '^gpu' { '--sanitizer none' } else { '' } }} {{target}} -- -max_total_time={{seconds}}
 
 # All 2^32 f32 patterns through Relu and Sigmoid on the GPU (minutes); writes the measured Sigmoid error.
 gpu-exhaustive:
