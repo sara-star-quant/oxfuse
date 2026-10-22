@@ -12,7 +12,44 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # A pull request that changes only documentation skips the build matrix and
+  # runs the few tests that read documents (the claims ledger, the readme and
+  # docs checks). Anything else, including every push to main, runs everything:
+  # a file is "documentation" only if it matches the allowlist below.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          code=true
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")
+            echo "$files"
+            other=$(echo "$files" | grep -vE '^(.*\.md|docs/.*|LICENSE|NOTICE)$' || true)
+            if [ -z "$other" ]; then
+              code=false
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo test -p oxfuse --locked --test claims --test docs --test readme --test op_coverage --test repo_hygiene
+
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +74,8 @@ jobs:
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest --limits downlevel || true
 
   msrv:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,6 +90,8 @@ jobs:
   # the shader text runs correctly on a second, independent implementation; it
   # says nothing about speed or about any hardware device.
   gpu:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -74,6 +115,8 @@ jobs:
   # cargo-deny runs through its own action, not a justfile recipe, so it gets the
   # action's cache and advisory-db handling.
   deny:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
