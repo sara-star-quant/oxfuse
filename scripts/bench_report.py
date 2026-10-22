@@ -86,6 +86,16 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   three times slower than no blocking at all). Results stay inside the
   documented bound of the float64 result but are not bit-identical to the
   reference, because the device fuses multiply-add.
+- Code placement: after the in-place kernels were added to the module that held
+  the matmul, the single-threaded 512 matmul went from 5.9 ms to 6.4 ms
+  (+9 percent, spread 3 percent; bisected to that commit with `just bench-ab`).
+  Forcing or forbidding inlining of `matmul_rows` and padding the module did
+  nothing. Moving only the elementwise kernels out fixed the single-threaded
+  case but cost the threaded 64, 128 and 256 matmuls 5 to 11 percent. With the
+  matmul, the transpose and the elementwise kernels each in their own module,
+  every matmul size is within noise of 0.3.0, single-threaded and threaded (512:
+  5.82 ms on both). The cause is how rustc partitions and lays out code, not
+  any change to the loops, so the module split pins the layout.
 - Add, Relu, Sigmoid, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Sigmoid also keeps std's exp, so it is

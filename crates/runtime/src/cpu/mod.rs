@@ -2,7 +2,9 @@
 //! returns the same bits; it exists to be faster. It has its own executor so
 //! the reference executor stays a plain, obviously correct oracle.
 
+mod elementwise;
 mod kernels;
+mod matmul;
 
 use crate::plan::Step;
 use crate::{Backend, Executable, Plan, Tensor};
@@ -112,7 +114,7 @@ impl Executable for CpuExecutable {
                 Some((mut buf, other, buf_first)) => {
                     if !matches!(step.op, Op::Reshape { .. }) {
                         let other = other.map(|s| slots[s].data());
-                        kernels::apply_in_place(&step.op, &mut buf, other, buf_first);
+                        elementwise::apply_in_place(&step.op, &mut buf, other, buf_first);
                     }
                     buf
                 }
