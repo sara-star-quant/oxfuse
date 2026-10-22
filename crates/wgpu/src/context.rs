@@ -1,6 +1,8 @@
 //! The adapter, device and queue a backend runs on.
 
 use oxfuse_core::Error;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -26,6 +28,13 @@ pub struct Context {
     info: wgpu::AdapterInfo,
     limits: wgpu::Limits,
     errors: Arc<Mutex<Vec<String>>>,
+    /// Compiled pipelines by shader source. The source is a function of the
+    /// kernel and its configuration only (shapes travel in a uniform buffer),
+    /// so executables on this device share a pipeline instead of compiling the
+    /// same shader again.
+    pipelines: Mutex<HashMap<String, wgpu::ComputePipeline>>,
+    /// How many shaders this device has compiled, for tests.
+    compiled: AtomicUsize,
 }
 
 impl Context {
@@ -72,7 +81,42 @@ impl Context {
             info: adapter.get_info(),
             limits,
             errors,
+            pipelines: Mutex::new(HashMap::new()),
+            compiled: AtomicUsize::new(0),
         })
+    }
+
+    /// Number of shaders compiled on this device so far.
+    #[cfg(test)]
+    pub(crate) fn compiled_count(&self) -> usize {
+        self.compiled.load(Ordering::Relaxed)
+    }
+
+    /// The compute pipeline for `source`, compiled on first use.
+    pub(crate) fn pipeline(&self, source: String) -> wgpu::ComputePipeline {
+        let mut pipelines = self.pipelines.lock().unwrap();
+        if let Some(pipeline) = pipelines.get(&source) {
+            return pipeline.clone();
+        }
+        self.compiled.fetch_add(1, Ordering::Relaxed);
+        let module = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(source.as_str().into()),
+            });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: None,
+                layout: None,
+                module: &module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        pipelines.insert(source, pipeline.clone());
+        pipeline
     }
 
     pub fn device(&self) -> &wgpu::Device {

@@ -284,21 +284,7 @@ impl WgpuExecutable {
                     let pipeline = match by_kernel.get(&kernel) {
                         Some(&index) => index,
                         None => {
-                            let module =
-                                device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                                    label: None,
-                                    source: wgpu::ShaderSource::Wgsl(source.into()),
-                                });
-                            pipelines.push(device.create_compute_pipeline(
-                                &wgpu::ComputePipelineDescriptor {
-                                    label: None,
-                                    layout: None,
-                                    module: &module,
-                                    entry_point: Some("main"),
-                                    compilation_options: Default::default(),
-                                    cache: None,
-                                },
-                            ));
+                            pipelines.push(ctx.pipeline(source));
                             by_kernel.insert(kernel, pipelines.len() - 1);
                             pipelines.len() - 1
                         }
@@ -555,6 +541,40 @@ mod tests {
         assert_eq!(scalar_flags(&[3], &[]), (false, true));
         assert_eq!(scalar_flags(&[], &[]), (false, false));
         assert_eq!(scalar_flags(&[3], &[3]), (false, false));
+    }
+
+    #[test]
+    fn executables_on_one_device_share_compiled_pipelines() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let relu = |shape: Vec<usize>| {
+            let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
+            let x = b.input("x", shape).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            b.finish(&[y]).unwrap()
+        };
+        let first = backend.compile_device(&relu(vec![2])).unwrap();
+        assert_eq!(backend.context().compiled_count(), 1);
+        // Another shape is the same shader: nothing new is compiled.
+        let second = backend.compile_device(&relu(vec![5, 3])).unwrap();
+        assert_eq!(backend.context().compiled_count(), 1);
+        // And the shared pipeline still computes each shape correctly.
+        let run = |exe: &WgpuExecutable, shape: Vec<usize>, data: Vec<f32>| {
+            let input = exe.upload(&Tensor::new(shape, data).unwrap()).unwrap();
+            let out = exe.run_device(&[input]).unwrap();
+            exe.download(&out[0]).unwrap().data().to_vec()
+        };
+        assert_eq!(run(&first, vec![2], vec![-1.0, 2.0]), [0.0, 2.0]);
+        let data: Vec<f32> = (0..15).map(|i| i as f32 - 7.0).collect();
+        let want: Vec<f32> = data.iter().map(|v| v.max(0.0)).collect();
+        assert_eq!(run(&second, vec![5, 3], data), want);
+        // A different kernel is a new pipeline.
+        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
+        let x = b.input("x", vec![2]).unwrap();
+        let y = b.node("y", Op::Sigmoid, &[x]).unwrap();
+        backend.compile_device(&b.finish(&[y]).unwrap()).unwrap();
+        assert_eq!(backend.context().compiled_count(), 2);
     }
 
     #[test]
