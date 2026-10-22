@@ -1,0 +1,38 @@
+name: kani
+
+# Bounded model checking of the index arithmetic and of the permutation
+# composition. A reporting job like the mutation job: it runs weekly, by hand,
+# and on pull requests that touch a file with a proof, and its result is read,
+# not required.
+on:
+  pull_request:
+    paths:
+      - "crates/wgpu/src/proofs.rs"
+      - "crates/wgpu/src/config.rs"
+      - "crates/wgpu/src/shaders.rs"
+      - "crates/core/src/passes/layout.rs"
+      - "justfile"
+      - ".github/workflows/kani.yml"
+  schedule:
+    - cron: "0 5 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kani:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # One step per crate with proofs, the same commands as `just kani`.
+      - uses: model-checking/kani-github-action@f838096619a707b0f6b2118cf435eaccfa33e51f # v1.1
+        with:
+          kani-version: "0.68.0"
+          args: "-p oxfuse-core --lib"
+      - uses: model-checking/kani-github-action@f838096619a707b0f6b2118cf435eaccfa33e51f # v1.1
+        with:
+          kani-version: "0.68.0"
+          args: "-p oxfuse-wgpu --lib"

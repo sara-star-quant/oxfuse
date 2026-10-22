@@ -105,8 +105,9 @@ fuzz target seconds="60": fuzz-seed
 gpu-exhaustive:
     cargo test -p oxfuse-wgpu --release --locked --test sweep sweep_exhaustive -- --ignored --nocapture
 
-# Bounded proofs of the GPU index arithmetic. Needs `cargo +stable install kani-verifier --version 0.68.0 --locked` and `cargo kani setup`.
+# Bounded proofs of the GPU index arithmetic and of the permutation composition in the layout pass. Needs `cargo +stable install kani-verifier --version 0.68.0 --locked` and `cargo kani setup`.
 kani:
+    cargo kani -p oxfuse-core --lib
     cargo kani -p oxfuse-wgpu --lib
 
 # GPU benchmarks against the fast CPU backend. Slow, needs an adapter; writes target/criterion for bench-report.

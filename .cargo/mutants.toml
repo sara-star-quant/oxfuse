@@ -1,0 +1,3 @@
+# Proof harnesses are compiled only by Kani (cfg(kani)); no test run can see a
+# change to them, so mutating them only produces misses. Kani itself checks them.
+exclude_re = ["proofs::", "harnesses::"]
