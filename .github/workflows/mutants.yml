@@ -1,5 +1,8 @@
 name: mutants
 
+# A mutant whose test run times out counts as caught (docs/mutation-testing.md),
+# so exit code 3 of cargo-mutants is not a failure here; a missed mutant (2) or
+# a failed baseline (4) is.
 # Mutation testing is a measurement, never a gate: the 11 known survivors are
 # explained in docs/mutation-testing.md, so a missed mutant in a touched region
 # is reviewed, not an automatic failure.
@@ -35,7 +38,7 @@ jobs:
           tool: cargo-mutants@27.1.0
       - run: git diff origin/${{ github.base_ref }}.. > pr.diff
       # The GPU crate needs an adapter; its own job below runs it on software Vulkan.
-      - run: cargo mutants --in-diff pr.diff --exclude 'crates/wgpu/**' --all-features --test-workspace true -j 2 --timeout 120
+      - run: cargo mutants --in-diff pr.diff --exclude 'crates/wgpu/**' --all-features --test-workspace true -j 2 --timeout 120 || [ $? -eq 3 ]
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -60,7 +63,7 @@ jobs:
         with:
           tool: cargo-mutants@27.1.0
       - run: git diff origin/${{ github.base_ref }}.. > pr.diff
-      - run: cargo mutants --in-diff pr.diff -p oxfuse-wgpu --test-package oxfuse-wgpu -j 2 --timeout 180
+      - run: cargo mutants --in-diff pr.diff -p oxfuse-wgpu --test-package oxfuse-wgpu -j 2 --timeout 180 || [ $? -eq 3 ]
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -107,11 +110,11 @@ jobs:
       # An empty OXFUSE_REQUIRE_ADAPTER still counts as set, so the variable is
       # given to the gpu job only, through a step of its own.
       - if: matrix.gpu
-        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120
+        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120 || [ $? -eq 3 ]
         env:
           OXFUSE_REQUIRE_ADAPTER: "1"
       - if: ${{ !matrix.gpu }}
-        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120
+        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120 || [ $? -eq 3 ]
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
