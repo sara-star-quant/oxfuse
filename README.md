@@ -15,13 +15,31 @@ Oxfuse is a small tensor graph compiler whose claims come with evidence. It fits
 - **Exact, reproducible results** for small float32 graphs and ONNX models: the CPU backends return the same bits on every machine and thread count.
 - **An oracle for other runtimes**: golden outputs for tests, or a check that another stack's result is right.
 - **A GPU numerical probe**: `oxfuse gpu-selftest` reports FMA use, subnormal flushing, NaN behavior and ulp error on any wgpu adapter.
-- **A readable reference** for how a typed IR, a verifier and exact optimization passes fit together.
+- **A readable reference** for how a typed IR (intermediate representation: the graph as typed values and operations), a verifier and exact optimization passes fit together.
+
+Practical examples:
+
+```sh
+# Golden outputs for a test suite: the fast backend must match the reference byte for byte.
+oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backend reference > golden.json
+oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backend cpu > out.json
+cmp golden.json out.json
+
+# Check a small ONNX model against another runtime: compare its numbers with Oxfuse's exact ones.
+oxfuse run model.onnx --inputs inputs.json --backend reference     # needs --features onnx
+
+# Decide whether a GPU can be trusted for your numerics before you rely on it.
+oxfuse gpu-selftest                                                 # needs --features wgpu
+
+# See what each optimization pass changes in a graph.
+oxfuse inspect examples/tiny_mlp.json
+```
 
 It is not for production inference, large models, training, or speed-critical CPU work. For those, use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`. The operator set is seven float32 ops plus a small ONNX subset, with no broadcasting beyond a scalar operand.
 
 ## What it does
 
-- **Compiles** a JSON graph to an IR (intermediate representation: the graph as typed values and operations that the passes rewrite) with shape inference and a verifier that re-checks every invariant after each pass.
+- **Compiles** a JSON graph to the IR, which the passes rewrite, with shape inference and a verifier that re-checks every invariant after each pass.
 - **Optimizes** with four exact passes: constant folding, layout elision (transpose and reshape round trips), common-subexpression elimination, dead-code elimination. Output bits never change.
 - **Runs** on two CPU backends and an optional GPU backend (`--features wgpu`). The fast CPU backend returns the same bits as the reference backend and is the default.
 - **Imports** float32 ONNX models made of a small operator subset (`--features onnx`), checked against two independent ONNX implementations ([docs/onnx.md](docs/onnx.md)).
