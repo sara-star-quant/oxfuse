@@ -77,6 +77,10 @@ test-wgpu:
     cargo clippy -p oxfuse -p oxfuse-wgpu --all-targets --features oxfuse/wgpu --locked -- -D warnings
     cargo test -p oxfuse -p oxfuse-wgpu --features oxfuse/wgpu --locked
 
+# Hash of exp and sigmoid over all 2^32 inputs, on this machine. CI runs it on every OS: one hash everywhere.
+exp-sweep:
+    cargo test --release -p oxfuse-runtime --lib --locked vecmath -- --ignored
+
 # Tests with the threaded matmul compiled in.
 test-parallel:
     cargo clippy -p oxfuse-runtime -p oxfuse --all-targets --features parallel --locked -- -D warnings

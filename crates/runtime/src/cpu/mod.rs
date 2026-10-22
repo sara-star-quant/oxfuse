@@ -5,6 +5,7 @@
 mod elementwise;
 mod kernels;
 mod matmul;
+mod vecmath;
 
 use crate::plan::Step;
 use crate::{Backend, Executable, Plan, Tensor};

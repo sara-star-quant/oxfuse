@@ -13,19 +13,6 @@ fn flat(values: Vec<f32>) -> Tensor {
     Tensor::new(vec![values.len()], values).unwrap()
 }
 
-/// The reference Sigmoid formula, for sweeps too big to push through a graph.
-fn reference_sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
-}
-
-#[test]
-fn the_sweep_formula_is_the_reference_sigmoid() {
-    let xs: Vec<f32> = common::data(20_000, 5, false);
-    let want = reference(Op::Sigmoid, &[flat(xs.clone())]);
-    let got: Vec<f32> = xs.iter().map(|&x| reference_sigmoid(x)).collect();
-    assert_eq!(bits(&got), bits(&want));
-}
-
 /// Every exponent and sign, 64 mantissas each: zero, one, all-ones, single bits and a spread.
 fn stratified() -> Vec<f32> {
     let mut mantissas = vec![0u32, 1, 2, 3, 0x7f_ffff, 0x7f_fffe, 0x40_0000, 0x3f_ffff];
@@ -107,13 +94,14 @@ fn sweep_exhaustive() {
                 x.to_bits()
             );
         }
-        let got = device(Op::Sigmoid, &[t]);
+        let got = device(Op::Sigmoid, std::slice::from_ref(&t));
+        let wanted = reference(Op::Sigmoid, &[t]);
         for (i, x) in values.iter().enumerate() {
             if !x.is_finite() {
                 non_finite_inputs += 1;
                 continue;
             }
-            let want = reference_sigmoid(*x);
+            let want = wanted[i];
             assert!(
                 sigmoid_matches(got[i], want, common::sigmoid_bound()),
                 "sigmoid({:#010x} = {x:e}) = {:e}, reference {want:e}",

@@ -89,7 +89,7 @@ pub fn unary(op: Unary, src: &[f32], cfg: &KernelConfig, caps: &DeviceCaps) -> V
                 let is_nan = bits & 0x7fff_ffff > 0x7f80_0000;
                 if negative && !is_nan { 0 } else { bits }
             }
-            Unary::Sigmoid => (1.0 / (1.0 + (-x).exp())).to_bits(),
+            Unary::Sigmoid => oxfuse_runtime::sigmoid(x).to_bits(),
         };
         out.write(i, value);
     });
