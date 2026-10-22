@@ -13,6 +13,8 @@ description = "Tensors, execution plans and bit-exact CPU backends (reference an
 
 [dependencies]
 oxfuse-core.workspace = true
+fearless_simd.workspace = true
+fearless_simd_macros.workspace = true
 rayon = { workspace = true, optional = true }
 
 [features]

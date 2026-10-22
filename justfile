@@ -15,9 +15,9 @@ test:
 
 # Build everything and run every test on the oldest supported compiler.
 msrv:
-    cargo +1.88 check --workspace --all-targets --locked
-    cargo +1.88 test --workspace --locked
-    cargo +1.88 test -p oxfuse-runtime -p oxfuse --features parallel --locked
+    cargo +1.89 check --workspace --all-targets --locked
+    cargo +1.89 test --workspace --locked
+    cargo +1.89 test -p oxfuse-runtime -p oxfuse --features parallel --locked
 
 doc:
     cargo doc --workspace --no-deps --locked
