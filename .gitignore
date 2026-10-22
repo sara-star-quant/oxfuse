@@ -1,11 +1,40 @@
 /target
 .DS_Store
-.remember/
-.superpowers/
-/.claude/
 /mutants.out*
 /fuzz/target
 /fuzz/artifacts
 /fuzz/corpus
 /.venv-onnx
 __pycache__/
+
+# Local state of AI coding assistants and agent tools. None of it belongs in
+# the repository; hygiene tests refuse tracked files under .claude/,
+# .superpowers/ and .remember/.
+.remember/
+/.claude/
+/.codex/
+/.gemini/
+/.cursor/
+/.windsurf/
+/.cline/
+/.roo/
+/.continue/
+/.aider*
+/.opencode/
+/.crush/
+/.amazonq/
+/.kiro/
+/.trae/
+/.junie/
+/.qwen/
+/.goose/
+/.agent/
+/.agents/
+/.copilot/
+/.cursorrules
+/.windsurfrules
+/.clinerules
+/CLAUDE.md
+/CLAUDE.local.md
+/AGENTS.md
+/GEMINI.md
