@@ -86,6 +86,14 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   the Windows software adapter, where each shader compile costs far more, took
   407 s for `ops` before. `gpu-cold` now creates a fresh device per sample
   outside the timing, so it still includes shader compilation. Kept.
+- GPU outputs written in place: a kernel writes straight into the buffer that
+  is handed back (created per run) instead of a scratch buffer that is then
+  copied into a fresh one, which drops one copy pass and one buffer per
+  output. Per run with 16 submits per wait: matmul 128 114 us to 81 us, 256
+  178 us to 147 us, 512 529 us to 488 us, Add 1M 214 us to 230 us (within the
+  run-to-run spread of about 8 percent). The memory-bound Add at 16M varied
+  from 3.8 to 5.3 ms before and 4.0 to 4.4 ms after. Kept for the small sizes
+  and the saved memory; the large-size gain is not established.
 - Add, Relu, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Splitting them across threads made them slower

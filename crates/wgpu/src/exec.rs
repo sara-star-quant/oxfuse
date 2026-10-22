@@ -128,8 +128,14 @@ pub struct WgpuExecutable {
     pipelines: Vec<wgpu::ComputePipeline>,
     steps: Vec<CompiledStep>,
     constants: Vec<(usize, wgpu::Buffer)>,
-    /// One buffer per computed slot; the mutex serializes runs that reuse them.
+    /// One buffer per computed slot that is not a direct output; the mutex
+    /// serializes runs that reuse them.
     scratch: Mutex<Vec<Option<wgpu::Buffer>>>,
+    /// Slots a kernel writes straight into the buffer that is handed back: the
+    /// computed outputs. Their buffer is created per run, so a result never
+    /// shares memory with a later run. Results are read-only, so two results
+    /// (an output listed twice, or one a Reshape aliases) may share a buffer.
+    direct: Vec<bool>,
 }
 
 fn caps_of(limits: &wgpu::Limits) -> DeviceCaps {
@@ -176,6 +182,7 @@ impl WgpuExecutable {
         let mut by_kernel: HashMap<Kernel, usize> = HashMap::new();
         let mut steps = Vec::new();
         let mut scratch: Vec<Option<wgpu::Buffer>> = vec![None; plan.slot_shapes.len()];
+        let mut direct = vec![false; plan.slot_shapes.len()];
         for step in &plan.steps {
             let out_shape = &plan.slot_shapes[step.output];
             let out_elements = elements(out_shape);
@@ -289,12 +296,18 @@ impl WgpuExecutable {
                             pipelines.len() - 1
                         }
                     };
-                    scratch[step.output] = Some(device.create_buffer(&wgpu::BufferDescriptor {
-                        label: None,
-                        size: out_elements * 4,
-                        usage: wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
-                        mapped_at_creation: false,
-                    }));
+                    if plan.outputs.contains(&step.output) {
+                        direct[step.output] = true;
+                    } else {
+                        scratch[step.output] =
+                            Some(device.create_buffer(&wgpu::BufferDescriptor {
+                                label: None,
+                                size: out_elements * 4,
+                                usage:
+                                    wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
+                                mapped_at_creation: false,
+                            }));
+                    }
                     Some(Dispatch {
                         pipeline,
                         params: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -332,6 +345,7 @@ impl WgpuExecutable {
             steps,
             constants,
             scratch: Mutex::new(scratch),
+            direct,
         };
         executable.check_device()?;
         Ok(executable)
@@ -444,6 +458,20 @@ impl WgpuExecutable {
             slots[*slot] = Some(buffer.clone());
         }
         let device = self.ctx.device();
+        for &slot in &plan.outputs {
+            if self.direct[slot] {
+                slots[slot] = Some(
+                    device.create_buffer(&wgpu::BufferDescriptor {
+                        label: None,
+                        size: elements(&plan.slot_shapes[slot]) * 4,
+                        usage: wgpu::BufferUsages::STORAGE
+                            .union(wgpu::BufferUsages::COPY_SRC)
+                            .union(wgpu::BufferUsages::COPY_DST),
+                        mapped_at_creation: false,
+                    }),
+                );
+            }
+        }
         let mut encoder = device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
@@ -483,6 +511,11 @@ impl WgpuExecutable {
         let mut results = Vec::with_capacity(plan.outputs.len());
         for &slot in &plan.outputs {
             let shape = plan.slot_shapes[slot].clone();
+            if self.direct[slot] {
+                let buffer = slots[slot].clone().expect("output is bound");
+                results.push(DeviceTensor { buffer, shape });
+                continue;
+            }
             let size = elements(&shape) * 4;
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
@@ -575,6 +608,64 @@ mod tests {
         let y = b.node("y", Op::Sigmoid, &[x]).unwrap();
         backend.compile_device(&b.finish(&[y]).unwrap()).unwrap();
         assert_eq!(backend.context().compiled_count(), 2);
+    }
+
+    /// Outputs the kernel writes in place must still be separate results: one
+    /// that a later step reads, one listed twice, one that a Reshape aliases,
+    /// and results that survive the next run.
+    #[test]
+    fn outputs_written_in_place_stay_distinct_and_correct() {
+        use oxfuse_core::{GraphBuilder, Limits};
+        use oxfuse_runtime::{Backend, ReferenceBackend};
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        type Build = fn(&mut GraphBuilder) -> Vec<oxfuse_core::ValueId>;
+        let cases: [(&str, Build); 4] = [
+            ("read later", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let c = b.constant("c", vec![6], vec![1.0; 6]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                let z = b.node("z", Op::Add, &[y, c]).unwrap();
+                vec![y, z]
+            }),
+            ("listed twice", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                vec![y, y]
+            }),
+            ("reshape alias", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                let r = b
+                    .node("r", Op::Reshape { shape: vec![2, 3] }, &[y])
+                    .unwrap();
+                vec![y, r]
+            }),
+            ("single output", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                vec![b.node("y", Op::Relu, &[x]).unwrap()]
+            }),
+        ];
+        for (name, build) in cases {
+            let mut b = GraphBuilder::new(Limits::default());
+            let outputs = build(&mut b);
+            let graph = b.finish(&outputs).unwrap();
+            let gpu = backend.compile_device(&graph).unwrap();
+            let reference = ReferenceBackend.compile(&graph).unwrap();
+            let first_in = Tensor::new(vec![6], vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0]).unwrap();
+            let second_in = Tensor::new(vec![6], vec![7.0, -8.0, 9.0, -1.0, 2.0, -3.0]).unwrap();
+            let first = gpu.run_device(&[gpu.upload(&first_in).unwrap()]).unwrap();
+            // A second run must not touch the first run's results.
+            gpu.run_device(&[gpu.upload(&second_in).unwrap()]).unwrap();
+            let want = reference.run(&[first_in]).unwrap();
+            assert_eq!(first.len(), want.len(), "{name}");
+            for (got, want) in first.iter().zip(&want) {
+                let got = gpu.download(got).unwrap();
+                assert_eq!(got.shape(), want.shape(), "{name}");
+                assert_eq!(got.data(), want.data(), "{name}");
+            }
+        }
     }
 
     #[test]
