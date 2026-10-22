@@ -482,6 +482,36 @@ mod tests {
         }
     }
 
+    /// Every shape up to 20 x 20 (a full tile of 16 and a tail), plus shapes
+    /// around two tiles, and every band of output rows of each: each band
+    /// element holds the matching input element. A Kani proof of the same
+    /// statement did not finish in 15 minutes (the solver cannot bound the
+    /// tile loops), so the bounded space is enumerated instead.
+    #[test]
+    fn transpose_band_places_every_element_for_every_shape_and_band() {
+        let shapes = (1..=20).chain([31, 32, 33, 34, 47, 48, 49]);
+        for rows in shapes.clone() {
+            for cols in shapes.clone() {
+                let input: Vec<f32> = (0..rows * cols).map(|i| i as f32).collect();
+                for c0 in 0..cols {
+                    for count in 1..=cols - c0 {
+                        let mut out = vec![-1.0f32; count * rows];
+                        transpose_band(&input, rows, cols, c0, &mut out);
+                        for c in c0..c0 + count {
+                            for r in 0..rows {
+                                assert_eq!(
+                                    out[(c - c0) * rows + r],
+                                    input[r * cols + c],
+                                    "{rows}x{cols} band {c0}+{count} at ({r},{c})"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn rank_two_transpose_crosses_tile_boundaries_correctly() {
         for (rows, cols) in [
