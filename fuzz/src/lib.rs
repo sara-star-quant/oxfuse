@@ -25,6 +25,14 @@ pub fn small() -> Limits {
 /// Values that exercise signs, zeros, magnitudes, infinity and NaN. Inputs are
 /// bound in Rust, so non-finite values are allowed here even though a JSON
 /// file cannot hold them.
+/// The bits of `v`, with every NaN mapped to one pattern. IEEE 754 leaves the
+/// sign and payload of a NaN made from two NaN operands, or from an invalid
+/// operation, to the hardware (x86 and ARM differ) and to the order the
+/// compiler gives the operands, so two correct kernels may disagree on them.
+pub fn comparable_bits(v: f32) -> u32 {
+    if v.is_nan() { f32::NAN.to_bits() } else { v.to_bits() }
+}
+
 pub(crate) const PALETTE: [f32; 11] = [
     0.0,
     -0.0,
@@ -55,7 +63,7 @@ fn run(backend: &dyn Backend, graph: &Graph, inputs: &[Tensor]) -> Result<Bits, 
         .map(|t| {
             (
                 t.shape().to_vec(),
-                t.data().iter().map(|v| v.to_bits()).collect(),
+                t.data().iter().map(|&v| comparable_bits(v)).collect(),
             )
         })
         .collect())

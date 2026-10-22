@@ -12,7 +12,7 @@ A tensor-graph compiler in Rust. Define a tensor graph once (JSON, or an ONNX mo
 
 Oxfuse is a small tensor graph compiler whose claims come with evidence. It fits when you want:
 
-- **Exact, reproducible results** for small float32 graphs and ONNX models: the CPU backends return the same bits on every machine and thread count.
+- **Exact, reproducible results** for small float32 graphs and ONNX models: the CPU backends return the same bits on every machine and thread count (a NaN's sign and payload aside, which IEEE 754 leaves to the hardware).
 - **An oracle for other runtimes**: golden outputs for tests, or a check that another stack's result is right.
 - **A GPU numerical probe**: `oxfuse gpu-selftest` reports FMA use, subnormal flushing, NaN behavior and ulp error on any wgpu adapter.
 - **A readable reference** for how a typed IR (intermediate representation: the graph as typed values and operations), a verifier and exact optimization passes fit together.
@@ -50,8 +50,8 @@ It is not for production inference, large models, training, or speed-critical CP
 | Property | How it is established |
 |---|---|
 | Correct against an independent implementation | NumPy float64 oracle, seeded random corpus plus all examples |
-| Fast backend equals reference, bit for bit | Contract tests, random-graph tests, differential fuzzing |
-| Optimizations are exact, including NaN, infinity, signed zero | Equivalence tests with and without passes |
+| Fast backend equals reference, bit for bit (all NaNs count as one value) | Contract tests, random-graph tests, differential fuzzing on arm64 and x86_64 |
+| Optimizations are exact, including infinity, signed zero and where NaNs appear | Equivalence tests with and without passes |
 | Tests detect real defects | cargo-mutants: 1326 of 1337 viable mutants stopped, the other 11 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
 | GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |

@@ -16,7 +16,7 @@ What each op computes, bit for bit where that is promised, and what is deliberat
 ## What the backends promise
 
 - `Relu`, `Add`, `Mul`, `Reshape` and `Transpose` are exact, so every backend gives the same bits.
-- `CpuBackend` returns the reference backend's bits for every op, including `MatMul` and `Sigmoid`, for any input including NaN, infinity and signed zero. This is tested by comparing bit patterns, not by a tolerance.
+- `CpuBackend` returns the reference backend's bits for every op, including `MatMul` and `Sigmoid`, for any input including infinity and signed zero, and returns a NaN exactly where the reference does. This is tested by comparing bit patterns, not by a tolerance, with all NaNs counted as one value: the sign and payload of a NaN made from two NaN operands or from an invalid operation (`inf - inf`, `0 * inf`) are left to the hardware and to the operand order the compiler picks, and x86 and ARM differ (see "Not promised" below). The first fuzz run on x86 found this, and a replay on the published 0.3.0 reproduced it.
 - The threaded matmul splits the output by rows and never splits the `k` sum, so the thread count cannot change a result.
 - The optimization passes are exact: an optimized graph gives the same bits as the unoptimized one on the reference backend, errors included.
 
