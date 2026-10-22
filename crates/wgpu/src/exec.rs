@@ -381,28 +381,55 @@ impl WgpuExecutable {
     fn download_unscoped(&self, tensor: &DeviceTensor) -> Result<Tensor, Error> {
         let device = self.ctx.device();
         let size = elements(&tensor.shape) * 4;
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        let staging = self.staging_buffer(size);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&tensor.buffer, 0, &staging, 0, size);
+        let submission = self.ctx.queue().submit([encoder.finish()]);
+        let mut tensors = self.read_staged(submission, vec![(staging, tensor.shape.clone())])?;
+        Ok(tensors.remove(0))
+    }
+
+    fn staging_buffer(&self, size: u64) -> wgpu::Buffer {
+        self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size,
             usage: wgpu::BufferUsages::MAP_READ.union(wgpu::BufferUsages::COPY_DST),
             mapped_at_creation: false,
-        });
-        let mut encoder = device.create_command_encoder(&Default::default());
-        encoder.copy_buffer_to_buffer(&tensor.buffer, 0, &staging, 0, size);
-        let submission = self.ctx.queue().submit([encoder.finish()]);
+        })
+    }
+
+    /// Waits for `submission`, then reads every staging buffer back as a tensor
+    /// of the paired shape. All buffers are mapped before the single wait.
+    fn read_staged(
+        &self,
+        submission: wgpu::SubmissionIndex,
+        staged: Vec<(wgpu::Buffer, Vec<usize>)>,
+    ) -> Result<Vec<Tensor>, Error> {
+        let device = self.ctx.device();
         let (sender, receiver) = std::sync::mpsc::channel();
-        staging
-            .slice(..)
-            .map_async(wgpu::MapMode::Read, move |result| {
-                let _ = sender.send(result);
-            });
+        for (index, (staging, _)) in staged.iter().enumerate() {
+            let sender = sender.clone();
+            staging
+                .slice(..)
+                .map_async(wgpu::MapMode::Read, move |result| {
+                    let _ = sender.send((index, result));
+                });
+        }
+        drop(sender);
         // Wait for this submission, not the newest one: another thread may have
-        // submitted since, and our map callback only fires once we have polled
-        // past our own work. Poll again until it has fired.
+        // submitted since, and our map callbacks only fire once we have polled
+        // past our own work. Poll again until every one has fired.
         let deadline = Instant::now() + self.ctx.timeout();
-        let mapped = loop {
-            if let Ok(result) = receiver.try_recv() {
-                break result;
+        let mut mapped: Vec<Option<Result<(), wgpu::BufferAsyncError>>> =
+            (0..staged.len()).map(|_| None).collect();
+        let mut pending = staged.len();
+        loop {
+            while let Ok((index, result)) = receiver.try_recv() {
+                mapped[index] = Some(result);
+                pending -= 1;
+            }
+            if pending == 0 {
+                break;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
@@ -415,58 +442,75 @@ impl WgpuExecutable {
                 })
                 .map_err(|e| backend_error(format!("waiting for the device failed: {e}")))?;
             std::thread::yield_now();
-        };
+        }
         self.check_device()?;
-        mapped.map_err(|e| backend_error(format!("mapping the result failed: {e}")))?;
-        let view = staging
-            .slice(..)
-            .get_mapped_range()
-            .map_err(|e| backend_error(format!("reading the result failed: {e}")))?;
-        let data: Vec<f32> = view
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| f32::from_le_bytes(*c))
-            .collect();
-        drop(view);
-        staging.unmap();
-        Tensor::new(tensor.shape.clone(), data)
+        staged
+            .into_iter()
+            .zip(mapped)
+            .map(|((staging, shape), result)| {
+                result
+                    .expect("every map callback fired")
+                    .map_err(|e| backend_error(format!("mapping the result failed: {e}")))?;
+                let view = staging
+                    .slice(..)
+                    .get_mapped_range()
+                    .map_err(|e| backend_error(format!("reading the result failed: {e}")))?;
+                let data: Vec<f32> = view
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|c| f32::from_le_bytes(*c))
+                    .collect();
+                drop(view);
+                staging.unmap();
+                Tensor::new(shape, data)
+            })
+            .collect()
     }
 
     pub fn run_device(&self, inputs: &[DeviceTensor]) -> Result<Vec<DeviceTensor>, Error> {
         self.ctx.scoped(|| self.run_device_unscoped(inputs))
     }
 
-    fn run_device_unscoped(&self, inputs: &[DeviceTensor]) -> Result<Vec<DeviceTensor>, Error> {
+    fn check_inputs(&self, shapes: &[&[usize]]) -> Result<(), Error> {
         let plan = &self.plan;
-        if inputs.len() != plan.inputs.len() {
+        if shapes.len() != plan.inputs.len() {
             return Err(Error::InputCount {
                 expected: plan.inputs.len(),
-                found: inputs.len(),
+                found: shapes.len(),
             });
         }
-        for (binding, tensor) in plan.inputs.iter().zip(inputs) {
-            if tensor.shape != binding.shape {
+        for (binding, shape) in plan.inputs.iter().zip(shapes) {
+            if *shape != binding.shape.as_slice() {
                 return Err(Error::InputShape {
                     name: binding.name.clone(),
                     expected: binding.shape.clone(),
-                    found: tensor.shape.clone(),
+                    found: shape.to_vec(),
                 });
             }
         }
-        let scratch = self.scratch.lock().unwrap();
-        let mut slots: Vec<Option<wgpu::Buffer>> = scratch.clone();
-        for (binding, tensor) in plan.inputs.iter().zip(inputs) {
-            slots[binding.slot] = Some(tensor.buffer.clone());
+        Ok(())
+    }
+
+    /// The buffer of every slot for one run: scratch, the given inputs,
+    /// constants, and a fresh buffer for each output a kernel writes directly.
+    fn bind_slots(
+        &self,
+        scratch: &[Option<wgpu::Buffer>],
+        inputs: &[&wgpu::Buffer],
+    ) -> Vec<Option<wgpu::Buffer>> {
+        let plan = &self.plan;
+        let mut slots: Vec<Option<wgpu::Buffer>> = scratch.to_vec();
+        for (binding, buffer) in plan.inputs.iter().zip(inputs) {
+            slots[binding.slot] = Some((*buffer).clone());
         }
         for (slot, buffer) in &self.constants {
             slots[*slot] = Some(buffer.clone());
         }
-        let device = self.ctx.device();
         for &slot in &plan.outputs {
             if self.direct[slot] {
                 slots[slot] = Some(
-                    device.create_buffer(&wgpu::BufferDescriptor {
+                    self.ctx.device().create_buffer(&wgpu::BufferDescriptor {
                         label: None,
                         size: elements(&plan.slot_shapes[slot]) * 4,
                         usage: wgpu::BufferUsages::STORAGE
@@ -477,42 +521,57 @@ impl WgpuExecutable {
                 );
             }
         }
-        let mut encoder = device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
-            for step in &self.steps {
-                let Some(dispatch) = &step.dispatch else {
-                    slots[step.output] = slots[step.inputs[0]].clone();
-                    continue;
-                };
-                let pipeline = &self.pipelines[dispatch.pipeline];
-                let mut entries = Vec::new();
-                let buffers: Vec<&wgpu::Buffer> = step
-                    .inputs
-                    .iter()
-                    .chain([&step.output])
-                    .map(|&s| slots[s].as_ref().expect("slot is bound"))
-                    .collect();
-                for (binding, buffer) in buffers.iter().enumerate() {
-                    entries.push(wgpu::BindGroupEntry {
-                        binding: binding as u32,
-                        resource: buffer.as_entire_binding(),
-                    });
-                }
+        slots
+    }
+
+    /// Records one compute pass with a dispatch per step.
+    fn encode_pass(&self, encoder: &mut wgpu::CommandEncoder, slots: &mut [Option<wgpu::Buffer>]) {
+        let device = self.ctx.device();
+        let mut pass = encoder.begin_compute_pass(&Default::default());
+        for step in &self.steps {
+            let Some(dispatch) = &step.dispatch else {
+                slots[step.output] = slots[step.inputs[0]].clone();
+                continue;
+            };
+            let pipeline = &self.pipelines[dispatch.pipeline];
+            let mut entries = Vec::new();
+            let buffers: Vec<&wgpu::Buffer> = step
+                .inputs
+                .iter()
+                .chain([&step.output])
+                .map(|&s| slots[s].as_ref().expect("slot is bound"))
+                .collect();
+            for (binding, buffer) in buffers.iter().enumerate() {
                 entries.push(wgpu::BindGroupEntry {
-                    binding: buffers.len() as u32,
-                    resource: dispatch.params.as_entire_binding(),
+                    binding: binding as u32,
+                    resource: buffer.as_entire_binding(),
                 });
-                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: None,
-                    layout: &pipeline.get_bind_group_layout(0),
-                    entries: &entries,
-                });
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, &group, &[]);
-                pass.dispatch_workgroups(dispatch.groups.0, dispatch.groups.1, 1);
             }
+            entries.push(wgpu::BindGroupEntry {
+                binding: buffers.len() as u32,
+                resource: dispatch.params.as_entire_binding(),
+            });
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &pipeline.get_bind_group_layout(0),
+                entries: &entries,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(dispatch.groups.0, dispatch.groups.1, 1);
         }
+    }
+
+    fn run_device_unscoped(&self, inputs: &[DeviceTensor]) -> Result<Vec<DeviceTensor>, Error> {
+        let plan = &self.plan;
+        let shapes: Vec<&[usize]> = inputs.iter().map(|t| t.shape.as_slice()).collect();
+        self.check_inputs(&shapes)?;
+        let scratch = self.scratch.lock().unwrap();
+        let buffers: Vec<&wgpu::Buffer> = inputs.iter().map(|t| &t.buffer).collect();
+        let mut slots = self.bind_slots(&scratch, &buffers);
+        let device = self.ctx.device();
+        let mut encoder = device.create_command_encoder(&Default::default());
+        self.encode_pass(&mut encoder, &mut slots);
         let mut results = Vec::with_capacity(plan.outputs.len());
         for &slot in &plan.outputs {
             let shape = plan.slot_shapes[slot].clone();
@@ -544,6 +603,56 @@ impl WgpuExecutable {
         self.check_device()?;
         Ok(results)
     }
+
+    /// `run` in one submission: the kernels and the copies of the outputs into
+    /// staging buffers share a command buffer, and one wait covers every output.
+    fn run_to_host_unscoped(&self, inputs: &[Tensor]) -> Result<Vec<Tensor>, Error> {
+        let plan = &self.plan;
+        let shapes: Vec<&[usize]> = inputs.iter().map(|t| t.shape()).collect();
+        self.check_inputs(&shapes)?;
+        let caps = caps_of(self.ctx.limits());
+        let usage = wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC);
+        let mut uploaded = Vec::with_capacity(inputs.len());
+        for tensor in inputs {
+            check_tensor(elements(tensor.shape()), &caps).map_err(backend_error)?;
+            uploaded.push(self.ctx.buffer_from_f32(tensor.data(), usage)?);
+        }
+        let scratch = self.scratch.lock().unwrap();
+        let buffers: Vec<&wgpu::Buffer> = uploaded.iter().collect();
+        let mut slots = self.bind_slots(&scratch, &buffers);
+        let mut encoder = self
+            .ctx
+            .device()
+            .create_command_encoder(&Default::default());
+        self.encode_pass(&mut encoder, &mut slots);
+        // One staging buffer per distinct output slot; a slot listed twice is read once.
+        let mut staging_of: HashMap<usize, usize> = HashMap::new();
+        let mut staged = Vec::new();
+        for &slot in &plan.outputs {
+            if staging_of.contains_key(&slot) {
+                continue;
+            }
+            let size = elements(&plan.slot_shapes[slot]) * 4;
+            let staging = self.staging_buffer(size);
+            encoder.copy_buffer_to_buffer(
+                slots[slot].as_ref().expect("output is bound"),
+                0,
+                &staging,
+                0,
+                size,
+            );
+            staging_of.insert(slot, staged.len());
+            staged.push((staging, plan.slot_shapes[slot].clone()));
+        }
+        let submission = self.ctx.queue().submit([encoder.finish()]);
+        drop(scratch);
+        let tensors = self.read_staged(submission, staged)?;
+        Ok(plan
+            .outputs
+            .iter()
+            .map(|slot| tensors[staging_of[slot]].clone())
+            .collect())
+    }
 }
 
 fn fold(elements: u64, cfg: &KernelConfig, caps: &DeviceCaps) -> Result<(u32, u32), Error> {
@@ -553,19 +662,7 @@ fn fold(elements: u64, cfg: &KernelConfig, caps: &DeviceCaps) -> Result<(u32, u3
 
 impl Executable for WgpuExecutable {
     fn run(&self, inputs: &[Tensor]) -> Result<Vec<Tensor>, Error> {
-        let plan = &self.plan;
-        if inputs.len() != plan.inputs.len() {
-            return Err(Error::InputCount {
-                expected: plan.inputs.len(),
-                found: inputs.len(),
-            });
-        }
-        let device_inputs = inputs
-            .iter()
-            .map(|t| self.upload(t))
-            .collect::<Result<Vec<_>, _>>()?;
-        let outputs = self.run_device(&device_inputs)?;
-        outputs.iter().map(|t| self.download(t)).collect()
+        self.ctx.scoped(|| self.run_to_host_unscoped(inputs))
     }
 }
 
@@ -685,6 +782,142 @@ mod tests {
             Err(Error::Backend(m)) => m,
             other => panic!("expected a backend error, got {other:?}"),
         }
+    }
+
+    /// `run` records everything in one submission; its results must equal the
+    /// device path (upload, `run_device`, download) bit for bit on graphs that
+    /// share outputs, alias buffers or return inputs and constants.
+    #[test]
+    fn run_in_one_submission_matches_the_device_path() {
+        use oxfuse_core::{GraphBuilder, Limits, ValueId};
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        type Build = fn(&mut GraphBuilder) -> Vec<ValueId>;
+        let cases: [(&str, Build); 7] = [
+            ("two outputs", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let c = b.constant("c", vec![6], vec![0.5; 6]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                vec![y, b.node("z", Op::Add, &[y, c]).unwrap()]
+            }),
+            ("listed twice", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                vec![y, y]
+            }),
+            ("input and constant as outputs", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let c = b.constant("c", vec![6], vec![1.5; 6]).unwrap();
+                let y = b.node("y", Op::Mul, &[x, c]).unwrap();
+                vec![x, c, y]
+            }),
+            ("reshape alias", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                let r = b
+                    .node("r", Op::Reshape { shape: vec![2, 3] }, &[y])
+                    .unwrap();
+                vec![r, y]
+            }),
+            ("scalar broadcast", |b| {
+                let x = b.input("x", vec![6]).unwrap();
+                let s = b.constant("s", vec![], vec![2.0]).unwrap();
+                vec![b.node("y", Op::Mul, &[s, x]).unwrap()]
+            }),
+            ("matmul and transpose", |b| {
+                let x = b.input("x", vec![2, 3]).unwrap();
+                let w = b
+                    .constant("w", vec![3, 2], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+                    .unwrap();
+                let m = b.node("m", Op::MatMul, &[x, w]).unwrap();
+                vec![
+                    b.node("t", Op::Transpose { perm: vec![1, 0] }, &[m])
+                        .unwrap(),
+                ]
+            }),
+            ("one element", |b| {
+                let x = b.input("x", vec![1]).unwrap();
+                vec![b.node("y", Op::Sigmoid, &[x]).unwrap()]
+            }),
+        ];
+        for (name, build) in cases {
+            let mut b = GraphBuilder::new(Limits::default());
+            let outputs = build(&mut b);
+            let graph = b.finish(&outputs).unwrap();
+            let exe = backend.compile_device(&graph).unwrap();
+            let shape = match name {
+                "matmul and transpose" => vec![2, 3],
+                "one element" => vec![1],
+                _ => vec![6],
+            };
+            let len: usize = shape.iter().product();
+            for seed in 0..3 {
+                let data: Vec<f32> = (0..len).map(|i| ((i + seed * 2) as f32) - 2.5).collect();
+                let input = Tensor::new(shape.clone(), data).unwrap();
+                let fused = exe.run(std::slice::from_ref(&input)).unwrap();
+                let uploaded = exe.upload(&input).unwrap();
+                let device = exe.run_device(std::slice::from_ref(&uploaded)).unwrap();
+                assert_eq!(fused.len(), device.len(), "{name}");
+                for (got, want) in fused.iter().zip(&device) {
+                    let want = exe.download(want).unwrap();
+                    assert_eq!(got.shape(), want.shape(), "{name}");
+                    let bits =
+                        |t: &Tensor| t.data().iter().map(|v| v.to_bits()).collect::<Vec<_>>();
+                    assert_eq!(bits(got), bits(&want), "{name} seed {seed}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn run_rejects_wrong_inputs_before_touching_the_device() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let exe = backend.compile_device(&relu_graph(4)).unwrap();
+        let good = Tensor::new(vec![4], vec![1.0; 4]).unwrap();
+        let wrong = Tensor::new(vec![5], vec![1.0; 5]).unwrap();
+        assert!(matches!(
+            exe.run(&[]),
+            Err(Error::InputCount {
+                expected: 1,
+                found: 0
+            })
+        ));
+        assert!(matches!(
+            exe.run(&[good.clone(), good.clone()]),
+            Err(Error::InputCount {
+                expected: 1,
+                found: 2
+            })
+        ));
+        assert!(matches!(exe.run(&[wrong]), Err(Error::InputShape { .. })));
+        // And it still works afterwards.
+        assert_eq!(exe.run(&[good]).unwrap()[0].data(), &[1.0; 4]);
+    }
+
+    #[test]
+    fn two_threads_sharing_one_executable_get_their_own_results() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let exe = backend.compile_device(&relu_graph(64)).unwrap();
+        std::thread::scope(|scope| {
+            for thread in 0..2u32 {
+                let exe = &exe;
+                scope.spawn(move || {
+                    for round in 0..20u32 {
+                        let sign = if thread == 0 { 1.0 } else { -1.0 };
+                        let data: Vec<f32> = (0..64).map(|i| sign * (i + round) as f32).collect();
+                        let want: Vec<f32> = data.iter().map(|v| v.max(0.0)).collect();
+                        let input = Tensor::new(vec![64], data).unwrap();
+                        let got = exe.run(&[input]).unwrap();
+                        assert_eq!(got[0].data(), want, "thread {thread} round {round}");
+                    }
+                });
+            }
+        });
     }
 
     /// Upload writes 4 bytes per element in chunks; lengths around the chunk

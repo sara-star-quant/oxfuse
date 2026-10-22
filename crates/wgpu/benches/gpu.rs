@@ -142,8 +142,40 @@ fn record_adapter() {
     let _ = std::fs::write(dir.join("gpu-adapter.txt"), line);
 }
 
+/// Several outputs read back by one `run`: each output used to cost its own
+/// submission and wait.
+fn multi_output(c: &mut Criterion) {
+    let Ok(gpu) = WgpuBackend::new() else { return };
+    const OUTPUTS: usize = 8;
+    let n = 4096;
+    let mut b = GraphBuilder::new(Limits::default());
+    let x = b.input("x", vec![n]).unwrap();
+    let outputs: Vec<_> = (0..OUTPUTS)
+        .map(|i| {
+            let c = b
+                .constant(&format!("c{i}"), vec![n], vec![i as f32; n])
+                .unwrap();
+            b.node(&format!("o{i}"), Op::Add, &[x, c]).unwrap()
+        })
+        .collect();
+    let graph = b.finish(&outputs).unwrap();
+    let inputs = [tensor(&[n], 7)];
+    let exe = gpu.compile_device(&graph).unwrap();
+    let mut group = c.benchmark_group("gpu-outputs");
+    group
+        .sample_size(20)
+        .measurement_time(Duration::from_secs(3));
+    group.bench_with_input(
+        BenchmarkId::new("gpu-with-transfers", OUTPUTS),
+        &n,
+        |b, _| b.iter(|| black_box(exe.run(&inputs).unwrap())),
+    );
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     record_adapter();
+    multi_output(c);
     for n in [128usize, 256, 512, 1024, 2048] {
         let g = graph(Op::MatMul, &[&[n, n], &[n, n]]);
         let inputs = [tensor(&[n, n], 1), tensor(&[n, n], 2)];
