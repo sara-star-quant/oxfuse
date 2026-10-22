@@ -14,14 +14,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [loader, differential, generated, onnx, onnx_generated]
+        target: [loader, differential, generated, onnx, onnx_generated, gpu_generated]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # gpu_generated compares every generated graph on a software Vulkan device
+      # (lavapipe) with the reference; the other targets ignore it.
+      - if: matrix.target == 'gpu_generated'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
       - run: rustup toolchain install nightly-2026-05-22 --profile minimal
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: just@1.59.0,cargo-fuzz@0.13.2
       - run: just fuzz ${{ matrix.target }} 300
+        if: matrix.target != 'gpu_generated'
+      - run: just fuzz gpu_generated 300
+        if: matrix.target == 'gpu_generated'
+        env:
+          OXFUSE_REQUIRE_ADAPTER: "1"
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -645,7 +645,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "clap",
  "oxfuse-core",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "thiserror",
 ]
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-onnx"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "oxfuse-core",
  "prost",
@@ -687,14 +687,14 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-runtime"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "oxfuse-core",
 ]
 
 [[package]]
 name = "oxfuse-wgpu"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "oxfuse-core",
  "oxfuse-runtime",

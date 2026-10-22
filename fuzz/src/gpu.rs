@@ -19,9 +19,16 @@ fn sigmoid_bound() -> u32 {
         .map_or(u32::MAX, |g| sigmoid_ulp_bound_for(&g.context().info().name))
 }
 
-/// Whether this machine has an adapter. Without one the target does nothing.
+/// Whether this machine has an adapter. Without one the target does nothing,
+/// unless `OXFUSE_REQUIRE_ADAPTER` is set (CI), where a missing adapter fails
+/// the run instead of letting it pass vacuously.
 pub fn available() -> bool {
-    GPU.is_some()
+    let ok = GPU.is_some();
+    assert!(
+        ok || std::env::var_os("OXFUSE_REQUIRE_ADAPTER").is_none(),
+        "OXFUSE_REQUIRE_ADAPTER is set but no adapter exists"
+    );
+    ok
 }
 
 /// The finite tier: finite, and zero or a normal number (the device may flush subnormals).
