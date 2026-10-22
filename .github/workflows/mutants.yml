@@ -78,8 +78,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     continue-on-error: true
-    env:
-      OXFUSE_REQUIRE_ADAPTER: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -90,17 +88,30 @@ jobs:
             args: "-p oxfuse-runtime"
           - name: cli
             args: "-p oxfuse --features wgpu,onnx"
+            gpu: true
           - name: onnx
             args: "-p oxfuse-onnx --test-package oxfuse-onnx"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      # Only the cli job needs a GPU adapter (its gpu-selftest tests). Everywhere
+      # else the wgpu tests skip without one: on the software adapter a full
+      # test run takes minutes, which made the core and runtime jobs hit the
+      # two hour limit.
+      - if: matrix.gpu
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
       - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-mutants@27.1.0
-      - run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120
+      # An empty OXFUSE_REQUIRE_ADAPTER still counts as set, so the variable is
+      # given to the gpu job only, through a step of its own.
+      - if: matrix.gpu
+        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120
+        env:
+          OXFUSE_REQUIRE_ADAPTER: "1"
+      - if: ${{ !matrix.gpu }}
+        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
