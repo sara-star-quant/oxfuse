@@ -147,13 +147,25 @@ pub fn build(case: &Case) -> (Graph, Vec<Tensor>) {
     (b.finish_named(outputs).unwrap(), inputs)
 }
 
+/// The bits of `v`, with every NaN mapped to one pattern: IEEE 754 leaves the
+/// sign and payload of a NaN produced from two NaN operands or from an invalid
+/// operation to the hardware (x86 and ARM differ) and to the operand order the
+/// compiler picks, so two correct kernels may disagree on them.
+pub fn comparable_bits(v: f32) -> u32 {
+    if v.is_nan() {
+        f32::NAN.to_bits()
+    } else {
+        v.to_bits()
+    }
+}
+
 pub fn bits(tensors: &[Tensor]) -> Vec<(Vec<usize>, Vec<u32>)> {
     tensors
         .iter()
         .map(|t| {
             (
                 t.shape().to_vec(),
-                t.data().iter().map(|v| v.to_bits()).collect(),
+                t.data().iter().map(|&v| comparable_bits(v)).collect(),
             )
         })
         .collect()

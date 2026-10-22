@@ -38,6 +38,17 @@ fn folded_matmul_and_transpose_match_runtime_bits() {
         .unwrap()
         .run(std::slice::from_ref(&input))
         .unwrap();
-    let bits = |t: &[Tensor]| t[0].data().iter().map(|v| v.to_bits()).collect::<Vec<_>>();
+    let bits = |t: &[Tensor]| {
+        t[0].data()
+            .iter()
+            .map(|&v| {
+                if v.is_nan() {
+                    f32::NAN.to_bits()
+                } else {
+                    v.to_bits()
+                }
+            })
+            .collect::<Vec<_>>()
+    };
     assert_eq!(bits(&plain), bits(&fast));
 }
