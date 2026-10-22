@@ -5,7 +5,7 @@ members = ["crates/core", "crates/runtime", "crates/cli", "crates/wgpu", "crates
 [workspace.package]
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "Apache-2.0"
 repository = "https://github.com/sara-star-quant/oxfuse"
 homepage = "https://github.com/sara-star-quant/oxfuse"
@@ -16,6 +16,8 @@ categories = ["artificial-intelligence", "compilers", "mathematics"]
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 ndarray = "0.17.2"
 rayon = "1.12.0"
+fearless_simd = "1.1.0"
+fearless_simd_macros = "0.1.0"
 oxfuse-core = { path = "crates/core", version = "0.3.0" }
 oxfuse-runtime = { path = "crates/runtime", version = "0.3.0" }
 clap = { version = "4.6.7", features = ["derive"] }

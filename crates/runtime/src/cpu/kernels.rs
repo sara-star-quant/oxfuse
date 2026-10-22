@@ -4,9 +4,11 @@
 
 use super::matmul::matmul;
 #[cfg(test)]
-use super::matmul::{KC, NC, R, W, matmul_tiled};
+use super::matmul::{KC, NC, R, W, matmul_tiled, matmul_tiled_at};
 #[cfg(all(test, feature = "parallel"))]
 use super::matmul::{PARALLEL_MIN_MACS, matmul_parallel, use_threads};
+#[cfg(test)]
+use fearless_simd::Level;
 use oxfuse_core::Op;
 
 pub(super) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32> {
@@ -217,6 +219,49 @@ mod tests {
                     "m={m} n={n} kc={kc} nc={nc}: {out:?}"
                 );
             }
+        }
+    }
+
+    /// The machine's best level and its baseline (SSE2 on x86, which has no
+    /// FMA: the multiply-add is computed in software there) give the same bits.
+    #[test]
+    fn matmul_is_identical_at_every_simd_level() {
+        for level in [Level::baseline(), Level::new()] {
+            for (m, k, n) in [
+                (1, 1, 1),
+                (7, 33, 19),
+                (13, 300, 40),
+                (6, 5, 16),
+                (25, 64, 129),
+            ] {
+                let (a, b) = (values(m * k, 41), values(k * n, 42));
+                let want = bits(&reference_matmul(&a, &b, m, k, n));
+                for (kc, nc) in [(7, W), (KC, NC)] {
+                    assert_eq!(
+                        bits(&matmul_tiled_at(level, &a, &b, (m, k, n), (kc, nc))),
+                        want,
+                        "{level:?} m={m} k={k} n={n} kc={kc} nc={nc}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Padded lanes of a tail tile compute NaN when A holds an infinity and
+    /// the padding is zero; none of that may reach a stored column.
+    #[test]
+    fn padded_lanes_of_the_tail_tile_never_reach_the_output() {
+        for n in [1, 3, W - 1, W + 1, 2 * W - 1] {
+            let (m, k) = (R + 2, 4);
+            let mut a = values(m * k, 51);
+            a[3] = f32::INFINITY;
+            a[k + 1] = f32::NAN;
+            let b = values(k * n, 52);
+            assert_eq!(
+                bits(&matmul_tiled(&a, &b, m, k, n, 2, NC)),
+                bits(&reference_matmul(&a, &b, m, k, n)),
+                "n={n}"
+            );
         }
     }
 
