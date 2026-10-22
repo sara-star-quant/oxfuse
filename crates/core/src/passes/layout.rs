@@ -28,6 +28,22 @@ struct Link {
     source_shape: Vec<usize>,
 }
 
+/// The single permutation equal to transposing by `inner` and then by `outer`:
+/// output dimension `i` of the pair is input dimension `inner[outer[i]]`.
+fn compose(inner: &[usize], outer: &[usize]) -> Vec<usize> {
+    let mut composed = vec![0; outer.len()];
+    compose_into(inner, outer, &mut composed);
+    composed
+}
+
+/// `compose` into `out`, which must be as long as `outer`. Split out so the
+/// model checker can run it without an allocation.
+fn compose_into(inner: &[usize], outer: &[usize], out: &mut [usize]) {
+    for (slot, &i) in out.iter_mut().zip(outer) {
+        *slot = inner[i];
+    }
+}
+
 impl Pass for LayoutElision {
     fn name(&self) -> &'static str {
         "layout"
@@ -58,7 +74,7 @@ impl Pass for LayoutElision {
                     }),
                     Op::Transpose { perm: outer },
                 ) => {
-                    let composed = outer.iter().map(|&i| inner[i]).collect();
+                    let composed = compose(inner, outer);
                     (
                         *source,
                         source_shape.clone(),
@@ -374,5 +390,47 @@ mod tests {
         let out = run(&g);
         assert_eq!(out.changed, 0);
         assert_eq!(out.graph, g);
+    }
+}
+
+/// Bounded model checking with Kani (`just kani`).
+#[cfg(kani)]
+mod proofs {
+    use super::compose_into;
+
+    const N: usize = 4;
+
+    fn is_permutation(p: &[usize]) -> bool {
+        (0..p.len()).all(|v| p.contains(&v))
+    }
+
+    /// For every pair of permutations of rank 4 and every coordinate, applying
+    /// the two transposes in turn lands on the same input coordinate as the
+    /// composed permutation, and the composition is itself a permutation.
+    /// Transposing by `perm` maps an output coordinate `z` to the input
+    /// coordinate `x` with `x[perm[k]] = z[k]`.
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn composing_two_transposes_equals_applying_them_in_turn() {
+        let inner: [usize; N] = kani::any();
+        let outer: [usize; N] = kani::any();
+        kani::assume(is_permutation(&inner) && is_permutation(&outer));
+        let mut composed = [0usize; N];
+        compose_into(&inner, &outer, &mut composed);
+        assert!(is_permutation(&composed));
+        let z: [u8; N] = kani::any();
+        let mut y = [0u8; N];
+        let mut x = [0u8; N];
+        let mut x_direct = [0u8; N];
+        for k in 0..N {
+            y[outer[k]] = z[k];
+        }
+        for m in 0..N {
+            x[inner[m]] = y[m];
+        }
+        for k in 0..N {
+            x_direct[composed[k]] = z[k];
+        }
+        assert_eq!(x, x_direct);
     }
 }

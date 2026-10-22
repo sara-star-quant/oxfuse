@@ -52,6 +52,8 @@ The second command is per file; the GPU tests need an adapter, otherwise most of
 
 ## What mutation testing does not cover
 
+- The Kani proof harnesses. They are compiled only by Kani (`cfg(kani)`), so no test run can see a change to them; `.cargo/mutants.toml` excludes them and Kani checks them (`just kani`).
+
 - The WGSL kernel text. `cargo-mutants` mutates Rust only. The kernels are checked by bugs planted by hand, by the device tests, the exhaustive Relu and Sigmoid sweeps, a CPU model of every kernel grid, and bounded model checking of the index arithmetic (`just kani`).
 - Other adapters. The GPU runs above used one adapter; [adapters.md](adapters.md) records the self-test on the others.
 
