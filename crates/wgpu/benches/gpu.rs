@@ -1,8 +1,9 @@
 //! The GPU backend against the fast CPU backend on the same work, in five ways:
 //!
-//! - `gpu-cold`: compile (pipelines, buffers) plus the first run, one fresh
-//!   executable per sample. A driver may cache compiled shaders across samples,
-//!   so this is a lower bound on a true first run in a new process.
+//! - `gpu-cold`: compile (pipelines, buffers) plus the first run, on a fresh
+//!   device per sample (created outside the timing, because a device keeps the
+//!   pipelines it compiled). A driver may cache compiled shaders across
+//!   samples, so this is a lower bound on a true first run in a new process.
 //! - `gpu-resident`: inputs already on the device; times `run_device` until the
 //!   device is idle, including the copy of the outputs into fresh buffers.
 //! - `gpu-batched`: the same resident run, but 16 submits per wait; the time is
@@ -12,7 +13,7 @@
 //!
 //! Only the machine that ran it can be described by the numbers.
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use oxfuse_core::{Graph, GraphBuilder, Limits, Op};
 use oxfuse_runtime::{Backend, CpuBackend, Executable, Tensor};
 use oxfuse_wgpu::{DeviceTensor, WgpuBackend};
@@ -69,13 +70,17 @@ fn compare(
         .measurement_time(Duration::from_secs(3));
 
     group.bench_with_input(BenchmarkId::new("gpu-cold", size), &size, |b, _| {
-        b.iter(|| {
-            let exe = gpu.compile_device(graph).unwrap();
-            let device_inputs: Vec<DeviceTensor> =
-                inputs.iter().map(|t| exe.upload(t).unwrap()).collect();
-            black_box(exe.run_device(&device_inputs).unwrap());
-            wait(&gpu);
-        })
+        b.iter_batched(
+            || WgpuBackend::new().expect("an adapter exists"),
+            |gpu| {
+                let exe = gpu.compile_device(graph).unwrap();
+                let device_inputs: Vec<DeviceTensor> =
+                    inputs.iter().map(|t| exe.upload(t).unwrap()).collect();
+                black_box(exe.run_device(&device_inputs).unwrap());
+                wait(&gpu);
+            },
+            BatchSize::PerIteration,
+        )
     });
 
     let exe = gpu.compile_device(graph).unwrap();

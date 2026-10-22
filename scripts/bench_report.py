@@ -32,8 +32,9 @@ Reproduce: `just bench && just bench-report`. For the threaded rows, also run
 
 GPU rows (`gpu-matmul`, `gpu-add`) come from `just bench-gpu`, which also times the
 fast CPU backend in the same run, on one thread and on all threads. `gpu-cold` is
-compile plus the first run (a driver may cache compiled shaders across samples, so
-it is a lower bound on a first run in a new process). `gpu-resident` keeps inputs
+compile plus the first run on a fresh device per sample (a device keeps the
+pipelines it compiled; a driver may still cache compiled shaders across samples,
+so it is a lower bound on a first run in a new process). `gpu-resident` keeps inputs
 on the device and times `run_device` until the device is idle, including the copy
 of the outputs. `gpu-batched` is the resident run with 16 submits per wait, timed
 per run, so the gap to `gpu-resident` is the cost of one submit-and-wait.

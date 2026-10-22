@@ -78,6 +78,14 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   rectangular tiles. In a harness where the dimensions were compile-time
   constants the 16-row tile reached 300 us, but that came from the compiler
   specializing the strides, not from the loop, so it is not a result.
+- GPU pipelines, one cache per device: executables on a device share the
+  compiled pipeline for a given shader source, because shapes travel in a
+  uniform buffer and the source depends only on the kernel and its
+  configuration. The wgpu `ops`, `twin` and `limits` test binaries, which
+  compile a graph per case, went from 8.7 s to 2.0 s (`ops`) on this Mac, and
+  the Windows software adapter, where each shader compile costs far more, took
+  407 s for `ops` before. `gpu-cold` now creates a fresh device per sample
+  outside the timing, so it still includes shader compilation. Kept.
 - Add, Relu, Mul, Reshape: the reference loops already vectorize
   (cpu and reference measured within noise at the baseline), so these still
   call the reference kernels. Splitting them across threads made them slower
