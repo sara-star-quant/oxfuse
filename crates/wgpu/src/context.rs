@@ -23,6 +23,10 @@ pub enum LimitsProfile {
 }
 
 pub struct Context {
+    /// Set once by the device-lost callback and never cleared: every later call
+    /// fails with this message instead of reaching a dead device.
+    lost: Arc<Mutex<Option<String>>>,
+    timeout: Duration,
     device: wgpu::Device,
     queue: wgpu::Queue,
     info: wgpu::AdapterInfo,
@@ -69,13 +73,14 @@ impl Context {
         device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
             sink.lock().unwrap().push(e.to_string());
         }));
-        let sink = Arc::clone(&errors);
+        let lost = Arc::new(Mutex::new(None));
+        let state = Arc::clone(&lost);
         device.set_device_lost_callback(move |reason, message| {
-            sink.lock()
-                .unwrap()
-                .push(format!("device lost ({reason:?}): {message}"));
+            *state.lock().unwrap() = Some(format!("device lost ({reason:?}): {message}"));
         });
         Ok(Context {
+            lost,
+            timeout: POLL_TIMEOUT,
             device,
             queue,
             info: adapter.get_info(),
@@ -83,6 +88,104 @@ impl Context {
             errors,
             pipelines: Mutex::new(HashMap::new()),
             compiled: AtomicUsize::new(0),
+        })
+    }
+
+    /// Replaces the default 30 second wait for the device in `wait_idle` and
+    /// downloads. A slow software adapter or a very large matmul can need longer.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Fails with the device-lost message if the device is gone.
+    pub fn ensure_alive(&self) -> Result<(), Error> {
+        match &*self.lost.lock().unwrap() {
+            Some(message) => Err(Error::Backend(message.clone())),
+            None => Ok(()),
+        }
+    }
+
+    /// Runs `f` with this thread's validation and out-of-memory errors captured
+    /// by error scopes, so a failure is reported to the call that caused it and
+    /// not to whichever call drains the shared error list next. Fails first if
+    /// the device is already lost.
+    pub(crate) fn scoped<T>(&self, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+        self.ensure_alive()?;
+        let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let result = f();
+        let memory_error = pollster::block_on(memory.pop());
+        let validation_error = pollster::block_on(validation.pop());
+        let outcome = match result {
+            Err(e) => Err(e),
+            Ok(value) => match memory_error.or(validation_error) {
+                Some(e) => Err(Error::Backend(e.to_string())),
+                None => Ok(value),
+            },
+        };
+        match outcome {
+            Ok(value) => {
+                self.ensure_alive()?;
+                Ok(value)
+            }
+            // A lost device shows up first as some other failure; the loss is
+            // reported by the device-lost callback, which runs while polling.
+            Err(e) => {
+                let _ = self.device.poll(wgpu::PollType::Poll);
+                Err(self.ensure_alive().err().unwrap_or(e))
+            }
+        }
+    }
+
+    /// A buffer of `size` bytes filled by `fill` while it is mapped at creation.
+    /// Unlike `create_buffer_init` this reports a lost device as an error and
+    /// does not copy the data through a temporary vector.
+    pub(crate) fn buffer_init(
+        &self,
+        size: u64,
+        usage: wgpu::BufferUsages,
+        fill: impl FnOnce(&mut wgpu::BufferViewMut),
+    ) -> Result<wgpu::Buffer, Error> {
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage,
+            mapped_at_creation: true,
+        });
+        {
+            let mut view = buffer
+                .slice(..)
+                .get_mapped_range_mut()
+                .map_err(|e| Error::Backend(format!("filling a buffer failed: {e}")))?;
+            fill(&mut view);
+        }
+        buffer.unmap();
+        Ok(buffer)
+    }
+
+    /// A buffer holding `data` as little-endian `f32`, written in chunks so no
+    /// second copy of the tensor is built.
+    pub(crate) fn buffer_from_f32(
+        &self,
+        data: &[f32],
+        usage: wgpu::BufferUsages,
+    ) -> Result<wgpu::Buffer, Error> {
+        const CHUNK: usize = 16_384;
+        self.buffer_init(data.len() as u64 * 4, usage, |view| {
+            let mut bytes = [0u8; CHUNK * 4];
+            for (index, chunk) in data.chunks(CHUNK).enumerate() {
+                for (dst, v) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(chunk) {
+                    *dst = v.to_le_bytes();
+                }
+                let start = index * CHUNK * 4;
+                view.slice(start..start + chunk.len() * 4)
+                    .copy_from_slice(&bytes[..chunk.len() * 4]);
+            }
         })
     }
 
@@ -137,10 +240,11 @@ impl Context {
 
     /// Blocks until all submitted work has finished, or fails after the poll timeout.
     pub fn wait_idle(&self) -> Result<(), Error> {
+        self.ensure_alive()?;
         self.device
             .poll(wgpu::PollType::Wait {
                 submission_index: None,
-                timeout: Some(POLL_TIMEOUT),
+                timeout: Some(self.timeout),
             })
             .map_err(|e| Error::Backend(format!("waiting for the device failed: {e}")))?;
         match self.take_errors() {

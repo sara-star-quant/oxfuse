@@ -6,14 +6,13 @@
 //! mutex; results are copied into fresh buffers before they are returned.
 
 use crate::config::{DeviceCaps, KernelConfig, check_tensor, grid_fold, permute_layout, tile_grid};
-use crate::context::{Context, LimitsProfile, POLL_TIMEOUT};
+use crate::context::{Context, LimitsProfile};
 use crate::shaders::{self, Binary, Unary};
 use oxfuse_core::{Error, Graph, Op};
 use oxfuse_runtime::{Backend, Executable, Plan, Tensor};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use wgpu::util::DeviceExt;
 
 /// Highest rank the permute kernel walks (its dimensions fit two `vec4<u32>`).
 const MAX_PERMUTE_RANK: usize = 8;
@@ -171,6 +170,11 @@ fn bytes_of_words(words: &[u32]) -> Vec<u8> {
 
 impl WgpuExecutable {
     fn build(ctx: Arc<Context>, cfg: KernelConfig, plan: Plan) -> Result<Self, Error> {
+        let scope = Arc::clone(&ctx);
+        scope.scoped(|| Self::build_unscoped(ctx, cfg, plan))
+    }
+
+    fn build_unscoped(ctx: Arc<Context>, cfg: KernelConfig, plan: Plan) -> Result<Self, Error> {
         let caps = caps_of(ctx.limits());
         cfg.validate(&caps).map_err(backend_error)?;
         for (slot, shape) in plan.slot_shapes.iter().enumerate() {
@@ -310,11 +314,14 @@ impl WgpuExecutable {
                     }
                     Some(Dispatch {
                         pipeline,
-                        params: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: None,
-                            contents: &bytes_of_words(&words),
-                            usage: wgpu::BufferUsages::UNIFORM,
-                        }),
+                        params: {
+                            let bytes = bytes_of_words(&words);
+                            ctx.buffer_init(
+                                bytes.len() as u64,
+                                wgpu::BufferUsages::UNIFORM,
+                                |view| view.copy_from_slice(&bytes),
+                            )?
+                        },
                         groups,
                     })
                 }
@@ -329,15 +336,10 @@ impl WgpuExecutable {
             .constants
             .iter()
             .map(|(slot, data)| {
-                let bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
-                let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
-                    contents: &bytes,
-                    usage: wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
-                });
-                (*slot, buffer)
+                let usage = wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC);
+                Ok((*slot, ctx.buffer_from_f32(data, usage)?))
             })
-            .collect();
+            .collect::<Result<Vec<_>, Error>>()?;
         let executable = WgpuExecutable {
             ctx,
             plan,
@@ -359,25 +361,24 @@ impl WgpuExecutable {
     }
 
     pub fn upload(&self, tensor: &Tensor) -> Result<DeviceTensor, Error> {
-        check_tensor(elements(tensor.shape()), &caps_of(self.ctx.limits()))
-            .map_err(backend_error)?;
-        let bytes: Vec<u8> = tensor.data().iter().flat_map(|v| v.to_le_bytes()).collect();
-        let buffer = self
-            .ctx
-            .device()
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: &bytes,
-                usage: wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC),
-            });
-        self.check_device()?;
-        Ok(DeviceTensor {
-            buffer,
-            shape: tensor.shape().to_vec(),
+        self.ctx.scoped(|| {
+            check_tensor(elements(tensor.shape()), &caps_of(self.ctx.limits()))
+                .map_err(backend_error)?;
+            let usage = wgpu::BufferUsages::STORAGE.union(wgpu::BufferUsages::COPY_SRC);
+            let buffer = self.ctx.buffer_from_f32(tensor.data(), usage)?;
+            self.check_device()?;
+            Ok(DeviceTensor {
+                buffer,
+                shape: tensor.shape().to_vec(),
+            })
         })
     }
 
     pub fn download(&self, tensor: &DeviceTensor) -> Result<Tensor, Error> {
+        self.ctx.scoped(|| self.download_unscoped(tensor))
+    }
+
+    fn download_unscoped(&self, tensor: &DeviceTensor) -> Result<Tensor, Error> {
         let device = self.ctx.device();
         let size = elements(&tensor.shape) * 4;
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
@@ -398,7 +399,7 @@ impl WgpuExecutable {
         // Wait for this submission, not the newest one: another thread may have
         // submitted since, and our map callback only fires once we have polled
         // past our own work. Poll again until it has fired.
-        let deadline = Instant::now() + POLL_TIMEOUT;
+        let deadline = Instant::now() + self.ctx.timeout();
         let mapped = loop {
             if let Ok(result) = receiver.try_recv() {
                 break result;
@@ -433,6 +434,10 @@ impl WgpuExecutable {
     }
 
     pub fn run_device(&self, inputs: &[DeviceTensor]) -> Result<Vec<DeviceTensor>, Error> {
+        self.ctx.scoped(|| self.run_device_unscoped(inputs))
+    }
+
+    fn run_device_unscoped(&self, inputs: &[DeviceTensor]) -> Result<Vec<DeviceTensor>, Error> {
         let plan = &self.plan;
         if inputs.len() != plan.inputs.len() {
             return Err(Error::InputCount {
@@ -664,6 +669,129 @@ mod tests {
                 let got = gpu.download(got).unwrap();
                 assert_eq!(got.shape(), want.shape(), "{name}");
                 assert_eq!(got.data(), want.data(), "{name}");
+            }
+        }
+    }
+
+    fn relu_graph(len: usize) -> Graph {
+        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
+        let x = b.input("x", vec![len]).unwrap();
+        let y = b.node("y", Op::Relu, &[x]).unwrap();
+        b.finish(&[y]).unwrap()
+    }
+
+    fn message(result: Result<impl std::fmt::Debug, Error>) -> String {
+        match result {
+            Err(Error::Backend(m)) => m,
+            other => panic!("expected a backend error, got {other:?}"),
+        }
+    }
+
+    /// Upload writes 4 bytes per element in chunks; lengths around the chunk
+    /// size and odd lengths must round trip with the exact buffer size.
+    #[test]
+    fn upload_sizes_the_buffer_per_element_and_keeps_every_value() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        for len in [1usize, 2, 3, 5, 16383, 16384, 16385, 40001] {
+            let exe = backend.compile_device(&relu_graph(len)).unwrap();
+            let data: Vec<f32> = (0..len).map(|i| i as f32 * 0.25 + 1.0).collect();
+            let tensor = Tensor::new(vec![len], data.clone()).unwrap();
+            let uploaded = exe.upload(&tensor).unwrap();
+            assert_eq!(uploaded.buffer.size(), len as u64 * 4, "len {len}");
+            assert_eq!(exe.download(&uploaded).unwrap().data(), data, "len {len}");
+        }
+    }
+
+    #[test]
+    fn a_lost_device_fails_every_entry_with_the_same_error_and_never_panics() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let exe = backend.compile_device(&relu_graph(4)).unwrap();
+        let tensor = Tensor::new(vec![4], vec![1.0, -1.0, 2.0, -2.0]).unwrap();
+        let input = exe.upload(&tensor).unwrap();
+        let output = exe.run_device(std::slice::from_ref(&input)).unwrap();
+        backend.context().device().destroy();
+        // The device-lost callback runs while the device is polled.
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while backend.context().ensure_alive().is_ok() {
+            assert!(Instant::now() < deadline, "the loss was never reported");
+            let _ = backend.context().device().poll(wgpu::PollType::Poll);
+            std::thread::yield_now();
+        }
+        let first = message(exe.upload(&tensor));
+        assert!(first.contains("device lost"), "{first}");
+        assert_eq!(message(exe.run_device(std::slice::from_ref(&input))), first);
+        assert_eq!(message(exe.download(&output[0])), first);
+        assert_eq!(message(exe.run(std::slice::from_ref(&tensor))), first);
+        assert_eq!(
+            message(backend.compile_device(&relu_graph(4)).map(|_| ())),
+            first
+        );
+        assert_eq!(message(backend.context().wait_idle().map(|()| 0)), first);
+        // Sticky: asking again gives the same answer, not a fresh panic.
+        assert_eq!(message(exe.upload(&tensor)), first);
+    }
+
+    #[test]
+    fn a_failure_in_one_thread_is_not_reported_to_another() {
+        use std::sync::Barrier;
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let ctx = Arc::clone(backend.context());
+        let exe = backend.compile_device(&relu_graph(4)).unwrap();
+        let tensor = Tensor::new(vec![4], vec![1.0, -1.0, 2.0, -2.0]).unwrap();
+        let barrier = Barrier::new(2);
+        std::thread::scope(|scope| {
+            let failing = scope.spawn(|| {
+                ctx.scoped(|| {
+                    barrier.wait();
+                    // A buffer with no usage is a validation error.
+                    let _invalid = ctx.device().create_buffer(&wgpu::BufferDescriptor {
+                        label: None,
+                        size: 16,
+                        usage: wgpu::BufferUsages::empty(),
+                        mapped_at_creation: false,
+                    });
+                    barrier.wait();
+                    Ok(())
+                })
+            });
+            barrier.wait();
+            barrier.wait();
+            // The other thread's error has happened; this call must not see it.
+            let upload = exe.upload(&tensor);
+            assert!(upload.is_ok(), "{upload:?}");
+            let error = failing
+                .join()
+                .unwrap()
+                .expect_err("the failing call reports it");
+            assert!(matches!(error, Error::Backend(_)), "{error:?}");
+        });
+    }
+
+    #[test]
+    fn a_zero_timeout_fails_a_download_and_the_default_does_not() {
+        let tensor = Tensor::new(vec![4], vec![1.0, -1.0, 2.0, -2.0]).unwrap();
+        for (timeout, ok) in [(None, true), (Some(std::time::Duration::ZERO), false)] {
+            let Ok(mut ctx) = Context::new(LimitsProfile::Adapter) else {
+                return; // no adapter on this machine
+            };
+            if let Some(timeout) = timeout {
+                ctx = ctx.with_timeout(timeout);
+            }
+            let backend = WgpuBackend::for_context(Arc::new(ctx));
+            let exe = backend.compile_device(&relu_graph(4)).unwrap();
+            let input = exe.upload(&tensor).unwrap();
+            let output = exe.run_device(std::slice::from_ref(&input)).unwrap();
+            let downloaded = exe.download(&output[0]);
+            if ok {
+                assert_eq!(downloaded.unwrap().data(), &[1.0, 0.0, 2.0, 0.0]);
+            } else {
+                assert!(message(downloaded).contains("timed out"));
             }
         }
     }

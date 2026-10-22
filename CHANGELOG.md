@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- GPU backend: a lost device is reported as `Error::Backend("device lost ...")` by every call, and a later call no longer panics inside wgpu; validation and out-of-memory errors are attributed to the thread and call that caused them; uploads write straight into the mapped buffer; `Context::with_timeout` replaces the fixed 30 second wait.
+- The weekly fuzz run also compares generated graphs on a software Vulkan device (`gpu_generated`).
 - GPU backend: executables on one device share compiled pipelines, so compiling many graphs no longer recompiles the same shaders.
 - Crate metadata: `artificial-intelligence` category and the `onnx`, `inference` and `wgpu` keywords where they apply, shorter descriptions, `docs.rs` builds with all features for `oxfuse` and `oxfuse-wgpu`.
 - Crate-level docs with a runnable quick start for `oxfuse-core` and `oxfuse-runtime`; sub-crate READMEs point to the root README.
