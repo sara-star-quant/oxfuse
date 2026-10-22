@@ -83,6 +83,42 @@ fn matmul(c: &mut Criterion) {
     }
 }
 
+/// A batch of `m` rows against a fixed weight: the shape of inference with a
+/// small batch. `matmul-skinny` has a 1024 x 1024 weight (a hidden layer),
+/// `matmul-head` a 784 x 10 one (a classifier head, 10 is not a multiple of
+/// the vector width). The size in the id is the number of rows.
+fn skinny(c: &mut Criterion) {
+    for (name, k, n) in [
+        ("matmul-skinny", 1024usize, 1024usize),
+        ("matmul-head", 784, 10),
+    ] {
+        for m in [1usize, 2, 3, 5, 8, 32] {
+            let graph = binary_graph_shapes(Op::MatMul, &[m, k], &[k, n]);
+            let inputs = [tensor(&[m, k], 1), tensor(&[k, n], 2)];
+            let mut group = c.benchmark_group(name);
+            group.throughput(Throughput::Elements(2 * (m * k * n) as u64));
+            let a = Array2::from_shape_vec((m, k), data(m * k, 1)).unwrap();
+            let b = Array2::from_shape_vec((k, n), data(k * n, 2)).unwrap();
+            group.bench_function(format!("ndarray/{m}"), |bench| {
+                bench.iter(|| black_box(black_box(&a).dot(black_box(&b))))
+            });
+            let cpu = CpuBackend.compile(&graph).unwrap();
+            group.bench_function(format!("{CPU}/{m}"), |bench| {
+                bench.iter(|| black_box(cpu.run(black_box(&inputs)).unwrap()))
+            });
+            group.finish();
+        }
+    }
+}
+
+fn binary_graph_shapes(op: Op, a: &[usize], b: &[usize]) -> Graph {
+    let mut g = GraphBuilder::new(Limits::default());
+    let x = g.input("x", a.to_vec()).unwrap();
+    let y = g.input("y", b.to_vec()).unwrap();
+    let z = g.node("z", op, &[x, y]).unwrap();
+    g.finish(&[z]).unwrap()
+}
+
 fn elementwise(c: &mut Criterion) {
     let n = 1 << 20;
     let inputs = [tensor(&[n], 3), tensor(&[n], 4)];
@@ -140,5 +176,5 @@ fn pipeline(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, matmul, elementwise, transpose, pipeline);
+criterion_group!(benches, matmul, skinny, elementwise, transpose, pipeline);
 criterion_main!(benches);

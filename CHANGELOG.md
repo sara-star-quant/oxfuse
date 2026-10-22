@@ -4,6 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- The fast CPU matmul reads the last columns of B in place instead of copying them first, which makes narrow outputs such as a 784 by 10 classifier head 3 to 4 times faster at one row. `just bench` now also times small batches against a hidden-layer weight and the classifier head.
 - The reference matmul runs with hardware fused multiply-add on x86 too (it was 2.4 times slower there than in 0.3.0 after the fused definition). The bits do not change.
 - Breaking: `Sigmoid` uses an `exp` written for this project instead of the platform's, so it returns the same bits on x86, ARM and every libc, within 1 ulp of the correctly rounded result. The bits differ from 0.3.0 in the last place for some inputs. The fast CPU `Sigmoid` runs on SIMD vectors and takes about half the time (1.76 ms to 0.84 ms for 2^20 elements on an M1 Pro).
 - The fast CPU matmul runs on explicit SIMD vectors (`fearless_simd`), and x86 picks AVX2 or AVX-512 at run time with no build flags. Without it the fused multiply-add would call into libm on x86 and run about 40 times slower. Minimum Rust is now 1.89.
