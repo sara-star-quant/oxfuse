@@ -22,7 +22,7 @@ Of the 1375 mutants that compile, 1364 were stopped (99.2%) and the other 11 are
 
 Reproduce with `just mutants` (the first two commands below) and `just mutants-gpu crates/wgpu/src/exec.rs` (one GPU host file, needs an adapter). They run:
 
-    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu --test-workspace true -j 2 --timeout 120
+    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu,oxfuse/onnx --test-workspace true -j 2 --timeout 120
     cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
     cargo mutants -p oxfuse-wgpu -f crates/wgpu/src/exec.rs --test-package oxfuse-wgpu -j 2 --timeout 180
 
@@ -30,7 +30,7 @@ The second command is per file; the GPU tests need an adapter, otherwise most of
 
 ## In CI
 
-`.github/workflows/mutants.yml` reports and never gates. A pull request runs only the mutants that overlap its diff (`--in-diff`), in one job for the CPU-side crates and one for `oxfuse-wgpu` on a software Vulkan adapter. A weekly run covers every mutant of the CPU-side crates in four shards. The missed list is the artifact `mutants.out`. A missed mutant in a changed region needs a test or an entry below. The WGSL text and a second hardware adapter stay outside it, see the end of this page.
+`.github/workflows/mutants.yml` reports and never gates. A pull request runs only the mutants that overlap its diff (`--in-diff`), in one job for the CPU-side crates and one for `oxfuse-wgpu` on a software Vulkan adapter. The pull request job builds with all features, so code behind `onnx`, `wgpu` and `parallel` is tested. A weekly run covers every mutant of the CPU-side crates, one job per package. The missed list is the artifact `mutants.out`. A missed mutant in a changed region needs a test or an entry below. The WGSL text and a second hardware adapter stay outside it, see the end of this page.
 
 ## Survivors
 

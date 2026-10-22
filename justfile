@@ -47,7 +47,7 @@ corpus:
 # Slow (about 16 minutes for the first line); needs `cargo install cargo-mutants`.
 # Results land in mutants.out/. Two workers, because every worker builds its own copy.
 mutants:
-    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu --test-workspace true -j 2 --timeout 120
+    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu,oxfuse/onnx --test-workspace true -j 2 --timeout 120
     cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
 
 # Mutants of one GPU host file, for example `just mutants-gpu crates/wgpu/src/exec.rs`. Needs an adapter.
