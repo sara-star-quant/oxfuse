@@ -174,10 +174,15 @@ fn bytes_of_words(words: &[u32]) -> Vec<u8> {
 impl WgpuExecutable {
     fn build(ctx: Arc<Context>, cfg: KernelConfig, plan: Plan) -> Result<Self, Error> {
         let scope = Arc::clone(&ctx);
-        scope.scoped(|| Self::build_unscoped(ctx, cfg, plan))
+        scope.compile_scoped(|made| Self::build_unscoped(ctx, cfg, plan, made))
     }
 
-    fn build_unscoped(ctx: Arc<Context>, cfg: KernelConfig, plan: Plan) -> Result<Self, Error> {
+    fn build_unscoped(
+        ctx: Arc<Context>,
+        cfg: KernelConfig,
+        plan: Plan,
+        made: &mut Vec<String>,
+    ) -> Result<Self, Error> {
         let caps = caps_of(ctx.limits());
         cfg.validate(&caps).map_err(backend_error)?;
         for (slot, shape) in plan.slot_shapes.iter().enumerate() {
@@ -298,7 +303,7 @@ impl WgpuExecutable {
                     let pipeline = match by_kernel.get(&kernel) {
                         Some(&index) => index,
                         None => {
-                            pipelines.push(ctx.pipeline(source));
+                            pipelines.push(ctx.pipeline(source, made));
                             by_kernel.insert(kernel, pipelines.len() - 1);
                             pipelines.len() - 1
                         }
@@ -571,7 +576,7 @@ impl WgpuExecutable {
         let plan = &self.plan;
         let shapes: Vec<&[usize]> = inputs.iter().map(|t| t.shape.as_slice()).collect();
         self.check_inputs(&shapes)?;
-        let scratch = self.scratch.lock().unwrap();
+        let scratch = crate::context::lock(&self.scratch);
         let buffers: Vec<&wgpu::Buffer> = inputs.iter().map(|t| &t.buffer).collect();
         let mut slots = self.bind_slots(&scratch, &buffers);
         let device = self.ctx.device();
@@ -632,7 +637,7 @@ impl WgpuExecutable {
             }
             uploads.push(uploaded);
         }
-        let scratch = self.scratch.lock().unwrap();
+        let scratch = crate::context::lock(&self.scratch);
         let mut encoder = self
             .ctx
             .device()
@@ -702,7 +707,7 @@ impl WgpuExecutable {
             check_tensor(elements(tensor.shape()), &caps).map_err(backend_error)?;
             uploaded.push(self.ctx.buffer_from_f32(tensor.data(), usage)?);
         }
-        let scratch = self.scratch.lock().unwrap();
+        let scratch = crate::context::lock(&self.scratch);
         let buffers: Vec<&wgpu::Buffer> = uploaded.iter().collect();
         let mut slots = self.bind_slots(&scratch, &buffers);
         let mut encoder = self
@@ -1256,5 +1261,25 @@ mod tests {
             backend.config(),
             default_config(backend.context().info().device_type)
         );
+    }
+    #[test]
+    fn a_poisoned_scratch_lock_does_not_stop_a_run() {
+        let Ok(backend) = WgpuBackend::new() else {
+            return; // no adapter on this machine
+        };
+        let exe = backend.compile_device(&relu_graph(4)).unwrap();
+        std::thread::scope(|scope| {
+            let panicked = scope
+                .spawn(|| {
+                    let _held = exe.scratch.lock().unwrap();
+                    panic!("poisoned on purpose");
+                })
+                .join();
+            assert!(panicked.is_err());
+        });
+        assert!(exe.scratch.is_poisoned());
+        let input = Tensor::new(vec![4], vec![1.0, -1.0, 2.0, -2.0]).unwrap();
+        let out = Executable::run(&exe, &[input]).unwrap();
+        assert_eq!(out[0].data(), &[1.0, 0.0, 2.0, 0.0]);
     }
 }

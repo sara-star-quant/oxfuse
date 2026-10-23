@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- GPU backend: a panic in one thread no longer poisons the device state for every later call (locks recover instead of panicking); a failed shader compile is dropped from the shared pipeline cache so a retry compiles again; when a device error and a backend error happen in one call, the device error is reported first and the backend error follows as context (typed errors such as a wrong input count are never replaced).
+
 ## 0.4.0 - 2026-10-23
 
 - Testing and evidence: CI runs the test suite and a hash over all 2^32 `exp` and `Sigmoid` inputs on five platforms (Linux, Windows on x86_64 and arm64, macOS on arm64) and the hash must match; weekly mutation testing runs in nine parallel jobs with a known-survivors ratchet, and all 973 viable mutants of the CPU-side crates are stopped (1062 in total, 0 missed); Kani proofs cover the transpose composition and band placement.
