@@ -40,8 +40,11 @@ of the outputs. `gpu-batched` is the resident run with 16 submits per wait, time
 per run, so the gap to `gpu-resident` is the cost of one submit-and-wait.
 `gpu-with-transfers` is a host `run`: upload, run, download. The
 last column divides the best CPU time by the resident GPU time, so a value below
-1 means the GPU is slower. GPU results are not bit-identical to the CPU rows (see
-`semantics.md`).
+1 means the GPU is slower. GPU `MatMul` matches the CPU bit for bit on the two
+adapters it was measured on; the other GPU ops stay inside the bounds in
+`semantics.md`. `matmul-skinny` and `matmul-head` time a small batch (the id is
+the number of rows) against a 1024 x 1024 weight and a 784 x 10 weight; the
+ratio to `ndarray` uses the single-threaded `cpu` column.
 
 ## Optimization log
 
@@ -84,8 +87,9 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   8 x 8 threads with one output 19.3 ms, and the same 4 x 4 block held in an
   array indexed inside a loop, about 55 ms (the device spills it to memory,
   three times slower than no blocking at all). Results stay inside the
-  documented bound of the float64 result but are not bit-identical to the
-  reference, because the device fuses multiply-add.
+  documented bound of the float64 result. They were not bit-identical to the
+  reference of that time because the device fuses multiply-add. The reference
+  fuses now, and the Metal and T4 results are bit-identical to it.
 - Code placement: after the in-place kernels were added to the module that held
   the matmul, the single-threaded 512 matmul went from 5.9 ms to 6.4 ms
   (+9 percent, spread 3 percent; bisected to that commit with `just bench-ab`).
@@ -96,10 +100,41 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   every matmul size is within noise of 0.3.0, single-threaded and threaded (512:
   5.82 ms on both). The cause is how rustc partitions and lays out code, not
   any change to the loops, so the module split pins the layout.
-- Add, Relu, Sigmoid, Mul, Reshape: the reference loops already vectorize
-  (cpu and reference measured within noise at the baseline), so these still
-  call the reference kernels. Sigmoid also keeps std's exp, so it is
-  identical by construction.
+- Add, Relu, Mul, Reshape: the reference loops already vectorize (cpu and
+  reference measured within noise at the baseline), so these still call the
+  reference kernels.
+- MatMul, fused multiply-add: the definition changed to one fused multiply-add
+  per step, so the result differs from 0.3.0 in the last bits and a GPU that
+  fuses can now match it exactly. With the same loops, 512 went from 6.02 ms
+  to 3.99 ms on the M1 Pro (a 6 x 16 block instead of 4 x 16). In a scratch
+  harness on a quiet machine, without the edge handling, the block sizes gave
+  (GFLOP/s) 2 x 16 51, 3 x 16 72, 4 x 8 51, 4 x 12 63, 4 x 16 71, 4 x 24 93,
+  6 x 8 66, 6 x 16 97, 8 x 8 73, 8 x 12 88. Kept 6 x 16. The kernel in the
+  repo measures about 71 GFLOP/s in the table below, so the 97 is an upper
+  bound it does not reach yet. The `gemm` crate was tried as a drop-in: 98
+  GFLOP/s on one thread, but it splits k above about 1024 and the bits then
+  differ from the fused sum (up to 249428 ulp at k = 6000), so it is not used.
+- MatMul, explicit SIMD vectors (`fearless_simd`, level picked at run time):
+  the same speed as the autovectorized loop on the M1 Pro (512: 3.86 ms and
+  3.85 ms) and 10 percent faster at 64. It is there for x86: on a Xeon at
+  2.2 GHz with AVX2, in one session, the 512 matmul took 26.8 ms before the
+  fused definition, 447 ms after it (a fused multiply-add compiled without the
+  FMA flag is a call into libm), and 9.2 ms with the vectors. The reference
+  kernels run their scalar loops inside the same feature-enabled wrapper:
+  the reference 128 x 128 matmul took 3.66 ms before, 8.96 ms after the fused
+  definition and 3.61 ms with the wrapper.
+- MatMul, tail columns in place: the columns that do not fill a vector were
+  copied into a buffer on every call. They are read in place now, and only the
+  last rows of B, where a full vector would run past the end, are copied.
+  One row against a 784 x 10 weight: 5.5 us to 1.3 us on the M1 Pro and 6 us
+  to 2 us on the Xeon; the 1024 x 1024 weight is unchanged within noise.
+- Sigmoid: an `exp` of our own (only IEEE operations and fused multiply-adds,
+  so the result does not depend on the platform's math library) on SIMD vectors. 2^20 elements on
+  the M1 Pro: 1.76 ms to 0.82 ms, the reference 1.94 ms to 1.02 ms. On the
+  Xeon: 5.2 ms to 1.85 ms, the reference 17.1 ms to 14.7 ms. The first x86
+  attempt was five times slower: a generic helper that took the vector
+  function as a parameter was not compiled with the AVX2 features, and writing
+  the loop out in each function fixed it.
 """
 
 
@@ -197,16 +232,27 @@ def gpu_table(group, by_size):
     return "\n".join(lines)
 
 
+# Multiply-adds-times-two of one run, from the size in the id, for the groups that report GFLOP/s.
+FLOPS = {
+    "matmul": lambda s: 2 * s**3,
+    "gpu-matmul": lambda s: 2 * s**3,
+    "matmul-skinny": lambda rows: 2 * rows * 1024 * 1024,
+    "matmul-head": lambda rows: 2 * rows * 784 * 10,
+}
+
+
 def table(group, by_size):
-    if group.startswith("gpu-"):
+    if group in ("gpu-add", "gpu-matmul"):
         return gpu_table(group, by_size)
     variants = sorted({v for row in by_size.values() for v in row}, key=lambda v: (v != "reference", v))
-    lines = [
-        f"### {group}",
-        "",
-        "| size | " + " | ".join(variants) + " | best cpu vs reference |",
-        "|---|" + "---|" * (len(variants) + 1),
-    ]
+    has_reference = any("reference" in row for row in by_size.values())
+    has_ndarray = "ndarray" in variants
+    heads = ["size"] + variants
+    if has_reference:
+        heads.append("best cpu vs reference")
+    if has_ndarray:
+        heads.append("cpu vs ndarray")
+    lines = [f"### {group}", "", "| " + " | ".join(heads) + " |", "|" + "---|" * len(heads)]
     for size in sorted(by_size):
         row = by_size[size]
         cells = []
@@ -214,14 +260,39 @@ def table(group, by_size):
             ns = row.get(v)
             if ns is None:
                 cells.append("-")
-            elif group == "matmul":
-                cells.append(f"{fmt_time(ns)} ({2 * size**3 / ns:.1f} GFLOP/s)")
+            elif group in FLOPS:
+                cells.append(f"{fmt_time(ns)} ({FLOPS[group](size) / ns:.1f} GFLOP/s)")
             else:
                 cells.append(fmt_time(ns))
         fast = [row[v] for v in row if v.startswith("cpu")]
-        speedup = f"{row['reference'] / min(fast):.2f}x" if "reference" in row and fast else "-"
-        lines.append(f"| {size} | " + " | ".join(cells) + f" | {speedup} |")
+        if has_reference:
+            cells.append(f"{row['reference'] / min(fast):.2f}x" if "reference" in row and fast else "-")
+        if has_ndarray:
+            cells.append(f"{row['ndarray'] / row['cpu']:.2f}x" if "ndarray" in row and "cpu" in row else "-")
+        lines.append(f"| {size} | " + " | ".join(cells) + " |")
     return "\n".join(lines)
+
+
+OTHER_MACHINES = """## Other machines
+
+A Tesla T4 (NVIDIA, Vulkan, driver 580) on a free Kaggle notebook with a 4 vCPU
+Xeon at 2.2 GHz (AVX2), run on 2026-10-22 at commit 4c633ff with the flow in
+[adapters.md](adapters.md). Same method and columns as above; the CPU columns
+are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
+
+### gpu-matmul (Tesla T4)
+
+| size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
+|---|---|---|---|---|---|---|---|
+| 128 | 30.75 ms (0.1 GFLOP/s) | 91.4 us (45.9 GFLOP/s) | 48.1 us (87.3 GFLOP/s) | 210.8 us (19.9 GFLOP/s) | 139.8 us (30.0 GFLOP/s) | 93.1 us (45.1 GFLOP/s) | 1.02x |
+| 512 | 31.95 ms (8.4 GFLOP/s) | 313.0 us (857.6 GFLOP/s) | 249.7 us (1074.8 GFLOP/s) | 1.29 ms (208.2 GFLOP/s) | 9.30 ms (28.9 GFLOP/s) | 4.87 ms (55.1 GFLOP/s) | 15.56x |
+
+### gpu-add (Tesla T4)
+
+| size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
+|---|---|---|---|---|---|---|---|
+| 1048576 | 32.14 ms | 136.9 us | 94.5 us | 3.31 ms | 502.2 us | 411.1 us | 3.00x |
+"""
 
 
 def main():
@@ -233,6 +304,7 @@ def main():
     parts = [HEADER, "## Environment", "", environment(), "", "## Results", ""]
     for group in sorted(results):
         parts += [table(group, results[group]), ""]
+    parts += [OTHER_MACHINES]
     report = "\n".join(parts)
     if "--write" in sys.argv:
         (ROOT / "docs" / "benchmarks.md").write_text(report + "\n")

@@ -8,7 +8,7 @@ Oxfuse is a small, deliberately scoped project. See the [roadmap](ROADMAP.md) fo
     just ci              # format, lint, tests, docs (install just: https://just.systems)
     just onnx-check      # ONNX fixtures vs onnxruntime and the onnx reference evaluator (needs .venv-onnx, see the recipe in the justfile)
     just oracle-check    # cross-checks examples and the corpus against NumPy (pip install -r scripts/requirements.txt)
-    just mutants         # optional, about 16 minutes: lists breakages no test notices (cargo install cargo-mutants)
+    just mutants         # optional, about an hour (core, runtime, cli, onnx shards): lists breakages no test notices (cargo install cargo-mutants)
 
 ## How changes are made
 
@@ -24,7 +24,7 @@ Oxfuse is a small, deliberately scoped project. See the [roadmap](ROADMAP.md) fo
 
 ## Mutation testing
 
-`just mutants` runs the tests against small code breakages. The results, how to rerun them and the explained survivors are in [docs/mutation-testing.md](docs/mutation-testing.md). A new survivor gets a test or an entry there.
+`just mutants` runs the tests against small code breakages, one shard per package (`just mutants-core`, `-runtime`, `-cli`, `-onnx`, `-wgpu`; see "Shards" in [docs/mutation-testing.md](docs/mutation-testing.md)). A surviving mutant gets a test or simpler code. It is listed in `docs/known-survivors.txt` only when no input can tell the two programs apart.
 
 ## Known test limit
 

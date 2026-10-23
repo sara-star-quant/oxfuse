@@ -1,0 +1,4 @@
+# Mutants that survive and cannot change any result, one per line, without line numbers.
+# Compared with the missed list of a cargo-mutants run by scripts/mutants_check.py.
+# A survivor is first a missing test or redundant code; list one here only when no input
+# and no platform can tell the two programs apart, and give the reason in docs/mutation-testing.md.

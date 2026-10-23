@@ -7,11 +7,11 @@ This page records what `oxfuse gpu-selftest` measured on devices someone ran it 
 | Adapter | API | Date | Finite tier exact | Relu exact | MatMul within bound | MatMul max ulp from reference | Sigmoid max ulp from reference | Subnormal add flushed | NaN in add gives |
 |---|---|---|---|---|---|---|---|---|---|
 | Apple M1 Pro | Metal | 2026-10-22 | yes | yes | yes | 0 | 43 | yes | nan |
-| Apple Paravirtual device (CI macOS runner) | Metal | 2026-10-20 | yes | yes | yes | 1720 | 43 | yes | nan |
-| llvmpipe (LLVM 20.1.2, 256 bits; CI software Vulkan) | Vulkan | 2026-10-20 | yes | yes | yes | 0 | 43 | no | nan |
+| Apple Paravirtual device (CI macOS runner) | Metal | 2026-10-23 | yes | yes | yes | 0 | 43 | yes | nan |
+| llvmpipe (LLVM 20.1.2, 256 bits; CI software Vulkan) | Vulkan | 2026-10-23 | yes | yes | yes | 1720 | 43 | no | nan |
 | Tesla T4 (driver 580, free notebook) | Vulkan | 2026-10-22 | yes | yes | yes | 0 | 42 | yes | nan |
 
-The Sigmoid column is the self-test's sample of every exponent and both signs; only the first row also has the full sweep over all 2^32 inputs. The ulp figures for the Paravirtual and llvmpipe rows come from before matmul fused its multiply-adds, so they are out of date until someone measures those two again. On llvmpipe MatMul matched the 0.3.0 reference bit for bit and subnormals were not flushed: it does not fuse multiply-add and follows IEEE for these cases, unlike the two Metal devices.
+The Sigmoid column is the self-test's sample of every exponent and both signs; only the first row also has the full sweep over all 2^32 inputs. On llvmpipe MatMul does not fuse multiply-add and subnormals are not flushed: it follows IEEE for these cases, so it is 1720 ulp from the reference (which fuses) on the sampled cancelling sums, the same figure the Metal devices had before the reference fused. The two Metal devices and the T4 fuse like the reference and match it bit for bit.
 
 Notes on the first row, from the full runs in the test suite: Relu was bit-exact on all 2^32 bit patterns. Sigmoid was within 65 ulp of the reference on every finite input, worst at x = -86.64 (the self-test samples fewer inputs and reports a lower figure). `MatMul` fuses multiply-add here, like the reference does now, so it matches the reference bit for bit (it was up to 1720 ulp off when the reference did not fuse). Add and Mul flush subnormal values to zero, and `infinity * subnormal` gives NaN.
 
