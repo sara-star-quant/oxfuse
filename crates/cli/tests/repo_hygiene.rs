@@ -67,6 +67,36 @@ fn there_is_exactly_one_licence_and_it_is_apache_2_0() {
     );
 }
 
+/// The copyright owner is filled in, and every crate ships the same LICENSE and
+/// NOTICE as the root, so a published crate carries the notice (Apache-2.0,
+/// section 4(d)).
+#[test]
+fn every_crate_carries_the_root_licence_and_notice_with_the_owner() {
+    let root = root();
+    let owner = "Copyright 2026 SARA STAR QUANT LLC";
+    let licence = fs::read_to_string(root.join("LICENSE")).unwrap();
+    let notice = fs::read_to_string(root.join("NOTICE")).expect("a NOTICE file");
+    assert!(licence.contains(owner), "LICENSE lacks the owner line");
+    assert!(notice.contains(owner), "NOTICE lacks the owner line");
+    assert!(
+        !licence.contains("[yyyy]") && !licence.contains("[name of copyright owner]"),
+        "LICENSE still has the template line"
+    );
+    for entry in fs::read_dir(root.join("crates")).unwrap() {
+        let dir = entry.unwrap().path();
+        if !dir.join("Cargo.toml").exists() {
+            continue;
+        }
+        for (name, want) in [("LICENSE", &licence), ("NOTICE", &notice)] {
+            let got = fs::read_to_string(dir.join(name))
+                .unwrap_or_else(|_| panic!("{} has no {name}", dir.display()));
+            assert_eq!(&got, want, "{} differs from the root {name}", dir.display());
+        }
+    }
+    let readme = fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains(owner), "README footer lacks the owner");
+}
+
 const BRANDS: [&str; 12] = [
     "nvidia",
     "cuda",
