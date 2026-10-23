@@ -86,7 +86,7 @@ jobs:
   # package (`oxfuse/wgpu`) cannot be named when only `oxfuse-core` is selected,
   # which broke the sharded form. The commands match `just mutants`
   # (docs/mutation-testing.md). A package that is too big for one two hour job
-  # is split with `--shard k/n` (runtime: 6 jobs, about 80 mutants each, run in
+  # is split with `--shard k/n`, k counting from 0 (runtime: 6 jobs, about 80 mutants each, run in
   # parallel). The jobs fail on a mutant that is missed and
   # not listed in docs/known-survivors.txt, on a listed one that is now caught,
   # and on a failed baseline; they block nothing.
@@ -103,22 +103,22 @@ jobs:
             args: "-p oxfuse-core"
             check: "--full --only crates/core/"
           - name: runtime-1
-            args: "-p oxfuse-runtime --features parallel --shard 1/6"
+            args: "-p oxfuse-runtime --features parallel --shard 0/6"
             check: "--only crates/runtime/"
           - name: runtime-2
-            args: "-p oxfuse-runtime --features parallel --shard 2/6"
+            args: "-p oxfuse-runtime --features parallel --shard 1/6"
             check: "--only crates/runtime/"
           - name: runtime-3
-            args: "-p oxfuse-runtime --features parallel --shard 3/6"
+            args: "-p oxfuse-runtime --features parallel --shard 2/6"
             check: "--only crates/runtime/"
           - name: runtime-4
-            args: "-p oxfuse-runtime --features parallel --shard 4/6"
+            args: "-p oxfuse-runtime --features parallel --shard 3/6"
             check: "--only crates/runtime/"
           - name: runtime-5
-            args: "-p oxfuse-runtime --features parallel --shard 5/6"
+            args: "-p oxfuse-runtime --features parallel --shard 4/6"
             check: "--only crates/runtime/"
           - name: runtime-6
-            args: "-p oxfuse-runtime --features parallel --shard 6/6"
+            args: "-p oxfuse-runtime --features parallel --shard 5/6"
             check: "--only crates/runtime/"
           - name: cli
             args: "-p oxfuse --features wgpu,onnx"

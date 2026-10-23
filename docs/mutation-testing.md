@@ -32,7 +32,7 @@ A shard is one `cargo mutants` run over one package, with the tests that cover i
 | onnx | `just mutants-onnx` | `crates/onnx` | tested by its own package only |
 | wgpu | `just mutants-wgpu` | `crates/wgpu` | 634 mutants, about 100 minutes on an M1 Pro; needs a real adapter, so it runs locally and, for the changed lines only, in the pull request job on software Vulkan |
 
-A package that does not fit one two hour CI job is split further with `cargo-mutants`'s `--shard k/n`, which deals the mutants of a run out to `n` jobs; the sub-shards run in parallel, so the wall time is that of the largest one. Choose `n` so a sub-shard has at most about 100 mutants (about 75 minutes on a hosted runner). A sub-shard checks only for new misses; the check for entries that are now caught runs on unsharded packages, because one sub-shard cannot see the mutants of another.
+A package that does not fit one two hour CI job is split further with `cargo-mutants`'s `--shard k/n` (k counts from 0, so `--shard 0/6` to `--shard 5/6`), which deals the mutants of a run out to `n` jobs; the sub-shards run in parallel, so the wall time is that of the largest one. Choose `n` so a sub-shard has at most about 100 mutants (about 75 minutes on a hosted runner). A sub-shard checks only for new misses; the check for entries that are now caught runs on unsharded packages, because one sub-shard cannot see the mutants of another.
 
 `just mutants` runs core, runtime, cli and onnx in a row. Narrow any shard with extra arguments or a name filter, for example `just mutants-wgpu -f crates/wgpu/src/exec.rs` or `cargo mutants -p oxfuse-runtime -F 'matmul.rs'` (the filter matches `path:line:col: description`).
 
