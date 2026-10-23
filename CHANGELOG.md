@@ -4,9 +4,13 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+## 0.4.0 - 2026-10-23
+
+- Testing and evidence: CI runs the test suite and a hash over all 2^32 `exp` and `Sigmoid` inputs on five platforms (Linux, Windows on x86_64 and arm64, macOS on arm64) and the hash must match; weekly mutation testing runs in nine parallel jobs with a known-survivors ratchet, and all 973 viable mutants of the CPU-side crates are stopped (1062 in total, 0 missed); Kani proofs cover the transpose composition and band placement.
+- Licence: `LICENSE` names the copyright owner (Copyright 2026 SARA STAR QUANT LLC) and every crate ships `LICENSE` and a `NOTICE` file.
 - The fast CPU matmul reads the last columns of B in place instead of copying them first, which makes narrow outputs such as a 784 by 10 classifier head 3 to 4 times faster at one row. `just bench` now also times small batches against a hidden-layer weight and the classifier head.
 - The reference matmul runs with hardware fused multiply-add on x86 too (it was 2.4 times slower there than in 0.3.0 after the fused definition). The bits do not change.
-- Breaking: `Sigmoid` uses an `exp` written for this project instead of the platform's, so it returns the same bits on x86, ARM and every libc, within 1 ulp of the correctly rounded result. The bits differ from 0.3.0 in the last place for some inputs. The fast CPU `Sigmoid` runs on SIMD vectors and takes about half the time (1.76 ms to 0.84 ms for 2^20 elements on an M1 Pro).
+- Breaking: `Sigmoid` uses an `exp` written for this project instead of the platform's, so it no longer depends on the platform's math library: the same bits on the tested platforms, within 1 ulp of the correctly rounded result (6,412,479 of 2^32 inputs differ from it, all by 1 ulp). The bits differ from 0.3.0 in the last place for some inputs. The fast CPU `Sigmoid` runs on SIMD vectors and takes about half the time (1.76 ms to 0.84 ms for 2^20 elements on an M1 Pro).
 - The fast CPU matmul runs on explicit SIMD vectors (`fearless_simd`), and x86 picks AVX2 or AVX-512 at run time with no build flags. Without it the fused multiply-add would call into libm on x86 and run about 40 times slower. Minimum Rust is now 1.89.
 - Breaking: `MatMul` now does one fused multiply-add per step (`acc = fma(a, b, acc)`, ascending k, from `+0.0`), so results can differ from 0.3.0 in the last bits. The reference and the CPU backends agree bit for bit on the tested platforms, and the GPU backend matches them on the adapters that fuse (Apple M1 Pro and Tesla T4 measured). The fast CPU matmul is about 1.5 times faster at 512 by 512.
 - `Executable::run_many` runs a batch of inputs; the GPU backend submits the batch at once and waits once. The default implementation calls `run` per element.

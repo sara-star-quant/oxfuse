@@ -37,7 +37,7 @@ It needs Rust 1.89 or newer. Not tested: macOS on Intel, 32-bit targets, big-end
 - **Same bits on the tested platforms.** `MatMul` is one fused multiply-add per step in ascending `k`, and `Sigmoid` uses an `exp` written for this project. The reference and the fast CPU backend agree bit for bit on x86 and ARM, at any SIMD level and thread count. A NaN's sign and payload are the one thing IEEE 754 leaves to the hardware.
 - **Exact optimizer.** The four passes never change an output bit, infinity and signed zero included.
 - **A GPU is measured, not trusted.** `MatMul` matches the reference bit for bit on the two devices that fuse the same way (Apple M1 Pro, Tesla T4); every other op has a documented bound, and `oxfuse gpu-selftest` measures any adapter.
-- **Evidence over adjectives.** Mutation testing, an exhaustive hash over all 2^32 `Sigmoid` inputs on three operating systems, differential fuzzing and a NumPy oracle back these, see [Evidence](#evidence). The precise rules are in [docs/semantics.md](docs/semantics.md).
+- **Evidence over adjectives.** Mutation testing, an exhaustive hash over all 2^32 `Sigmoid` inputs on five platforms, differential fuzzing and a NumPy oracle back these, see [Evidence](#evidence). The precise rules are in [docs/semantics.md](docs/semantics.md).
 
 ## Who it is for
 
@@ -84,7 +84,7 @@ It is not for production inference, large models, training, or speed-critical CP
 | `MatMul` and `Sigmoid` return the same bits on the tested platforms | One fused multiply-add per matmul step, an `exp` of our own, and a hash of all 2^32 `exp` and `Sigmoid` outputs that macOS, Linux and Windows CI each reproduce |
 | Fast backend equals reference, bit for bit (all NaNs count as one value) | Contract tests, random-graph tests, differential fuzzing on arm64 and x86_64 |
 | Optimizations are exact, including infinity, signed zero and where NaNs appear | Equivalence tests with and without passes |
-| Tests detect real defects | cargo-mutants: 1326 of 1337 viable mutants stopped, the other 11 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
+| Tests detect real defects | cargo-mutants: all 973 viable mutants of the CPU-side crates stopped, no survivor, reproduced by parallel CI shards; the GPU crate is mutation-tested locally on a real adapter ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
 | GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul bit-identical to the reference on an Apple M1 Pro and a Tesla T4 (inside the float64 bound on any adapter); Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
 | ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
