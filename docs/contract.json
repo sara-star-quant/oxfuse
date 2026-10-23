@@ -1,0 +1,340 @@
+{
+  "about": "Machine-readable numeric contract: one row per operator and backend. `cargo test -p oxfuse --test contract_matrix` checks the rows against `Op::ALL_NAMES`, that every evidence path exists and every named test is in its file.",
+  "levels": {
+    "exact": "Bit-identical to the reference for every input; all NaNs count as one value.",
+    "exact-on-normal-values": "Bit-identical to the reference when the operands and the true result are zero or normal numbers.",
+    "fused-defined": "Defined as one fused multiply-add per step in ascending k from +0.0; bit-identical to the reference on the tested platforms.",
+    "own-math": "Computed with the project's own exp; bit-identical to the reference on the tested platforms and pinned by a hash over all 2^32 inputs.",
+    "bounded": "Within a stated rounding bound of the float64 result; bit-identical to the reference on adapters that fuse the same way (Apple M1 Pro, Tesla T4 measured).",
+    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`."
+  },
+  "backends": [
+    "reference",
+    "cpu",
+    "gpu"
+  ],
+  "rows": [
+    {
+      "op": "Relu",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/contract/mod.rs",
+          "test": "relu_of_negative_zero_is_positive_zero"
+        }
+      ]
+    },
+    {
+      "op": "Sigmoid",
+      "backend": "reference",
+      "level": "own-math",
+      "evidence": [
+        "docs/semantics.md",
+        "crates/runtime/src/math.rs"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "sigmoid_stays_within_four_epsilon_of_the_f64_formula"
+        },
+        {
+          "file": "crates/runtime/src/cpu/vecmath.rs",
+          "test": "exp_and_sigmoid_match_the_pinned_hashes_on_every_input"
+        }
+      ]
+    },
+    {
+      "op": "Add",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "add_and_mul_on_equal_shapes"
+        }
+      ]
+    },
+    {
+      "op": "Mul",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "add_and_mul_on_equal_shapes"
+        }
+      ]
+    },
+    {
+      "op": "MatMul",
+      "backend": "reference",
+      "level": "fused-defined",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "matmul_rounds_once_per_multiply_add"
+        },
+        {
+          "file": "crates/runtime/tests/batch_invariance.rs",
+          "test": "the_reference_backend_is_batch_invariant"
+        }
+      ]
+    },
+    {
+      "op": "Reshape",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/contract/mod.rs",
+          "test": "matmul_reshape_transpose_by_hand"
+        }
+      ]
+    },
+    {
+      "op": "Transpose",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/contract/mod.rs",
+          "test": "matmul_reshape_transpose_by_hand"
+        }
+      ]
+    },
+    {
+      "op": "Relu",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "the_cpu_backend_returns_the_reference_bits"
+        }
+      ]
+    },
+    {
+      "op": "Sigmoid",
+      "backend": "cpu",
+      "level": "own-math",
+      "evidence": [
+        "docs/semantics.md",
+        "crates/runtime/src/math.rs"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "a_large_sigmoid_returns_the_reference_bits"
+        },
+        {
+          "file": "crates/runtime/src/cpu/vecmath.rs",
+          "test": "exp_and_sigmoid_match_the_pinned_hashes_on_every_4099th_input"
+        }
+      ]
+    },
+    {
+      "op": "Add",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "the_cpu_backend_returns_the_reference_bits"
+        }
+      ]
+    },
+    {
+      "op": "Mul",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "the_cpu_backend_returns_the_reference_bits"
+        }
+      ]
+    },
+    {
+      "op": "MatMul",
+      "backend": "cpu",
+      "level": "fused-defined",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/cpu/kernels.rs",
+          "test": "matmul_is_identical_at_every_simd_level"
+        },
+        {
+          "file": "crates/runtime/tests/batch_invariance.rs",
+          "test": "the_cpu_backend_is_batch_invariant"
+        }
+      ]
+    },
+    {
+      "op": "Reshape",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "a_reshape_output_alongside_its_source"
+        }
+      ]
+    },
+    {
+      "op": "Transpose",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/cpu/kernels.rs",
+          "test": "transpose_is_bit_identical_for_every_permutation_and_awkward_shape"
+        }
+      ]
+    },
+    {
+      "op": "Relu",
+      "backend": "gpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md",
+        "docs/adapters.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/model.rs",
+          "test": "unary_ops_match_the_reference_for_every_size_and_workgroup"
+        }
+      ]
+    },
+    {
+      "op": "Sigmoid",
+      "backend": "gpu",
+      "level": "measured",
+      "evidence": [
+        "docs/semantics.md",
+        "docs/adapters.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/src/bounds.rs",
+          "test": "the_sigmoid_bound_is_enforced_only_on_the_adapter_it_was_measured_on"
+        }
+      ]
+    },
+    {
+      "op": "Add",
+      "backend": "gpu",
+      "level": "exact-on-normal-values",
+      "evidence": [
+        "docs/semantics.md",
+        "docs/adapters.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/model.rs",
+          "test": "binary_ops_match_the_reference_including_scalar_operands"
+        }
+      ]
+    },
+    {
+      "op": "Mul",
+      "backend": "gpu",
+      "level": "exact-on-normal-values",
+      "evidence": [
+        "docs/semantics.md",
+        "docs/adapters.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/model.rs",
+          "test": "binary_ops_match_the_reference_including_scalar_operands"
+        }
+      ]
+    },
+    {
+      "op": "MatMul",
+      "backend": "gpu",
+      "level": "bounded",
+      "evidence": [
+        "docs/semantics.md",
+        "docs/adapters.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "matmul_stays_inside_the_documented_bound_of_the_f64_oracle"
+        },
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "matmul_is_bit_identical_to_the_fused_reference_where_the_adapter_fuses"
+        }
+      ]
+    },
+    {
+      "op": "Reshape",
+      "backend": "gpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/contract/mod.rs",
+          "test": "matmul_reshape_transpose_by_hand"
+        }
+      ]
+    },
+    {
+      "op": "Transpose",
+      "backend": "gpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md",
+        "docs/adapters.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "transpose_is_bit_exact_against_the_reference"
+        }
+      ]
+    }
+  ]
+}
