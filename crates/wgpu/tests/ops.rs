@@ -151,6 +151,29 @@ fn matmul_is_bit_identical_to_the_fused_reference_where_the_adapter_fuses() {
     }
 }
 
+/// A row's result does not depend on how many rows ride along.
+#[test]
+fn matmul_rows_do_not_depend_on_the_batch_where_the_adapter_fuses() {
+    if !available() || !matmul_exact_on(&gpu().context().info().name) {
+        return;
+    }
+    let (k, n) = (300, 118);
+    let b = tensor(&[k, n], 5, true);
+    for m in [1usize, 2, 6, 7, 16, 33, 64] {
+        let a = tensor(&[m, k], m as u64, true);
+        let full = bits(&device(Op::MatMul, &[a.clone(), b.clone()]));
+        for r in 0..m {
+            let row = Tensor::new(vec![1, k], a.data()[r * k..(r + 1) * k].to_vec()).unwrap();
+            let alone = bits(&device(Op::MatMul, &[row, b.clone()]));
+            assert_eq!(
+                &full[r * n..(r + 1) * n],
+                alone.as_slice(),
+                "row {r} of {m}"
+            );
+        }
+    }
+}
+
 #[test]
 fn matmul_ulp_distance_from_the_reference_is_recorded() {
     if !available() {

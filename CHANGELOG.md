@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- Tests and docs: a row's result is proven independent of the batch size (1 to 64 rows, across the register block, the k-tile, the tail columns and the thread split) on the reference and fast CPU backends and on fusing GPU adapters; `docs/semantics.md` states it.
+
 - GPU backend: a panic in one thread no longer poisons the device state for every later call (locks recover instead of panicking); a failed shader compile is dropped from the shared pipeline cache so a retry compiles again; when a device error and a backend error happen in one call, the device error is reported first and the backend error follows as context (typed errors such as a wrong input count are never replaced).
 
 ## 0.4.0 - 2026-10-23
