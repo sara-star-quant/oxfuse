@@ -65,8 +65,9 @@ fn sigmoid_loop<S: Simd>(_simd: S, input: &[f32], out: &mut [f32]) {
 
 /// Row-major `[m, k] x [k, n]`. Each output element sums in ascending `k`
 /// order in `f32`, one fused multiply-add (a single rounding) per step.
-/// `f32::mul_add` is exact on every platform, in hardware or in software, so
-/// the bits do not depend on the CPU. The fast backend must return these exact bits; this
+/// `f32::mul_add` rounds once (IEEE fused multiply-add), in hardware where there
+/// is any and through the C library's `fmaf` otherwise, so the bits do not
+/// depend on the CPU. The fast backend must return these exact bits; this
 /// kernel itself is held to the documented bound against the float64 oracle.
 fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; m * n];

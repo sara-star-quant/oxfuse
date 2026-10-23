@@ -235,9 +235,8 @@ mod tests {
 
     /// Hash of `f` over every input whose bit pattern is `start`, `start +
     /// step`, ... below 2^32, split over all cores.
-    fn sweep(start: u32, step: usize, f: fn(Level, &[f32], &mut [f32])) -> u64 {
+    fn sweep(level: Level, start: u32, step: usize, f: fn(Level, &[f32], &mut [f32])) -> u64 {
         const BLOCK: usize = 1 << 16;
-        let level = Level::new();
         let blocks = (1u64 << 32) / (BLOCK * step) as u64 + 1;
         let next = std::sync::atomic::AtomicU64::new(0);
         let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
@@ -286,14 +285,27 @@ mod tests {
 
     #[test]
     fn exp_and_sigmoid_match_the_pinned_hashes_on_every_4099th_input() {
-        assert_eq!(sweep(0, 4099, exp_into), EXP_STRIDE);
-        assert_eq!(sweep(0, 4099, sigmoid_into), SIGMOID_STRIDE);
+        assert_eq!(sweep(Level::new(), 0, 4099, exp_into), EXP_STRIDE);
+        assert_eq!(sweep(Level::new(), 0, 4099, sigmoid_into), SIGMOID_STRIDE);
+    }
+
+    /// The baseline level is SSE2 on x86, which has no fused multiply-add: the
+    /// vector code then uses `fearless_simd`'s software one. It must give the
+    /// same pinned bits as the best level, or a dependency update could change
+    /// results on machines without FMA and no other test would notice.
+    #[test]
+    fn the_baseline_level_matches_the_pinned_hashes_too() {
+        assert_eq!(sweep(Level::baseline(), 0, 4099, exp_into), EXP_STRIDE);
+        assert_eq!(
+            sweep(Level::baseline(), 0, 4099, sigmoid_into),
+            SIGMOID_STRIDE
+        );
     }
 
     #[test]
     #[ignore = "all 2^32 inputs: cargo test --release -p oxfuse-runtime --lib -- --ignored"]
     fn exp_and_sigmoid_match_the_pinned_hashes_on_every_input() {
-        assert_eq!(sweep(0, 1, exp_into), EXP_FULL);
-        assert_eq!(sweep(0, 1, sigmoid_into), SIGMOID_FULL);
+        assert_eq!(sweep(Level::new(), 0, 1, exp_into), EXP_FULL);
+        assert_eq!(sweep(Level::new(), 0, 1, sigmoid_into), SIGMOID_FULL);
     }
 }
