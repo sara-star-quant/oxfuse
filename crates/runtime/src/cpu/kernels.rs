@@ -76,7 +76,7 @@ fn transpose(input: &[f32], in_shape: &[usize], perm: &[usize]) -> Vec<f32> {
 fn transpose_2d(input: &[f32], rows: usize, cols: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; input.len()];
     #[cfg(feature = "parallel")]
-    if input.len() >= TRANSPOSE_PARALLEL_MIN {
+    if transpose_uses_threads(input.len()) {
         use rayon::prelude::*;
         out.par_chunks_mut(TRANSPOSE_BAND * rows)
             .enumerate()
@@ -92,6 +92,13 @@ fn transpose_2d(input: &[f32], rows: usize, cols: usize) -> Vec<f32> {
 /// Elements below which threads cost more than they save.
 #[cfg(feature = "parallel")]
 const TRANSPOSE_PARALLEL_MIN: usize = 1 << 18;
+
+/// Whether a 2-d transpose of `len` elements is split across threads. The bits
+/// are the same either way, so this is a function a test can pin exactly.
+#[cfg(feature = "parallel")]
+fn transpose_uses_threads(len: usize) -> bool {
+    len >= TRANSPOSE_PARALLEL_MIN
+}
 /// Output rows per parallel task.
 #[cfg(feature = "parallel")]
 const TRANSPOSE_BAND: usize = 64;
@@ -512,6 +519,15 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn the_transpose_thread_threshold_is_exact() {
+        assert!(!transpose_uses_threads(0));
+        assert!(!transpose_uses_threads(262_143));
+        assert!(transpose_uses_threads(262_144));
+        assert!(transpose_uses_threads(usize::MAX));
     }
 
     #[cfg(feature = "parallel")]

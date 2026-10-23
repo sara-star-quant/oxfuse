@@ -105,11 +105,9 @@ pub fn binary(
     cfg: &KernelConfig,
     caps: &DeviceCaps,
 ) -> Vec<f32> {
-    let len = match (scalar_lhs, scalar_rhs) {
-        (true, true) => 1,
-        (true, false) => b.len(),
-        _ => a.len(),
-    };
+    // The longer operand: a scalar is broadcast over the other, equal shapes
+    // have equal lengths, and two scalars have one element.
+    let len = a.len().max(b.len());
     let mut out = Out::new(len);
     for_each_thread(len as u64, cfg, caps, |i| {
         let x = read(a, if scalar_lhs { 0 } else { i });
@@ -147,7 +145,7 @@ pub fn transpose2d(
     caps: &DeviceCaps,
 ) -> Vec<f32> {
     let t = u64::from(cfg.transpose_tile);
-    let stride = t + 1;
+    let stride = u64::from(cfg.transpose_stride());
     let grid = tile_grid(
         rows as u64,
         cols as u64,

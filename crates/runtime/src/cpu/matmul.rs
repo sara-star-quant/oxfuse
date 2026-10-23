@@ -93,6 +93,16 @@ fn micro_rows<S: Simd>(
 /// the real columns are copied back. Only the last few rows of B, where a full
 /// vector would read past the end of the slice, are copied into a zero padded
 /// buffer first; they come last in `k`, so the order of the sums is unchanged.
+/// Of the `klen` rows of B from row `k0`, how many have a full vector of `W`
+/// floats at column `j_full` inside a `b` of `b_len` floats with row length
+/// `n`. The rest need the padded copy. Rows are in order, so it is a prefix.
+fn direct_rows(b_len: usize, n: usize, j_full: usize, k0: usize, klen: usize) -> usize {
+    if b_len < j_full + W {
+        return 0;
+    }
+    ((b_len - j_full - W) / n + 1).saturating_sub(k0).min(klen)
+}
+
 #[simd]
 #[allow(clippy::too_many_arguments)]
 fn matmul_rows_simd<S: Simd>(
@@ -118,21 +128,16 @@ fn matmul_rows_simd<S: Simd>(
             // fits in `b`; the rest go through `packed`.
             let direct = if tail == 0 {
                 klen
-            } else if b.len() < j_full + W {
-                0
             } else {
-                ((b.len() - j_full - W) / n + 1)
-                    .saturating_sub(k0)
-                    .min(klen)
+                direct_rows(b.len(), n, j_full, k0, klen)
             };
-            if direct < klen {
-                packed.clear();
-                packed.resize((klen - direct) * W, 0.0f32);
-                for p in direct..klen {
-                    let from = (k0 + p) * n + j_full;
-                    let to = (p - direct) * W;
-                    packed[to..to + tail].copy_from_slice(&b[from..from + tail]);
-                }
+            // Empty when every row is direct.
+            packed.clear();
+            for p in direct..klen {
+                let from = (k0 + p) * n + j_full;
+                let mut row = [0.0f32; W];
+                row[..tail].copy_from_slice(&b[from..from + tail]);
+                packed.extend_from_slice(&row);
             }
             for i in (0..m).step_by(R) {
                 let rows = (m - i).min(R);
@@ -156,15 +161,12 @@ fn matmul_rows_simd<S: Simd>(
                         let from = (i + r) * n + j_full;
                         edge[r * W..r * W + tail].copy_from_slice(&c[from..from + tail]);
                     }
-                    if direct > 0 {
-                        let b_tail = &b[k0 * n + j_full..];
-                        micro_rows(simd, rows, a_block, k, b_tail, n, &mut edge, W, direct);
-                    }
-                    if direct < klen {
-                        let a_rest = &a[i * k + k0 + direct..];
-                        let rest = klen - direct;
-                        micro_rows(simd, rows, a_rest, k, &packed, W, &mut edge, W, rest);
-                    }
+                    // Either call does nothing when its row count is 0.
+                    let b_tail = &b[k0 * n + j_full..];
+                    micro_rows(simd, rows, a_block, k, b_tail, n, &mut edge, W, direct);
+                    let a_rest = &a[i * k + k0 + direct..];
+                    let rest = klen - direct;
+                    micro_rows(simd, rows, a_rest, k, &packed, W, &mut edge, W, rest);
                     for r in 0..rows {
                         let to = (i + r) * n + j_full;
                         c[to..to + tail].copy_from_slice(&edge[r * W..r * W + tail]);
@@ -251,4 +253,28 @@ pub(super) fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<
         return matmul_parallel(a, b, m, k, n);
     }
     matmul_tiled(a, b, m, k, n, KC, NC)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_rows_counts_the_rows_whose_vector_fits() {
+        // 5 rows of 10: row p fits while p * 10 + 16 <= 50, so p = 0 to 3.
+        assert_eq!(direct_rows(50, 10, 0, 0, 5), 4);
+        // The same rows seen from the third one, and from a short tile.
+        assert_eq!(direct_rows(50, 10, 0, 2, 3), 2);
+        assert_eq!(direct_rows(50, 10, 0, 0, 2), 2);
+        // A vector that ends exactly at the end of `b` fits.
+        assert_eq!(direct_rows(W, W, 0, 0, 1), 1);
+        // One float short does not.
+        assert_eq!(direct_rows(W - 1, W, 0, 0, 1), 0);
+        // A tail column further right leaves less room.
+        assert_eq!(direct_rows(50, 20, 8, 0, 2), 2);
+        assert_eq!(direct_rows(44, 20, 8, 0, 2), 2);
+        assert_eq!(direct_rows(43, 20, 8, 0, 2), 1);
+        // A tile that starts past the fitting rows has none.
+        assert_eq!(direct_rows(50, 10, 0, 4, 1), 0);
+    }
 }

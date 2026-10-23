@@ -627,8 +627,11 @@ fn resolve_reshape(
                     ),
                 )
             })?),
-            v if v > 0 => Some(usize::try_from(v).map_err(|_| overflow())?),
-            v => return Err(shape_err(n, format!("Reshape shape entry {i} is {v}"))),
+            // Only a negative entry fails the conversion; -1 and 0 are matched above.
+            v => Some(
+                usize::try_from(v)
+                    .map_err(|_| shape_err(n, format!("Reshape shape entry {i} is {v}")))?,
+            ),
         };
         if let Some(d) = d {
             known = known.checked_mul(d).ok_or_else(overflow)?;

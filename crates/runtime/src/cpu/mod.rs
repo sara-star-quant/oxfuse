@@ -31,6 +31,15 @@ impl Backend for CpuBackend {
     }
 }
 
+// Output buffers copied in a run on this thread. The bits are the same
+// whether an output is moved or copied, so a test counts the copies instead.
+#[cfg(test)]
+thread_local! {
+    static OUTPUT_COPIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    // Steps that wrote their result into an operand's buffer.
+    static REUSED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 struct CpuExecutable {
     plan: Plan,
     uses: Vec<usize>,
@@ -56,15 +65,15 @@ impl Slot<'_> {
 
 /// An operand buffer this step may overwrite with its result: computed, read
 /// by no later step and not an output (its remaining use count is this step's
-/// one read), and the same size as the result. Returns the taken buffer, the
-/// slot of the other operand if any, and whether the buffer was the first
-/// operand. A slot read twice by one step never qualifies.
+/// one read), and the same size as the result. Returns the taken buffer and the
+/// slot of the other operand if any. A slot read twice by one step never
+/// qualifies.
 fn take_reusable(
     step: &Step,
     plan: &Plan,
     remaining: &[usize],
     slots: &mut [Slot],
-) -> Option<(Vec<f32>, Option<usize>, bool)> {
+) -> Option<(Vec<f32>, Option<usize>)> {
     let candidates: &[usize] = match step.op {
         Op::Relu | Op::Sigmoid | Op::Reshape { .. } => &[0],
         Op::Add | Op::Mul => &[0, 1],
@@ -80,7 +89,9 @@ fn take_reusable(
             let Slot::Owned(buf) = std::mem::replace(&mut slots[slot], Slot::Empty) else {
                 unreachable!("checked above")
             };
-            return Some((buf, step.inputs.get(1 - at).copied(), at == 0));
+            #[cfg(test)]
+            REUSED.with(|c| c.set(c.get() + 1));
+            return Some((buf, step.inputs.get(1 - at).copied()));
         }
     }
     None
@@ -112,10 +123,10 @@ impl Executable for CpuExecutable {
         let mut remaining = self.uses.clone();
         for step in &plan.steps {
             let out = match take_reusable(step, plan, &remaining, &mut slots) {
-                Some((mut buf, other, buf_first)) => {
+                Some((mut buf, other)) => {
                     if !matches!(step.op, Op::Reshape { .. }) {
                         let other = other.map(|s| slots[s].data());
-                        elementwise::apply_in_place(&step.op, &mut buf, other, buf_first);
+                        elementwise::apply_in_place(&step.op, &mut buf, other);
                     }
                     buf
                 }
@@ -151,10 +162,140 @@ impl Executable for CpuExecutable {
             .map(|&slot| {
                 let data = match &mut slots[slot] {
                     Slot::Owned(buffer) if uses[slot] == 1 => std::mem::take(buffer),
-                    other => other.data().to_vec(),
+                    other => {
+                        #[cfg(test)]
+                        OUTPUT_COPIES.with(|c| c.set(c.get() + 1));
+                        other.data().to_vec()
+                    }
                 };
                 Tensor::new(plan.slot_shapes[slot].clone(), data)
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxfuse_core::{GraphBuilder, Limits, ValueId};
+
+    /// Runs the graph on `[1, -2, 3]` and returns the output buffers copied
+    /// and the steps that reused an operand's buffer.
+    fn counts_when_running(
+        build: impl FnOnce(&mut GraphBuilder) -> Vec<ValueId>,
+    ) -> (usize, usize) {
+        let mut b = GraphBuilder::new(Limits::default());
+        let outputs = build(&mut b);
+        let graph = b.finish(&outputs).unwrap();
+        let exe = CpuBackend.compile(&graph).unwrap();
+        let input = Tensor::new(vec![3], vec![1.0, -2.0, 3.0]).unwrap();
+        OUTPUT_COPIES.with(|c| c.set(0));
+        REUSED.with(|c| c.set(0));
+        exe.run(&[input]).unwrap();
+        (OUTPUT_COPIES.with(Cell::get), REUSED.with(Cell::get))
+    }
+
+    fn copies_when_running(build: impl FnOnce(&mut GraphBuilder) -> Vec<ValueId>) -> usize {
+        counts_when_running(build).0
+    }
+
+    fn reuses_when_running(build: impl FnOnce(&mut GraphBuilder) -> Vec<ValueId>) -> usize {
+        counts_when_running(build).1
+    }
+
+    use std::cell::Cell;
+
+    #[test]
+    fn a_computed_output_listed_once_moves_out_without_a_copy() {
+        let copies = copies_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            vec![b.node("y", Op::Relu, &[x]).unwrap()]
+        });
+        assert_eq!(copies, 0);
+    }
+
+    #[test]
+    fn a_computed_output_listed_twice_is_copied_each_time() {
+        let copies = copies_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            vec![y, y]
+        });
+        assert_eq!(copies, 2);
+    }
+
+    #[test]
+    fn a_borrowed_input_listed_as_an_output_is_copied() {
+        let copies = copies_when_running(|b| vec![b.input("x", vec![3]).unwrap()]);
+        assert_eq!(copies, 1);
+    }
+
+    #[test]
+    fn an_output_that_is_also_read_later_is_still_moved_once_at_the_end() {
+        let copies = copies_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            let z = b.node("z", Op::Add, &[y, y]).unwrap();
+            vec![y, z]
+        });
+        assert_eq!(copies, 0);
+    }
+
+    #[test]
+    fn a_chain_reuses_each_intermediate_buffer_but_not_the_borrowed_input() {
+        let reused = reuses_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let a = b.node("a", Op::Relu, &[x]).unwrap();
+            let c = b.node("c", Op::Relu, &[a]).unwrap();
+            vec![b.node("d", Op::Relu, &[c]).unwrap()]
+        });
+        assert_eq!(reused, 2);
+    }
+
+    #[test]
+    fn a_value_that_is_also_an_output_is_never_overwritten() {
+        let reused = reuses_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            let z = b.node("z", Op::Relu, &[y]).unwrap();
+            vec![y, z]
+        });
+        assert_eq!(reused, 0);
+    }
+
+    #[test]
+    fn a_value_read_twice_by_one_step_is_never_overwritten() {
+        let reused = reuses_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            vec![b.node("z", Op::Add, &[y, y]).unwrap()]
+        });
+        assert_eq!(reused, 0);
+    }
+
+    #[test]
+    fn the_last_reader_of_a_shared_value_reuses_its_buffer() {
+        // y feeds a and then c: a must copy, c may overwrite y.
+        let reused = reuses_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            let a = b.node("a", Op::Relu, &[y]).unwrap();
+            let c = b.node("c", Op::Relu, &[y]).unwrap();
+            vec![a, c]
+        });
+        assert_eq!(reused, 1);
+    }
+
+    #[test]
+    fn a_scalar_operand_is_not_taken_as_the_buffer_of_a_larger_result() {
+        // r is a computed rank-0 value of size 1; the sum has size 3.
+        let reused = reuses_when_running(|b| {
+            let x = b.input("x", vec![3]).unwrap();
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            let s = b.constant("s", vec![], vec![0.5]).unwrap();
+            let r = b.node("r", Op::Relu, &[s]).unwrap();
+            vec![b.node("z", Op::Add, &[r, y]).unwrap()]
+        });
+        assert_eq!(reused, 1);
     }
 }

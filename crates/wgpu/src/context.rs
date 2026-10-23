@@ -41,6 +41,14 @@ pub struct Context {
     compiled: AtomicUsize,
 }
 
+/// What is asked of the adapter: the faster one when a machine has several.
+fn adapter_options() -> wgpu::RequestAdapterOptions<'static, 'static> {
+    wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        ..Default::default()
+    }
+}
+
 impl Context {
     /// Fails with `Error::Backend` when no adapter exists. There is no CPU fallback.
     pub fn new(profile: LimitsProfile) -> Result<Self, Error> {
@@ -48,11 +56,8 @@ impl Context {
     }
 
     pub fn from_instance(instance: &wgpu::Instance, profile: LimitsProfile) -> Result<Self, Error> {
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            ..Default::default()
-        }))
-        .map_err(|e| Error::Backend(format!("no adapter found: {e}")))?;
+        let adapter = pollster::block_on(instance.request_adapter(&adapter_options()))
+            .map_err(|e| Error::Backend(format!("no adapter found: {e}")))?;
         let limits = match profile {
             LimitsProfile::Adapter => adapter.limits(),
             LimitsProfile::Downlevel => wgpu::Limits::downlevel_defaults(),
@@ -270,6 +275,14 @@ impl Context {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_adapter_request_prefers_the_faster_device() {
+        assert_eq!(
+            super::adapter_options().power_preference,
+            wgpu::PowerPreference::HighPerformance
+        );
+    }
+
     use super::*;
 
     #[test]

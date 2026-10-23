@@ -94,7 +94,7 @@ fn main({ENTRY_1D}) {{
 /// `[rows, cols] -> [cols, rows]` through a workgroup tile whose rows are padded by one.
 pub fn transpose2d(cfg: &KernelConfig) -> String {
     let t = cfg.transpose_tile;
-    let stride = t + 1;
+    let stride = cfg.transpose_stride();
     let cells = t * stride;
     format!(
         "struct Params {{ rows: u32, cols: u32, tiles_x: u32, x_count: u32, total_groups: u32 }}

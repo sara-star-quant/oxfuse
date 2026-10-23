@@ -62,7 +62,7 @@ The claims ledger records how long each target has actually run. A short run pro
 
 `rust-version` is 1.89, the floor of `fearless_simd` 1.1 that the SIMD matmul kernel uses. Before that it was 1.88, measured with `cargo msrv find --min 1.85.0 -- cargo check --workspace --locked` (cargo-msrv 0.19.3) on 2026-10-20. `just msrv` and the `msrv` CI job build every target (benches included) and run the whole test suite on it, with and without the `parallel` feature. The dev dependencies (proptest 1.12 and globset need 1.88) set the floor together with the libraries. Formatting and clippy run on the pinned 1.99.1 only, because lint sets differ by version.
 
-Re-measured at the end of the hardening stage with all targets (`cargo check --workspace --all-targets`): still 1.88. The number only goes up, and each stage re-measures it. A raise is a deliberate change: say why in the commit message.
+The floor is now set by `fearless_simd` 1.1, which declares 1.89, and `just msrv` builds and tests everything on 1.89. The number only goes up, and each stage re-measures it. A raise is a deliberate change: say why in the commit message.
 
 ## Releasing
 
