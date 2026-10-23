@@ -3,7 +3,7 @@
 use oxfuse_core::Error;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 /// How long to wait for the device before a run or download fails.
@@ -12,6 +12,14 @@ pub(crate) const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest wait a context accepts. `Duration::MAX` is the natural way to say
 /// "no timeout", but a deadline is `Instant::now() + timeout`, which panics on
 /// overflow, so anything longer is treated as one year.
+/// Locks `mutex` even if a thread panicked while holding it. Every value
+/// guarded in this crate (a list, an `Option`, reusable buffers) is rewritten
+/// or only appended to, so it is consistent after a panic, and a panic inside
+/// a wgpu callback is the worst place to add another one.
+pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 pub(crate) const MAX_TIMEOUT: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 
 fn clamp_timeout(timeout: Duration) -> Duration {
@@ -85,12 +93,12 @@ impl Context {
         let errors = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&errors);
         device.on_uncaptured_error(Arc::new(move |e: wgpu::Error| {
-            sink.lock().unwrap().push(e.to_string());
+            lock(&sink).push(e.to_string());
         }));
         let lost = Arc::new(Mutex::new(None));
         let state = Arc::clone(&lost);
         device.set_device_lost_callback(move |reason, message| {
-            *state.lock().unwrap() = Some(format!("device lost ({reason:?}): {message}"));
+            *lock(&state) = Some(format!("device lost ({reason:?}): {message}"));
         });
         Ok(Context {
             lost,
@@ -119,7 +127,7 @@ impl Context {
 
     /// Fails with the device-lost message if the device is gone.
     pub fn ensure_alive(&self) -> Result<(), Error> {
-        match &*self.lost.lock().unwrap() {
+        match &*lock(&self.lost) {
             Some(message) => Err(Error::Backend(message.clone())),
             None => Ok(()),
         }
@@ -136,12 +144,17 @@ impl Context {
         let result = f();
         let memory_error = pollster::block_on(memory.pop());
         let validation_error = pollster::block_on(validation.pop());
-        let outcome = match result {
-            Err(e) => Err(e),
-            Ok(value) => match memory_error.or(validation_error) {
-                Some(e) => Err(Error::Backend(e.to_string())),
-                None => Ok(value),
-            },
+        let scope_error = memory_error.or(validation_error).map(|e| e.to_string());
+        // A device error captured by a scope is the root cause of a follow-on
+        // backend failure of the closure, so it comes first. A typed error
+        // (a wrong input shape, say) keeps its meaning.
+        let outcome = match (result, scope_error) {
+            (Ok(value), None) => Ok(value),
+            (Ok(_), Some(cause)) => Err(Error::Backend(cause)),
+            (Err(Error::Backend(follow_on)), Some(cause)) => {
+                Err(Error::Backend(format!("{cause} (then: {follow_on})")))
+            }
+            (Err(e), _) => Err(e),
         };
         match outcome {
             Ok(value) => {
@@ -210,12 +223,32 @@ impl Context {
         self.compiled.load(Ordering::Relaxed)
     }
 
-    /// The compute pipeline for `source`, compiled on first use.
-    pub(crate) fn pipeline(&self, source: String) -> wgpu::ComputePipeline {
-        let mut pipelines = self.pipelines.lock().unwrap();
+    /// Runs `f` in `scoped` and, when it fails, drops from the cache the
+    /// pipelines `f` compiled (it lists their sources in the vector it is
+    /// given): an invalid pipeline must not be handed out again.
+    pub(crate) fn compile_scoped<T>(
+        &self,
+        f: impl FnOnce(&mut Vec<String>) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut made = Vec::new();
+        let result = self.scoped(|| f(&mut made));
+        if result.is_err() {
+            let mut pipelines = lock(&self.pipelines);
+            for source in &made {
+                pipelines.remove(source);
+            }
+        }
+        result
+    }
+
+    /// The compute pipeline for `source`, compiled on first use. A source
+    /// compiled by this call is added to `made`.
+    pub(crate) fn pipeline(&self, source: String, made: &mut Vec<String>) -> wgpu::ComputePipeline {
+        let mut pipelines = lock(&self.pipelines);
         if let Some(pipeline) = pipelines.get(&source) {
             return pipeline.clone();
         }
+        made.push(source.clone());
         self.compiled.fetch_add(1, Ordering::Relaxed);
         let module = self
             .device
@@ -282,12 +315,12 @@ impl Context {
 
     #[cfg(test)]
     pub(crate) fn record_error(&self, message: &str) {
-        self.errors.lock().unwrap().push(message.to_owned());
+        lock(&self.errors).push(message.to_owned());
     }
 
     /// Drains the device errors reported since the last call.
     pub fn take_errors(&self) -> Option<String> {
-        let mut errors = self.errors.lock().unwrap();
+        let mut errors = lock(&self.errors);
         if errors.is_empty() {
             return None;
         }
@@ -341,7 +374,7 @@ mod tests {
         );
         assert!(ctx.finish_wait(Ok(())).is_ok());
         // A device lost during the poll wins over a successful or failed poll.
-        *ctx.lost.lock().unwrap() = Some("device lost (test): gone".into());
+        *lock(&ctx.lost) = Some("device lost (test): gone".into());
         for polled in [Ok(()), Err("poll broke".into())] {
             let e = ctx.finish_wait(polled).unwrap_err().to_string();
             assert!(e.contains("device lost (test): gone"), "{e}");
@@ -433,5 +466,172 @@ mod tests {
             context.limits().max_storage_buffer_binding_size,
             floor.max_storage_buffer_binding_size
         );
+    }
+    /// Poisons `mutex` the way a panic inside a callback would.
+    fn poison<T: Send>(mutex: &Mutex<T>) {
+        std::thread::scope(|scope| {
+            let panicked = scope
+                .spawn(|| {
+                    let _held = mutex.lock().unwrap();
+                    panic!("poisoned on purpose");
+                })
+                .join();
+            assert!(panicked.is_err());
+        });
+        assert!(mutex.is_poisoned());
+    }
+
+    const EMPTY_SHADER: &str = "@compute @workgroup_size(1) fn main() {}";
+
+    /// Creates a buffer with no usage: a validation error.
+    fn provoke_validation_error(context: &Context) {
+        let _invalid = context.device().create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: 16,
+            usage: wgpu::BufferUsages::empty(),
+            mapped_at_creation: false,
+        });
+    }
+
+    #[test]
+    fn lock_hands_out_the_data_of_a_poisoned_mutex() {
+        let mutex = Mutex::new(vec![1, 2]);
+        poison(&mutex);
+        lock(&mutex).push(3);
+        assert_eq!(*lock(&mutex), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn a_poisoned_lost_state_still_reports_a_loss_and_health() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        poison(&context.lost);
+        assert_eq!(context.ensure_alive(), Ok(()));
+        *lock(&context.lost) = Some("device lost (test): gone".into());
+        assert!(
+            context
+                .ensure_alive()
+                .unwrap_err()
+                .to_string()
+                .contains("gone")
+        );
+    }
+
+    #[test]
+    fn poisoned_error_list_still_collects_and_drains() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        poison(&context.errors);
+        context.record_error("kept");
+        // The device-error callback appends through the same lock.
+        provoke_validation_error(&context);
+        let _ = context.device().poll(wgpu::PollType::Poll);
+        let message = context.take_errors().expect("both errors are kept");
+        assert!(message.contains("kept"), "{message}");
+        assert_eq!(context.take_errors(), None);
+    }
+
+    #[test]
+    fn a_poisoned_pipeline_cache_still_compiles_and_shares() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        poison(&context.pipelines);
+        let mut made = Vec::new();
+        context.pipeline(EMPTY_SHADER.into(), &mut made);
+        context.pipeline(EMPTY_SHADER.into(), &mut made);
+        assert_eq!(context.compiled_count(), 1);
+        assert_eq!(made, vec![EMPTY_SHADER.to_string()]);
+    }
+
+    #[test]
+    fn a_failed_compile_leaves_nothing_in_the_cache_and_a_good_one_stays() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        let bad = "this is not wgsl";
+        let failed = context.compile_scoped(|made| {
+            context.pipeline(EMPTY_SHADER.into(), made);
+            context.pipeline(bad.into(), made);
+            Ok(())
+        });
+        assert!(matches!(failed, Err(Error::Backend(_))), "{failed:?}");
+        assert_eq!(context.compiled_count(), 2);
+        // Both sources of the failed call were compiled by it, so both are
+        // gone and compile again.
+        let mut made = Vec::new();
+        context.pipeline(EMPTY_SHADER.into(), &mut made);
+        assert_eq!(context.compiled_count(), 3);
+        assert_eq!(made, vec![EMPTY_SHADER.to_string()]);
+        // A successful call keeps what it compiled.
+        let ok = context.compile_scoped(|made| {
+            context.pipeline(EMPTY_SHADER.into(), made);
+            Ok(())
+        });
+        assert_eq!(ok, Ok(()));
+        assert_eq!(context.compiled_count(), 3, "a cache hit compiles nothing");
+    }
+
+    #[test]
+    fn a_source_another_call_compiled_is_not_evicted_by_a_failing_call() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        let mut earlier = Vec::new();
+        context.pipeline(EMPTY_SHADER.into(), &mut earlier);
+        let failed: Result<(), Error> = context.compile_scoped(|made| {
+            // A cache hit: this call did not compile it.
+            context.pipeline(EMPTY_SHADER.into(), made);
+            Err(Error::Backend("later failure".into()))
+        });
+        assert_eq!(failed, Err(Error::Backend("later failure".into())));
+        let mut again = Vec::new();
+        context.pipeline(EMPTY_SHADER.into(), &mut again);
+        assert!(again.is_empty(), "still cached");
+        assert_eq!(context.compiled_count(), 1);
+    }
+
+    #[test]
+    fn a_scope_error_is_the_root_cause_of_a_backend_follow_on() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        // The closure succeeds but a device error happened inside it.
+        let hidden = context.scoped(|| {
+            provoke_validation_error(&context);
+            Ok(())
+        });
+        assert!(matches!(hidden, Err(Error::Backend(_))), "{hidden:?}");
+        // The closure then fails with a backend error of its own: the device
+        // error comes first and the follow-on is kept as context.
+        let Err(Error::Backend(message)) = context.scoped(|| {
+            provoke_validation_error(&context);
+            Err::<(), _>(Error::Backend("follow-on".into()))
+        }) else {
+            panic!("a backend error is expected");
+        };
+        assert!(message.ends_with("(then: follow-on)"), "{message}");
+        assert!(message.len() > "(then: follow-on)".len(), "{message}");
+    }
+
+    #[test]
+    fn a_typed_error_is_never_replaced_by_a_scope_error() {
+        let Ok(context) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        let typed = Error::InputCount {
+            expected: 1,
+            found: 2,
+        };
+        let got = context.scoped(|| {
+            provoke_validation_error(&context);
+            Err::<(), _>(typed.clone())
+        });
+        assert_eq!(got, Err(typed));
+        // Without a scope error a backend error passes through unchanged.
+        let plain = context.scoped(|| Err::<(), _>(Error::Backend("plain".into())));
+        assert_eq!(plain, Err(Error::Backend("plain".into())));
     }
 }
