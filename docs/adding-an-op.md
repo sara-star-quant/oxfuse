@@ -13,8 +13,9 @@ An op touches five places. The compiler lists most of them for you: every `match
    - unit tests for the shape rule and the kernel, including rank 0, size-1 dimensions, NaN and infinity where they matter;
    - a row in the README's supported-ops table;
    - an entry for the op in `docs/ir.md` and `docs/semantics.md` (a test fails without it).
+   - three rows in `docs/contract.json` (reference, cpu, gpu) with the level, the evidence and a named test for each (a test fails without them);
 
-`cargo test --workspace` fails if an op has no example or no README row. Finish with `just ci` and `just oracle-check`.
+`cargo test --workspace` fails if an op has no example, no README row or no contract rows. Finish with `just ci` and `just oracle-check`.
 
 A new op needs nothing for the optimization passes. Folding calls the same reference kernel through `ReferenceEvaluator`, CSE keys on the op value (so its attributes must be part of the `Op` variant and derive `Hash`), and DCE only looks at inputs. The property tests in `crates/runtime/tests/optimization_equivalence.rs` generate graphs from a fixed list of ops; add the new op there so it is covered.
 
