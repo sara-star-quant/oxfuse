@@ -53,7 +53,7 @@ mutants: mutants-core mutants-runtime mutants-cli mutants-onnx
 mutants-core:
     cargo mutants -p oxfuse-core --test-workspace true {{mutants_opts}}
 
-# The CI job splits this into 6 shards that run in parallel; run one with `just mutants-runtime --shard 2/6`.
+# The CI job splits this into 6 shards that run in parallel; run one with `just mutants-runtime --shard 2/6` (shards are numbered 0 to 5).
 mutants-runtime *args:
     cargo mutants -p oxfuse-runtime --features parallel --test-workspace true {{mutants_opts}} {{args}}
 
