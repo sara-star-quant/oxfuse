@@ -6,13 +6,44 @@
 [![MSRV](https://img.shields.io/crates/msrv/oxfuse)](https://crates.io/crates/oxfuse)
 [![license](https://img.shields.io/crates/l/oxfuse.svg)](LICENSE)
 
-A tensor-graph compiler in Rust. Define a tensor graph once (JSON, or an ONNX model), type-check it, optimize it without changing results, and run it on the reference CPU backend, the fast CPU backend or, optionally, a GPU through wgpu (Vulkan, Metal, DX12). Experimental, not for production use.
+A tensor-graph compiler in Rust whose CPU results are the same bits on every platform it is tested on (Linux and Windows on arm64 and x86_64, macOS on arm64). Define a small float32 graph once (JSON, or an ONNX model), type-check it, optimize it without changing results, and run it on a reference CPU backend, a fast SIMD CPU backend or, optionally, a GPU through wgpu (Vulkan, Metal, DX12). Every claim has a test and a row in [docs/claims.md](docs/claims.md). Experimental, not for production use.
+
+## Quick start
+
+```sh
+cargo install oxfuse                  # CPU backends; add --features wgpu and/or onnx
+git clone https://github.com/sara-star-quant/oxfuse && cd oxfuse
+oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backend cpu
+```
+
+As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend and `oxfuse-onnx` for ONNX import. [A first run](#a-first-run) below walks through the graph format.
+
+## Platforms
+
+Every pull request runs the full test suite, the threaded tests and the sweep that hashes all 2^32 `exp` and `Sigmoid` inputs on five platforms, and the hash must come out the same on all of them:
+
+| OS | Architecture | CI runner |
+|---|---|---|
+| Linux (Ubuntu) | x86_64 | `ubuntu-latest` |
+| Linux (Ubuntu) | arm64 | `ubuntu-24.04-arm` |
+| macOS | arm64 (Apple silicon) | `macos-latest` |
+| Windows | x86_64 | `windows-latest` |
+| Windows | arm64 | `windows-11-arm` |
+
+It needs Rust 1.89 or newer. Not tested: macOS on Intel, 32-bit targets, big-endian targets, WebAssembly. The optional GPU backend is measured on the adapters in [docs/adapters.md](docs/adapters.md), not on every CI platform.
+
+## The contract
+
+- **Same bits on the tested platforms.** `MatMul` is one fused multiply-add per step in ascending `k`, and `Sigmoid` uses an `exp` written for this project. The reference and the fast CPU backend agree bit for bit on x86 and ARM, at any SIMD level and thread count. A NaN's sign and payload are the one thing IEEE 754 leaves to the hardware.
+- **Exact optimizer.** The four passes never change an output bit, infinity and signed zero included.
+- **A GPU is measured, not trusted.** `MatMul` matches the reference bit for bit on the two devices that fuse the same way (Apple M1 Pro, Tesla T4); every other op has a documented bound, and `oxfuse gpu-selftest` measures any adapter.
+- **Evidence over adjectives.** Mutation testing, an exhaustive hash over all 2^32 `Sigmoid` inputs on three operating systems, differential fuzzing and a NumPy oracle back these, see [Evidence](#evidence). The precise rules are in [docs/semantics.md](docs/semantics.md).
 
 ## Who it is for
 
 Oxfuse is a small tensor graph compiler whose claims come with evidence. It fits when you want:
 
-- **Exact, reproducible results** for small float32 graphs and ONNX models: the CPU backends return the same bits on every machine and thread count (a NaN's sign and payload aside, which IEEE 754 leaves to the hardware).
+- **Exact, reproducible results** for small float32 graphs and ONNX models: the same bits on the tested machines, platforms and thread counts.
 - **An oracle for other runtimes**: golden outputs for tests, or a check that another stack's result is right.
 - **A GPU numerical probe**: `oxfuse gpu-selftest` reports FMA use, subnormal flushing, NaN behavior and ulp error on any wgpu adapter.
 - **A readable reference** for how a typed IR (intermediate representation: the graph as typed values and operations), a verifier and exact optimization passes fit together.
@@ -50,15 +81,16 @@ It is not for production inference, large models, training, or speed-critical CP
 | Property | How it is established |
 |---|---|
 | Correct against an independent implementation | NumPy float64 oracle, seeded random corpus plus all examples |
+| `MatMul` and `Sigmoid` return the same bits on the tested platforms | One fused multiply-add per matmul step, an `exp` of our own, and a hash of all 2^32 `exp` and `Sigmoid` outputs that macOS, Linux and Windows CI each reproduce |
 | Fast backend equals reference, bit for bit (all NaNs count as one value) | Contract tests, random-graph tests, differential fuzzing on arm64 and x86_64 |
 | Optimizations are exact, including infinity, signed zero and where NaNs appear | Equivalence tests with and without passes |
 | Tests detect real defects | cargo-mutants: 1326 of 1337 viable mutants stopped, the other 11 explained one by one ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
-| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul inside the float64 bound; Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
+| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul bit-identical to the reference on an Apple M1 Pro and a Tesla T4 (inside the float64 bound on any adapter); Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
 | ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
 | Builds on Rust 1.89 or newer | MSRV job in CI |
 
-Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.49x of `ndarray`'s speed on the recorded machine.
+Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.75x of `ndarray`'s speed (3.6x with threads), and one row against a 784x10 weight runs at 3.4x `ndarray`'s speed, on the recorded machine.
 
 ## Scope
 
@@ -79,16 +111,6 @@ Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `
 ## GPUs
 
 The GPU backend runs on wgpu. It is measured on an Apple M1 Pro (Metal), a Tesla T4 (NVIDIA, Vulkan, a free notebook) and on software adapters, see [docs/adapters.md](docs/adapters.md). AMD and Intel Arc cards should work through Vulkan or DX12 but are untested. If you try your card, run `oxfuse gpu-selftest` and share the report in an issue.
-
-## Install
-
-```sh
-cargo install oxfuse                    # CPU backends
-cargo install oxfuse --features wgpu    # adds the GPU backend
-cargo install oxfuse --features onnx    # adds ONNX model import
-```
-
-As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend and `oxfuse-onnx` for ONNX import.
 
 ## A first run
 

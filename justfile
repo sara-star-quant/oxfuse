@@ -43,16 +43,35 @@ onnx-check:
 corpus:
     python3 -I scripts/gen_expected.py corpus
 
-# Mutation testing: break the code in small ways and list the breakages no test notices.
-# Slow (about 16 minutes for the first line); needs `cargo install cargo-mutants`.
-# Results land in mutants.out/. Two workers, because every worker builds its own copy.
-mutants:
-    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu,oxfuse/onnx --test-workspace true -j 2 --timeout 120
-    cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
+# Mutation testing is split into shards, one package each. The recipes below run
+# the same commands as the weekly CI jobs (docs/mutation-testing.md, "Shards").
+mutants_opts := "-j 2 --timeout-multiplier 5 --minimum-test-timeout 20"
 
-# Mutants of one GPU host file, for example `just mutants-gpu crates/wgpu/src/exec.rs`. Needs an adapter.
-mutants-gpu file:
-    cargo mutants -p oxfuse-wgpu -f {{file}} --test-package oxfuse-wgpu -j 2 --timeout 180
+# All CPU-side shards in a row (about 1 hour on an M1 Pro). The wgpu shard is separate: it needs an adapter.
+mutants: mutants-core mutants-runtime mutants-cli mutants-onnx
+
+mutants-core:
+    cargo mutants -p oxfuse-core --test-workspace true {{mutants_opts}}
+
+# The CI job splits this into 6 shards that run in parallel; run one with `just mutants-runtime --shard 2/6`.
+mutants-runtime *args:
+    cargo mutants -p oxfuse-runtime --features parallel --test-workspace true {{mutants_opts}} {{args}}
+
+# Builds the CLI with both optional backends; the GPU tests need an adapter or they do nothing.
+mutants-cli:
+    cargo mutants -p oxfuse --features wgpu,onnx --test-workspace true {{mutants_opts}}
+
+mutants-onnx:
+    cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx {{mutants_opts}}
+
+# The GPU crate (634 mutants, about 100 minutes on an M1 Pro). Needs an adapter. Narrow it with
+# extra arguments, for example `just mutants-wgpu -f crates/wgpu/src/exec.rs`.
+mutants-wgpu *args:
+    cargo mutants -p oxfuse-wgpu --test-package oxfuse-wgpu {{mutants_opts}} {{args}}
+
+# Compare the missed mutants of the last run with docs/known-survivors.txt. Example: `just mutants-check crates/core/`.
+mutants-check prefix:
+    python3 -I scripts/mutants_check.py --full --only {{prefix}}
 
 # Compare a benchmark filter between a base commit and the working tree, interleaved over several rounds,
 # so a result is judged against the run-to-run spread. Example:

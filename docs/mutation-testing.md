@@ -20,17 +20,35 @@ Run on an Apple M1 Pro on 2026-10-21, except the `exec.rs` and `context.rs` rows
 
 Of the 1375 mutants that compile, 1364 were stopped (99.2%) and the other 11 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
 
-Reproduce with `just mutants` (the first two commands below) and `just mutants-gpu crates/wgpu/src/exec.rs` (one GPU host file, needs an adapter). They run:
+## Shards
 
-    cargo mutants -p oxfuse-core -p oxfuse-runtime -p oxfuse --features oxfuse/wgpu,oxfuse/onnx --test-workspace true -j 2 --timeout 120
-    cargo mutants -p oxfuse-onnx --test-package oxfuse-onnx -j 2 --timeout 120
-    cargo mutants -p oxfuse-wgpu -f crates/wgpu/src/exec.rs --test-package oxfuse-wgpu -j 2 --timeout 180
+A shard is one `cargo mutants` run over one package, with the tests that cover it. Mutation testing is split this way because `cargo-mutants` builds the baseline only for the packages whose mutants it runs, so a feature of another package (`oxfuse/wgpu`) cannot be named in a run that selects `oxfuse-core`, and because one run over everything exceeds a two hour CI job. Each shard is a matrix entry of the weekly job in `.github/workflows/mutants.yml` and a recipe in the `justfile`; the local command is the CI command.
 
-The second command is per file; the GPU tests need an adapter, otherwise most of them do nothing. Use `-j 2` and `CARGO_INCREMENTAL=0`, because every worker builds its own copy and four workers fill a laptop disk.
+| Shard | Recipe | Mutates | Notes |
+|---|---|---|---|
+| core | `just mutants-core` | `crates/core` | |
+| runtime | `just mutants-runtime` | `crates/runtime`, including the SIMD kernels and `math.rs`; built with the `parallel` feature so the threaded code is compiled | 491 mutants at about 90 s each on a hosted runner: CI splits it into 6 sub-shards (`--shard k/6`) that run in parallel |
+| cli | `just mutants-cli` | `crates/cli`, built with `wgpu` and `onnx` | runs with an adapter (software Vulkan in CI) |
+| onnx | `just mutants-onnx` | `crates/onnx` | tested by its own package only |
+| wgpu | `just mutants-wgpu` | `crates/wgpu` | 634 mutants, about 100 minutes on an M1 Pro; needs a real adapter, so it runs locally and, for the changed lines only, in the pull request job on software Vulkan |
+
+A package that does not fit one two hour CI job is split further with `cargo-mutants`'s `--shard k/n`, which deals the mutants of a run out to `n` jobs; the sub-shards run in parallel, so the wall time is that of the largest one. Choose `n` so a sub-shard has at most about 100 mutants (about 75 minutes on a hosted runner). A sub-shard checks only for new misses; the check for entries that are now caught runs on unsharded packages, because one sub-shard cannot see the mutants of another.
+
+`just mutants` runs core, runtime, cli and onnx in a row. Narrow any shard with extra arguments or a name filter, for example `just mutants-wgpu -f crates/wgpu/src/exec.rs` or `cargo mutants -p oxfuse-runtime -F 'matmul.rs'` (the filter matches `path:line:col: description`).
+
+Every shard uses `-j 2 --timeout-multiplier 5 --minimum-test-timeout 20`: two workers (each builds its own copy of the tree, so more fill a laptop disk), and a hung mutant is cut at five times the baseline test time instead of a fixed two minutes. A mutant that only times out counts as caught.
+
+Do not switch branches or edit files while a shard runs. `cargo-mutants` copies the tree per worker as it goes and fails with "does not exist" or "File exists" if the tree changes underneath it. Run it from a detached worktree (`git worktree add --detach <dir> <branch>`) when you need to keep working.
 
 ## In CI
 
-`.github/workflows/mutants.yml` reports and never gates. A pull request runs only the mutants that overlap its diff (`--in-diff`), in one job for the CPU-side crates and one for `oxfuse-wgpu` on a software Vulkan adapter. The pull request job builds with all features, so code behind `onnx`, `wgpu` and `parallel` is tested. A weekly run covers every mutant of the CPU-side crates, one job per package. The missed list is the artifact `mutants.out`. A missed mutant in a changed region needs a test or an entry below. The WGSL text and a second hardware adapter stay outside it, see the end of this page.
+`.github/workflows/mutants.yml` runs three kinds of job, none of which blocks a merge:
+
+- **Pull request, CPU side:** only the mutants that overlap the diff (`--in-diff`), all features built, so code behind `onnx`, `wgpu` and `parallel` is tested.
+- **Pull request, GPU:** the same for `oxfuse-wgpu` on a software Vulkan adapter.
+- **Weekly (Sunday 03:00 UTC) and on demand:** every shard above except wgpu, one job each. Start one with `gh workflow run mutants --ref <branch>`.
+
+A job turns red when a mutant is missed and is not listed in [known-survivors.txt](known-survivors.txt), when a listed one is now caught (a full run only: the list may only shrink), or when the baseline fails. `scripts/mutants_check.py` makes that comparison, with line numbers stripped from the names; `just mutants-check crates/core/` runs it on the last local result. The missed list of each job is the artifact `mutants.out`.
 
 ## Survivors
 

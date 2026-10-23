@@ -11,13 +11,19 @@ Reproduce: `just bench && just bench-report`. For the threaded rows, also run
 
 GPU rows (`gpu-matmul`, `gpu-add`) come from `just bench-gpu`, which also times the
 fast CPU backend in the same run, on one thread and on all threads. `gpu-cold` is
-compile plus the first run (a driver may cache compiled shaders across samples, so
-it is a lower bound on a first run in a new process). `gpu-resident` keeps inputs
+compile plus the first run on a fresh device per sample (a device keeps the
+pipelines it compiled; a driver may still cache compiled shaders across samples,
+so it is a lower bound on a first run in a new process). `gpu-resident` keeps inputs
 on the device and times `run_device` until the device is idle, including the copy
-of the outputs. `gpu-with-transfers` is a host `run`: upload, run, download. The
+of the outputs. `gpu-batched` is the resident run with 16 submits per wait, timed
+per run, so the gap to `gpu-resident` is the cost of one submit-and-wait.
+`gpu-with-transfers` is a host `run`: upload, run, download. The
 last column divides the best CPU time by the resident GPU time, so a value below
-1 means the GPU is slower. GPU results are not bit-identical to the CPU rows (see
-`semantics.md`).
+1 means the GPU is slower. GPU `MatMul` matches the CPU bit for bit on the two
+adapters it was measured on; the other GPU ops stay inside the bounds in
+`semantics.md`. `matmul-skinny` and `matmul-head` time a small batch (the id is
+the number of rows) against a 1024 x 1024 weight and a 784 x 10 weight; the
+ratio to `ndarray` uses the single-threaded `cpu` column.
 
 ## Optimization log
 
@@ -60,77 +66,54 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   8 x 8 threads with one output 19.3 ms, and the same 4 x 4 block held in an
   array indexed inside a loop, about 55 ms (the device spills it to memory,
   three times slower than no blocking at all). Results stay inside the
-  documented bound of the float64 result but are not bit-identical to the
-  reference of that time, because the device fuses multiply-add. The reference
-  fuses now, and the Metal result is bit-identical to it.
-- Executor, buffer reuse: a computed operand that no later step reads and that
-  is not an output is overwritten by Relu, Sigmoid, Add and Mul when it has the
-  result's size, Reshape moves it, and any operand a step read last is freed
-  at once, so peak memory is the live set. The operations and their operand
-  order are unchanged, so the bits are too. The 256 pipeline with threads, 128
-  us to 105 us (the unoptimized graph and single operations have no computed
-  operand to reuse and did not move). Kept.
-- Transpose, rank 2: tiles of 16 rows, each writing a run of 16 contiguous
-  output floats, instead of 32 x 32 tiles. 590 us to 465 us at 1024 x 1024
-  (1.27x). With the `parallel` feature the output rows are also split into
-  bands of 64 across threads above 2^18 elements: 280 us (2.1x). Kept. Tried
-  and dropped: a 4 x 4 register block and 8, 16 and 32 element blocks copied
-  through a local array (630 to 715 us, slower than the baseline), and
-  rectangular tiles. In a harness where the dimensions were compile-time
-  constants the 16-row tile reached 300 us, but that came from the compiler
-  specializing the strides, not from the loop, so it is not a result.
-- GPU pipelines, one cache per device: executables on a device share the
-  compiled pipeline for a given shader source, because shapes travel in a
-  uniform buffer and the source depends only on the kernel and its
-  configuration. The wgpu `ops`, `twin` and `limits` test binaries, which
-  compile a graph per case, went from 8.7 s to 2.0 s (`ops`) on this Mac, and
-  the Windows software adapter, where each shader compile costs far more, took
-  407 s for `ops` before. `gpu-cold` now creates a fresh device per sample
-  outside the timing, so it still includes shader compilation. Kept.
-- GPU outputs written in place: a kernel writes straight into the buffer that
-  is handed back (created per run) instead of a scratch buffer that is then
-  copied into a fresh one, which drops one copy pass and one buffer per
-  output. Per run with 16 submits per wait: matmul 128 114 us to 81 us, 256
-  178 us to 147 us, 512 529 us to 488 us, Add 1M 214 us to 230 us (within the
-  run-to-run spread of about 8 percent). The memory-bound Add at 16M varied
-  from 3.8 to 5.3 ms before and 4.0 to 4.4 ms after. Kept for the small sizes
-  and the saved memory; the large-size gain is not established.
-- GPU `run`, one submission: the kernels and the copies of the outputs into
-  staging buffers share a command buffer, and one wait covers every output
-  (before, each output was copied, submitted and waited for on its own). With
-  `just bench-ab` against the previous commit, five interleaved rounds: a graph
-  with 8 outputs 1.92 ms to 0.48 ms (-75 percent, spread 25 percent); a single
-  output (matmul 128 and 512, Add 1M) did not change beyond the spread. Kept.
-- GPU `run_many` (a trait method; the default runs `run` per element): the
-  whole batch is one command buffer and one wait. 16 matmuls of 128 x 128, host
-  to host: 6.3 ms as a loop of `run`, 3.4 ms with `run_many` (-45 percent); at
-  512 x 512, 21.9 ms to 19.3 ms (-12 percent), because upload and compute then
-  dominate. Memory grows with the batch (inputs, outputs and staging for every
-  element are alive together). Kept.
-- GPU `run_device`, where the CPU time goes (matmul 128, 1000 runs, spans
-  around each call, temporary instrumentation): about 30 us per call in total,
-  of which `finish` 10 us, `submit` 11 us, creating the output buffer 7 us,
-  recording the pass 2 us (a bind group 1.2 us, the layout lookup 0.1 us). The
-  error scopes added for reliability cost 0.2 us per call. Caching bind groups
-  or layouts could save at most 1.3 us of 30, so they were not built. The
-  figure of 90 to 110 us per call measured earlier included waiting on a full
-  queue.
-- GPU outputs mapped directly on unified memory: not built. The staging copy of
-  a 64 MB download costs about 3.6 ms of a call that takes 11 to 14 ms (the f32
-  conversion costs 3.7 ms and does not go away), about 9 percent of a 39 ms
-  host `run` of Add 16M, below the 31 percent spread of that case. Uploads were
-  not faster either way: `write_buffer` into a persistent buffer took 15 ms for
-  64 MB against 10 ms for a fresh `create_buffer_init`. For large tensors keep
-  them resident with `run_device`; the host path is bound by memory bandwidth.
-- Add, Relu, Mul, Reshape: the reference loops already vectorize
-  (cpu and reference measured within noise at the baseline), so these still
-  call the reference kernels. Splitting them across threads made them slower
-  at 2^20 elements (Add 122 us to 222 us, Relu 69 us to 214 us), because they
-  are bound by memory and the split adds a copy. Dropped.
-- Sigmoid (feature `parallel`): the same `exp`-based formula as the reference
-  (std's exp, so the bits are identical by construction), split into chunks of
-  8192 elements across threads above 65536 elements. 1.73 ms to 0.42 ms at
-  2^20 on this 8-core machine. Kept, off by default.
+  documented bound of the float64 result. They were not bit-identical to the
+  reference of that time because the device fuses multiply-add. The reference
+  fuses now, and the Metal and T4 results are bit-identical to it.
+- Code placement: after the in-place kernels were added to the module that held
+  the matmul, the single-threaded 512 matmul went from 5.9 ms to 6.4 ms
+  (+9 percent, spread 3 percent; bisected to that commit with `just bench-ab`).
+  Forcing or forbidding inlining of `matmul_rows` and padding the module did
+  nothing. Moving only the elementwise kernels out fixed the single-threaded
+  case but cost the threaded 64, 128 and 256 matmuls 5 to 11 percent. With the
+  matmul, the transpose and the elementwise kernels each in their own module,
+  every matmul size is within noise of 0.3.0, single-threaded and threaded (512:
+  5.82 ms on both). The cause is how rustc partitions and lays out code, not
+  any change to the loops, so the module split pins the layout.
+- Add, Relu, Mul, Reshape: the reference loops already vectorize (cpu and
+  reference measured within noise at the baseline), so these still call the
+  reference kernels.
+- MatMul, fused multiply-add: the definition changed to one fused multiply-add
+  per step, so the result differs from 0.3.0 in the last bits and a GPU that
+  fuses can now match it exactly. With the same loops, 512 went from 6.02 ms
+  to 3.99 ms on the M1 Pro (a 6 x 16 block instead of 4 x 16). In a scratch
+  harness on a quiet machine, without the edge handling, the block sizes gave
+  (GFLOP/s) 2 x 16 51, 3 x 16 72, 4 x 8 51, 4 x 12 63, 4 x 16 71, 4 x 24 93,
+  6 x 8 66, 6 x 16 97, 8 x 8 73, 8 x 12 88. Kept 6 x 16. The kernel in the
+  repo measures about 71 GFLOP/s in the table below, so the 97 is an upper
+  bound it does not reach yet. The `gemm` crate was tried as a drop-in: 98
+  GFLOP/s on one thread, but it splits k above about 1024 and the bits then
+  differ from the fused sum (up to 249428 ulp at k = 6000), so it is not used.
+- MatMul, explicit SIMD vectors (`fearless_simd`, level picked at run time):
+  the same speed as the autovectorized loop on the M1 Pro (512: 3.86 ms and
+  3.85 ms) and 10 percent faster at 64. It is there for x86: on a Xeon at
+  2.2 GHz with AVX2, in one session, the 512 matmul took 26.8 ms before the
+  fused definition, 447 ms after it (a fused multiply-add compiled without the
+  FMA flag is a call into libm), and 9.2 ms with the vectors. The reference
+  kernels run their scalar loops inside the same feature-enabled wrapper:
+  the reference 128 x 128 matmul took 3.66 ms before, 8.96 ms after the fused
+  definition and 3.61 ms with the wrapper.
+- MatMul, tail columns in place: the columns that do not fill a vector were
+  copied into a buffer on every call. They are read in place now, and only the
+  last rows of B, where a full vector would run past the end, are copied.
+  One row against a 784 x 10 weight: 5.5 us to 1.3 us on the M1 Pro and 6 us
+  to 2 us on the Xeon; the 1024 x 1024 weight is unchanged within noise.
+- Sigmoid: an `exp` of our own (only IEEE operations and fused multiply-adds,
+  so the result does not depend on the platform's math library) on SIMD vectors. 2^20 elements on
+  the M1 Pro: 1.76 ms to 0.82 ms, the reference 1.94 ms to 1.02 ms. On the
+  Xeon: 5.2 ms to 1.85 ms, the reference 17.1 ms to 14.7 ms. The first x86
+  attempt was five times slower: a generic helper that took the vector
+  function as a parameter was not compiled with the AVX2 features, and writing
+  the loop out in each function fixed it.
 
 ## Environment
 
@@ -140,7 +123,7 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 - OS: macOS-26.7.1-arm64-arm-64bit-Mach-O
 - Rust: rustc 1.99.1 (58cf8f9c3 2026-10-13)
 - RUSTFLAGS: ``
-- Code: crates tree c0f23a8
+- Code: crates tree 0061bc2 (plus uncommitted changes)
 
 ## Results
 
@@ -148,55 +131,110 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 444.7 us | 113.1 us | 112.7 us | 3.94x |
+| 1048576 | 442.9 us | 111.4 us | 113.4 us | 3.98x |
 
 ### gpu-add
 
-| size | gpu-cold | gpu-resident | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
-|---|---|---|---|---|---|---|
-| 1048576 | 2.61 ms | 389.7 us | 3.10 ms | 123.0 us | 120.8 us | 0.31x |
-| 16777216 | 33.05 ms | 3.49 ms | 39.49 ms | 2.60 ms | 2.60 ms | 0.74x |
+| size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
+|---|---|---|---|---|---|---|---|
+| 1048576 | 2.94 ms | 395.2 us | 199.8 us | 2.58 ms | 105.9 us | 112.0 us | 0.27x |
+| 16777216 | 27.99 ms | 3.70 ms | 2.31 ms | 36.25 ms | 2.60 ms | 2.60 ms | 0.70x |
+
+### gpu-many
+
+| size | loop-of-16-runs | run-many-16 |
+|---|---|---|
+| 128 | 6.22 ms | 3.13 ms |
+| 512 | 20.64 ms | 17.20 ms |
 
 ### gpu-matmul
 
-| size | gpu-cold | gpu-resident | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
-|---|---|---|---|---|---|---|
-| 128 | 963.4 us (4.4 GFLOP/s) | 348.7 us (12.0 GFLOP/s) | 368.1 us (11.4 GFLOP/s) | 94.4 us (44.4 GFLOP/s) | 68.8 us (61.0 GFLOP/s) | 0.20x |
-| 256 | 1.09 ms (30.9 GFLOP/s) | 398.9 us (84.1 GFLOP/s) | 609.9 us (55.0 GFLOP/s) | 738.5 us (45.4 GFLOP/s) | 249.9 us (134.2 GFLOP/s) | 0.63x |
-| 512 | 1.71 ms (156.8 GFLOP/s) | 715.8 us (375.0 GFLOP/s) | 1.29 ms (208.1 GFLOP/s) | 5.93 ms (45.3 GFLOP/s) | 1.17 ms (229.9 GFLOP/s) | 1.63x |
-| 1024 | 6.28 ms (342.0 GFLOP/s) | 3.50 ms (613.0 GFLOP/s) | 6.16 ms (348.3 GFLOP/s) | 47.01 ms (45.7 GFLOP/s) | 8.04 ms (267.1 GFLOP/s) | 2.30x |
-| 2048 | 34.20 ms (502.3 GFLOP/s) | 25.05 ms (685.8 GFLOP/s) | 34.74 ms (494.5 GFLOP/s) | 400.65 ms (42.9 GFLOP/s) | 72.43 ms (237.2 GFLOP/s) | 2.89x |
+| size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
+|---|---|---|---|---|---|---|---|
+| 128 | 1.44 ms (2.9 GFLOP/s) | 302.6 us (13.9 GFLOP/s) | 80.7 us (52.0 GFLOP/s) | 383.9 us (10.9 GFLOP/s) | 62.3 us (67.3 GFLOP/s) | 48.5 us (86.5 GFLOP/s) | 0.16x |
+| 256 | 1.99 ms (16.8 GFLOP/s) | 363.3 us (92.4 GFLOP/s) | 140.2 us (239.4 GFLOP/s) | 634.2 us (52.9 GFLOP/s) | 482.0 us (69.6 GFLOP/s) | 160.0 us (209.7 GFLOP/s) | 0.44x |
+| 512 | 2.58 ms (103.9 GFLOP/s) | 774.3 us (346.7 GFLOP/s) | 484.7 us (553.8 GFLOP/s) | 1.29 ms (208.4 GFLOP/s) | 3.83 ms (70.1 GFLOP/s) | 792.3 us (338.8 GFLOP/s) | 1.02x |
+| 1024 | 6.39 ms (336.1 GFLOP/s) | 3.76 ms (571.1 GFLOP/s) | 3.26 ms (658.1 GFLOP/s) | 5.68 ms (378.0 GFLOP/s) | 30.65 ms (70.1 GFLOP/s) | 5.36 ms (400.8 GFLOP/s) | 1.43x |
+| 2048 | 33.20 ms (517.5 GFLOP/s) | 26.21 ms (655.4 GFLOP/s) | 25.11 ms (684.1 GFLOP/s) | 34.05 ms (504.5 GFLOP/s) | 276.51 ms (62.1 GFLOP/s) | 52.35 ms (328.2 GFLOP/s) | 2.00x |
+
+### gpu-outputs
+
+| size | gpu-with-transfers |
+|---|---|
+| 8 | 479.9 us |
 
 ### matmul
 
-| size | reference | cpu | cpu-threads | ndarray | best cpu vs reference |
-|---|---|---|---|---|---|
-| 64 | 167.7 us (3.1 GFLOP/s) | 12.0 us (43.6 GFLOP/s) | 12.1 us (43.5 GFLOP/s) | 6.4 us (82.0 GFLOP/s) | 13.93x |
-| 128 | 1.60 ms (2.6 GFLOP/s) | 92.5 us (45.3 GFLOP/s) | 68.6 us (61.2 GFLOP/s) | 48.1 us (87.3 GFLOP/s) | 23.35x |
-| 256 | 14.69 ms (2.3 GFLOP/s) | 724.8 us (46.3 GFLOP/s) | 249.2 us (134.6 GFLOP/s) | 360.4 us (93.1 GFLOP/s) | 58.95x |
-| 512 | 121.13 ms (2.2 GFLOP/s) | 5.77 ms (46.6 GFLOP/s) | 1.17 ms (230.3 GFLOP/s) | 2.81 ms (95.4 GFLOP/s) | 103.94x |
+| size | reference | cpu | cpu-threads | ndarray | best cpu vs reference | cpu vs ndarray |
+|---|---|---|---|---|---|---|
+| 64 | 202.9 us (2.6 GFLOP/s) | 7.9 us (66.2 GFLOP/s) | 7.9 us (66.0 GFLOP/s) | 6.5 us (81.2 GFLOP/s) | 25.61x | 0.81x |
+| 128 | 2.04 ms (2.1 GFLOP/s) | 61.1 us (68.7 GFLOP/s) | 48.6 us (86.2 GFLOP/s) | 48.1 us (87.3 GFLOP/s) | 41.85x | 0.79x |
+| 256 | 18.90 ms (1.8 GFLOP/s) | 471.1 us (71.2 GFLOP/s) | 160.6 us (209.0 GFLOP/s) | 360.4 us (93.1 GFLOP/s) | 117.71x | 0.76x |
+| 512 | 158.91 ms (1.7 GFLOP/s) | 3.76 ms (71.4 GFLOP/s) | 788.4 us (340.5 GFLOP/s) | 2.81 ms (95.4 GFLOP/s) | 201.56x | 0.75x |
+
+### matmul-head
+
+| size | cpu | cpu-threads | ndarray | cpu vs ndarray |
+|---|---|---|---|---|
+| 1 | 1.3 us (12.5 GFLOP/s) | 1.3 us (12.3 GFLOP/s) | 4.3 us (3.7 GFLOP/s) | 3.41x |
+| 2 | 1.3 us (24.0 GFLOP/s) | 1.3 us (23.5 GFLOP/s) | 4.1 us (7.6 GFLOP/s) | 3.16x |
+| 3 | 1.5 us (30.9 GFLOP/s) | 1.6 us (30.0 GFLOP/s) | 4.3 us (11.0 GFLOP/s) | 2.81x |
+| 5 | 2.2 us (36.2 GFLOP/s) | 2.2 us (35.5 GFLOP/s) | 4.3 us (18.2 GFLOP/s) | 1.99x |
+| 8 | 3.6 us (34.9 GFLOP/s) | 3.7 us (34.3 GFLOP/s) | 4.4 us (28.5 GFLOP/s) | 1.22x |
+| 32 | 12.8 us (39.4 GFLOP/s) | 13.0 us (38.6 GFLOP/s) | 13.8 us (36.3 GFLOP/s) | 1.09x |
+
+### matmul-skinny
+
+| size | cpu | cpu-threads | ndarray | cpu vs ndarray |
+|---|---|---|---|---|
+| 1 | 78.7 us (26.7 GFLOP/s) | 80.0 us (26.2 GFLOP/s) | 306.9 us (6.8 GFLOP/s) | 3.90x |
+| 2 | 85.1 us (49.3 GFLOP/s) | 84.7 us (49.5 GFLOP/s) | 308.0 us (13.6 GFLOP/s) | 3.62x |
+| 3 | 96.1 us (65.5 GFLOP/s) | 96.2 us (65.4 GFLOP/s) | 308.4 us (20.4 GFLOP/s) | 3.21x |
+| 5 | 158.5 us (66.2 GFLOP/s) | 158.6 us (66.1 GFLOP/s) | 329.2 us (31.9 GFLOP/s) | 2.08x |
+| 8 | 265.3 us (63.2 GFLOP/s) | 265.3 us (63.2 GFLOP/s) | 309.2 us (54.3 GFLOP/s) | 1.17x |
+| 32 | 982.1 us (68.3 GFLOP/s) | 526.9 us (127.4 GFLOP/s) | 829.0 us (80.9 GFLOP/s) | 0.84x |
 
 ### pipeline
 
-| size | cpu-optimized | cpu-threads-optimized | cpu-threads-unoptimized | cpu-unoptimized | best cpu vs reference |
-|---|---|---|---|---|---|
-| 256 | 186.4 us | 126.7 us | 202.2 us | 249.2 us | - |
+| size | cpu-optimized | cpu-threads-optimized | cpu-threads-unoptimized | cpu-unoptimized |
+|---|---|---|---|---|
+| 256 | 125.1 us | 84.0 us | 167.3 us | 167.2 us |
 
 ### relu
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 231.0 us | 68.7 us | 67.0 us | 3.45x |
+| 1048576 | 234.8 us | 66.4 us | 64.9 us | 3.62x |
 
 ### sigmoid
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 1.89 ms | 1.74 ms | 1.74 ms | 1.08x |
+| 1048576 | 1.02 ms | 822.1 us | 229.6 us | 4.44x |
 
 ### transpose
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1024 | 2.58 ms | 568.8 us | 575.5 us | 4.53x |
+| 1024 | 2.56 ms | 447.6 us | 278.1 us | 9.22x |
+
+## Other machines
+
+A Tesla T4 (NVIDIA, Vulkan, driver 580) on a free Kaggle notebook with a 4 vCPU
+Xeon at 2.2 GHz (AVX2), run on 2026-10-22 at commit 4c633ff with the flow in
+[adapters.md](adapters.md). Same method and columns as above; the CPU columns
+are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
+
+### gpu-matmul (Tesla T4)
+
+| size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
+|---|---|---|---|---|---|---|---|
+| 128 | 30.75 ms (0.1 GFLOP/s) | 91.4 us (45.9 GFLOP/s) | 48.1 us (87.3 GFLOP/s) | 210.8 us (19.9 GFLOP/s) | 139.8 us (30.0 GFLOP/s) | 93.1 us (45.1 GFLOP/s) | 1.02x |
+| 512 | 31.95 ms (8.4 GFLOP/s) | 313.0 us (857.6 GFLOP/s) | 249.7 us (1074.8 GFLOP/s) | 1.29 ms (208.2 GFLOP/s) | 9.30 ms (28.9 GFLOP/s) | 4.87 ms (55.1 GFLOP/s) | 15.56x |
+
+### gpu-add (Tesla T4)
+
+| size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
+|---|---|---|---|---|---|---|---|
+| 1048576 | 32.14 ms | 136.9 us | 94.5 us | 3.31 ms | 502.2 us | 411.1 us | 3.00x |
 
