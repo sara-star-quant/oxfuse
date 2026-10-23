@@ -18,6 +18,7 @@ What each op computes, bit for bit where that is promised, and what is deliberat
 - `Relu`, `Add`, `Mul`, `Reshape` and `Transpose` are exact, so every backend gives the same bits.
 - `CpuBackend` returns the reference backend's bits for every op, including `MatMul` and `Sigmoid`, for any input including infinity and signed zero, and returns a NaN exactly where the reference does. This is tested by comparing bit patterns, not by a tolerance, with all NaNs counted as one value: the sign and payload of a NaN made from two NaN operands or from an invalid operation (`inf - inf`, `0 * inf`) are left to the hardware and to the operand order the compiler picks, and x86 and ARM differ (see "Not promised" below). The first fuzz run on x86 found this, and a replay on the published 0.3.0 reproduced it.
 - The threaded matmul splits the output by rows and never splits the `k` sum, so the thread count cannot change a result.
+- A row's result does not depend on the batch size: row `i` of an `m`-row run equals the run of that row alone, bit for bit (tested on the reference and the fast CPU backend for 1 to 64 rows, and on the GPU where the adapter fuses). The register block, the tail columns and the thread split only regroup rows.
 - The optimization passes are exact: an optimized graph gives the same bits as the unoptimized one on the reference backend, errors included.
 
 ## The GPU backend
