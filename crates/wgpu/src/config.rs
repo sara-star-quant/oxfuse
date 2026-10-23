@@ -50,6 +50,12 @@ impl KernelConfig {
         transpose_tile: 16,
     };
 
+    /// Row stride of the transpose tile in workgroup memory: one more than the
+    /// tile, so a column read does not hit one memory bank for every row.
+    pub fn transpose_stride(&self) -> u32 {
+        self.transpose_tile + 1
+    }
+
     /// Side of the square of the result one `MatMul` workgroup covers.
     pub fn matmul_block(&self) -> u32 {
         self.tile * self.reg_block
@@ -159,7 +165,8 @@ impl TileGrid {
 }
 
 pub fn tile_grid(rows: u64, cols: u64, tile: u32, max_per_dim: u32) -> Option<TileGrid> {
-    if rows == 0 || cols == 0 || tile == 0 {
+    // Zero rows or columns give zero tiles, which `grid_fold` rejects below.
+    if tile == 0 {
         return None;
     }
     let tiles_x = u32::try_from(cols.div_ceil(u64::from(tile))).ok()?;
@@ -439,6 +446,7 @@ mod tests {
     #[test]
     fn the_matmul_block_is_the_tile_times_the_register_block() {
         assert_eq!(KernelConfig::DEFAULT.matmul_block(), 64);
+        assert_eq!(KernelConfig::DEFAULT.transpose_stride(), 17);
         let one = KernelConfig {
             reg_block: 1,
             ..KernelConfig::DEFAULT

@@ -15,6 +15,13 @@ use oxfuse_core::Op;
 /// are bound by memory and got slower when split (see docs/benchmarks.md).
 #[cfg(feature = "parallel")]
 const SIGMOID_PARALLEL_MIN: usize = 1 << 16;
+
+/// Whether a Sigmoid of `len` elements is split across threads. The bits are
+/// the same either way, so this is a function a test can pin exactly.
+#[cfg(feature = "parallel")]
+fn sigmoid_uses_threads(len: usize) -> bool {
+    len >= SIGMOID_PARALLEL_MIN
+}
 #[cfg(feature = "parallel")]
 const SIGMOID_CHUNK: usize = 1 << 13;
 
@@ -23,7 +30,7 @@ pub(super) fn sigmoid(input: &[f32]) -> Vec<f32> {
     let level = Level::new();
     let mut out = vec![0.0f32; input.len()];
     #[cfg(feature = "parallel")]
-    if input.len() >= SIGMOID_PARALLEL_MIN {
+    if sigmoid_uses_threads(input.len()) {
         use rayon::prelude::*;
         out.par_chunks_mut(SIGMOID_CHUNK)
             .zip(input.par_chunks(SIGMOID_CHUNK))
@@ -37,7 +44,7 @@ pub(super) fn sigmoid(input: &[f32]) -> Vec<f32> {
 fn sigmoid_in_place(buf: &mut [f32]) {
     let level = Level::new();
     #[cfg(feature = "parallel")]
-    if buf.len() >= SIGMOID_PARALLEL_MIN {
+    if sigmoid_uses_threads(buf.len()) {
         use rayon::prelude::*;
         buf.par_chunks_mut(SIGMOID_CHUNK)
             .for_each(|chunk| vecmath::sigmoid_in_place(level, chunk));
@@ -48,17 +55,14 @@ fn sigmoid_in_place(buf: &mut [f32]) {
 
 /// Computes an elementwise `op` into `buf`, which holds one operand and is
 /// overwritten with the result. `other` is the second operand of Add and Mul
-/// (one element for a scalar); `buf_first` says which operand `buf` held, so
-/// the operation sees the operands in the same order as the reference.
-pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>, buf_first: bool) {
+/// (one element for a scalar). Add and Mul are commutative, so it does not
+/// matter which operand `buf` held; only the payload of a NaN made from two
+/// NaNs depends on the order, and the contract counts all NaNs as one value.
+pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>) {
     let zip = |buf: &mut [f32], other: &[f32], f: fn(f32, f32) -> f32| {
         let at = |i: usize| other[if other.len() == 1 { 0 } else { i }];
         for (i, v) in buf.iter_mut().enumerate() {
-            *v = if buf_first {
-                f(*v, at(i))
-            } else {
-                f(at(i), *v)
-            };
+            *v = f(*v, at(i));
         }
     };
     match op {
@@ -71,5 +75,18 @@ pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>, bu
         Op::Reshape { .. } | Op::MatMul | Op::Transpose { .. } => {
             unreachable!("not an in-place op")
         }
+    }
+}
+
+#[cfg(all(test, feature = "parallel"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_sigmoid_thread_threshold_is_exact() {
+        assert!(!sigmoid_uses_threads(0));
+        assert!(!sigmoid_uses_threads(65_535));
+        assert!(sigmoid_uses_threads(65_536));
+        assert!(sigmoid_uses_threads(usize::MAX));
     }
 }

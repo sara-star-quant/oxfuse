@@ -1,3 +1,7 @@
 # Proof harnesses are compiled only by Kani (cfg(kani)); no test run can see a
 # change to them, so mutating them only produces misses. Kani itself checks them.
+# The functions are excluded by path; the constants and helpers of the harness
+# module have no function path, so the whole file is excluded too (everything
+# else in it is cfg(test), which cargo-mutants skips).
 exclude_re = ["proofs::", "harnesses::"]
+exclude_globs = ["crates/wgpu/src/proofs.rs"]

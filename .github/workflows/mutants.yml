@@ -1,11 +1,10 @@
 name: mutants
 
-# A mutant whose test run times out counts as caught (docs/mutation-testing.md),
-# so exit code 3 of cargo-mutants is not a failure here; a missed mutant (2) or
-# a failed baseline (4) is.
-# Mutation testing is a measurement, never a gate: the 11 known survivors are
-# explained in docs/mutation-testing.md, so a missed mutant in a touched region
-# is reviewed, not an automatic failure.
+# A mutant whose test run times out counts as caught (docs/mutation-testing.md).
+# Mutation testing is a measurement, never a gate for merging, but a job turns
+# red when it finds a missed mutant that docs/known-survivors.txt does not list
+# (each listed one is explained in docs/mutation-testing.md), or, in a full
+# run, when a listed one is now caught. The list only shrinks.
 on:
   pull_request:
     paths: ["crates/**", "Cargo.toml", "Cargo.lock"]
@@ -38,7 +37,13 @@ jobs:
           tool: cargo-mutants@27.1.0
       - run: git diff origin/${{ github.base_ref }}.. > pr.diff
       # The GPU crate needs an adapter; its own job below runs it on software Vulkan.
-      - run: cargo mutants --in-diff pr.diff --exclude 'crates/wgpu/**' --all-features --test-workspace true -j 2 --timeout 120 || [ $? -eq 3 ]
+      - run: |
+          status=0
+          cargo mutants --in-diff pr.diff --exclude 'crates/wgpu/**' --all-features --test-workspace true -j 2 --timeout-multiplier 5 --minimum-test-timeout 20 || status=$?
+          # 0 clean, 3 only timeouts (they count as caught), 2 missed mutants
+          # that the check below compares with docs/known-survivors.txt.
+          case $status in 0|2|3) ;; *) exit "$status" ;; esac
+      - run: python3 -I scripts/mutants_check.py 
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -63,7 +68,13 @@ jobs:
         with:
           tool: cargo-mutants@27.1.0
       - run: git diff origin/${{ github.base_ref }}.. > pr.diff
-      - run: cargo mutants --in-diff pr.diff -p oxfuse-wgpu --test-package oxfuse-wgpu -j 2 --timeout 180 || [ $? -eq 3 ]
+      - run: |
+          status=0
+          cargo mutants --in-diff pr.diff -p oxfuse-wgpu --test-package oxfuse-wgpu -j 2 --timeout-multiplier 5 --minimum-test-timeout 20 || status=$?
+          # 0 clean, 3 only timeouts (they count as caught), 2 missed mutants
+          # that the check below compares with docs/known-survivors.txt.
+          case $status in 0|2|3) ;; *) exit "$status" ;; esac
+      - run: python3 -I scripts/mutants_check.py 
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -74,8 +85,11 @@ jobs:
   # the baseline for the packages of the mutants it runs, so a feature of another
   # package (`oxfuse/wgpu`) cannot be named when only `oxfuse-core` is selected,
   # which broke the sharded form. The commands match `just mutants`
-  # (docs/mutation-testing.md). A miss or a failed baseline shows as a failed
-  # job, which blocks nothing.
+  # (docs/mutation-testing.md). A package that is too big for one two hour job
+  # is split with `--shard k/n` (runtime: 6 jobs, about 80 mutants each, run in
+  # parallel). The jobs fail on a mutant that is missed and
+  # not listed in docs/known-survivors.txt, on a listed one that is now caught,
+  # and on a failed baseline; they block nothing.
   full:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -87,13 +101,32 @@ jobs:
         include:
           - name: core
             args: "-p oxfuse-core"
-          - name: runtime
-            args: "-p oxfuse-runtime"
+            check: "--full --only crates/core/"
+          - name: runtime-1
+            args: "-p oxfuse-runtime --features parallel --shard 1/6"
+            check: "--only crates/runtime/"
+          - name: runtime-2
+            args: "-p oxfuse-runtime --features parallel --shard 2/6"
+            check: "--only crates/runtime/"
+          - name: runtime-3
+            args: "-p oxfuse-runtime --features parallel --shard 3/6"
+            check: "--only crates/runtime/"
+          - name: runtime-4
+            args: "-p oxfuse-runtime --features parallel --shard 4/6"
+            check: "--only crates/runtime/"
+          - name: runtime-5
+            args: "-p oxfuse-runtime --features parallel --shard 5/6"
+            check: "--only crates/runtime/"
+          - name: runtime-6
+            args: "-p oxfuse-runtime --features parallel --shard 6/6"
+            check: "--only crates/runtime/"
           - name: cli
             args: "-p oxfuse --features wgpu,onnx"
+            check: "--full --only crates/cli/"
             gpu: true
           - name: onnx
             args: "-p oxfuse-onnx --test-package oxfuse-onnx"
+            check: "--full --only crates/onnx/"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install
@@ -110,11 +143,19 @@ jobs:
       # An empty OXFUSE_REQUIRE_ADAPTER still counts as set, so the variable is
       # given to the gpu job only, through a step of its own.
       - if: matrix.gpu
-        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120 || [ $? -eq 3 ]
+        run: |
+          status=0
+          cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout-multiplier 5 --minimum-test-timeout 20 || status=$?
+          case $status in 0|2|3) ;; *) exit "$status" ;; esac
         env:
           OXFUSE_REQUIRE_ADAPTER: "1"
       - if: ${{ !matrix.gpu }}
-        run: cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout 120 || [ $? -eq 3 ]
+        run: |
+          status=0
+          cargo mutants ${{ matrix.args }} --test-workspace true -j 2 --timeout-multiplier 5 --minimum-test-timeout 20 || status=$?
+          case $status in 0|2|3) ;; *) exit "$status" ;; esac
+      - run: python3 -I scripts/mutants_check.py --self-test
+      - run: python3 -I scripts/mutants_check.py ${{ matrix.check }}
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

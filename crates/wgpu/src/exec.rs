@@ -91,7 +91,7 @@ impl DeviceTensor {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Kernel {
     Unary(Unary),
     Binary(Binary, bool, bool),
@@ -101,6 +101,9 @@ enum Kernel {
 }
 
 struct Dispatch {
+    /// Read by tests: which kernel a step runs.
+    #[cfg(test)]
+    kernel: Kernel,
     pipeline: usize,
     params: wgpu::Buffer,
     groups: (u32, u32),
@@ -224,7 +227,7 @@ impl WgpuExecutable {
                         groups,
                     })
                 }
-                Op::Transpose { perm } if perm.len() == 2 && perm == &[1, 0] => {
+                Op::Transpose { perm } if perm == &[1, 0] => {
                     let (rows, cols) = (shape_of(0)[0] as u64, shape_of(0)[1] as u64);
                     let grid =
                         tile_grid(rows, cols, cfg.transpose_tile, caps.max_workgroups_per_dim)
@@ -313,6 +316,8 @@ impl WgpuExecutable {
                             }));
                     }
                     Some(Dispatch {
+                        #[cfg(test)]
+                        kernel,
                         pipeline,
                         params: {
                             let bytes = bytes_of_words(&words);
@@ -744,6 +749,34 @@ mod tests {
         assert_eq!(scalar_flags(&[3], &[]), (false, true));
         assert_eq!(scalar_flags(&[], &[]), (false, false));
         assert_eq!(scalar_flags(&[3], &[3]), (false, false));
+    }
+
+    /// The kernel the first step of a one-transpose graph runs, or `None` when
+    /// there is no adapter.
+    fn transpose_kernel(shape: Vec<usize>, perm: Vec<usize>) -> Option<Kernel> {
+        let backend = WgpuBackend::new().ok()?;
+        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
+        let x = b.input("x", shape).unwrap();
+        let y = b.node("y", Op::Transpose { perm }, &[x]).unwrap();
+        let exe = backend.compile_device(&b.finish(&[y]).unwrap()).unwrap();
+        Some(exe.steps[0].dispatch.as_ref().expect("a dispatch").kernel)
+    }
+
+    #[test]
+    fn only_the_rank_two_swap_uses_the_tiled_transpose_kernel() {
+        let Some(swap) = transpose_kernel(vec![2, 3], vec![1, 0]) else {
+            return; // no adapter on this machine
+        };
+        assert_eq!(swap, Kernel::Transpose2d);
+        // The same rank with the identity permutation, and higher ranks, take the generic kernel.
+        assert_eq!(
+            transpose_kernel(vec![2, 3], vec![0, 1]),
+            Some(Kernel::Permute(2))
+        );
+        assert_eq!(
+            transpose_kernel(vec![2, 3, 4], vec![2, 0, 1]),
+            Some(Kernel::Permute(3))
+        );
     }
 
     #[test]

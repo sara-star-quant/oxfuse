@@ -8,7 +8,7 @@ Oxfuse reads graph files, ONNX models and input files, so the parsing and resour
 - Any case where an optimization pass changes the result of a graph.
 - Incorrect results from an operation compared with its documented semantics.
 
-The code is `forbid(unsafe_code)`, makes no network calls and loads no native code from a model.
+The code of every oxfuse crate is `forbid(unsafe_code)`, makes no network calls and loads no native code from a model. Its dependencies are another matter: `wgpu` and `fearless_simd` (the SIMD kernels) use `unsafe` inside, and their advisories count as ours.
 
 ## What is not
 

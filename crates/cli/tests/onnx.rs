@@ -66,10 +66,15 @@ mod enabled {
         .unwrap()
     }
 
+    /// A file of its own for every call: tests of one process run in parallel,
+    /// and two tests of the same fixture used to write one path at once, so
+    /// one of them could read the file half written.
     fn scratch(file: &str, contents: &str) -> String {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!("oxfuse-onnx-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(file);
+        let path = dir.join(format!("{}-{file}", NEXT.fetch_add(1, Ordering::Relaxed)));
         std::fs::write(&path, contents).unwrap();
         path.to_string_lossy().into_owned()
     }
