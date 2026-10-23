@@ -77,6 +77,16 @@ fn micro_rows<S: Simd>(
     }
 }
 
+/// Of the `klen` rows of B from row `k0`, how many have a full vector of `W`
+/// floats at column `j_full` inside a `b` of `b_len` floats with row length
+/// `n`. The rest need the padded copy. Rows are in order, so it is a prefix.
+fn direct_rows(b_len: usize, n: usize, j_full: usize, k0: usize, klen: usize) -> usize {
+    if b_len < j_full + W {
+        return 0;
+    }
+    ((b_len - j_full - W) / n + 1).saturating_sub(k0).min(klen)
+}
+
 /// Row-major `[m, k] x [k, n]` into `c` (`m * n`, zero on entry), bit-identical
 /// to the reference kernel.
 ///
@@ -93,16 +103,6 @@ fn micro_rows<S: Simd>(
 /// the real columns are copied back. Only the last few rows of B, where a full
 /// vector would read past the end of the slice, are copied into a zero padded
 /// buffer first; they come last in `k`, so the order of the sums is unchanged.
-/// Of the `klen` rows of B from row `k0`, how many have a full vector of `W`
-/// floats at column `j_full` inside a `b` of `b_len` floats with row length
-/// `n`. The rest need the padded copy. Rows are in order, so it is a prefix.
-fn direct_rows(b_len: usize, n: usize, j_full: usize, k0: usize, klen: usize) -> usize {
-    if b_len < j_full + W {
-        return 0;
-    }
-    ((b_len - j_full - W) / n + 1).saturating_sub(k0).min(klen)
-}
-
 #[simd]
 #[allow(clippy::too_many_arguments)]
 fn matmul_rows_simd<S: Simd>(

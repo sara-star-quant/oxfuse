@@ -9,6 +9,15 @@ use std::time::Duration;
 /// How long to wait for the device before a run or download fails.
 pub(crate) const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The longest wait a context accepts. `Duration::MAX` is the natural way to say
+/// "no timeout", but a deadline is `Instant::now() + timeout`, which panics on
+/// overflow, so anything longer is treated as one year.
+pub(crate) const MAX_TIMEOUT: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+
+fn clamp_timeout(timeout: Duration) -> Duration {
+    timeout.min(MAX_TIMEOUT)
+}
+
 /// Which limits the device is created with. `Downlevel` asks for the smallest
 /// limits every supported device guarantees, so a test run proves the kernels
 /// fit weaker devices than the one in the machine.
@@ -98,8 +107,9 @@ impl Context {
 
     /// Replaces the default 30 second wait for the device in `wait_idle` and
     /// downloads. A slow software adapter or a very large matmul can need longer.
+    /// A timeout above one year (for example `Duration::MAX`) counts as one year.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
+        self.timeout = clamp_timeout(timeout);
         self
     }
 
@@ -246,12 +256,24 @@ impl Context {
     /// Blocks until all submitted work has finished, or fails after the poll timeout.
     pub fn wait_idle(&self) -> Result<(), Error> {
         self.ensure_alive()?;
-        self.device
+        let polled = self
+            .device
             .poll(wgpu::PollType::Wait {
                 submission_index: None,
                 timeout: Some(self.timeout),
             })
-            .map_err(|e| Error::Backend(format!("waiting for the device failed: {e}")))?;
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+        self.finish_wait(polled)
+    }
+
+    /// What a wait reports once its poll returned. A device loss comes first:
+    /// the device-lost callback runs while polling, so it can only be seen now,
+    /// and it explains a failed poll better than the poll's own message. Then
+    /// the poll's failure, then the errors collected in the meantime.
+    fn finish_wait(&self, polled: Result<(), String>) -> Result<(), Error> {
+        self.ensure_alive()?;
+        polled.map_err(|e| Error::Backend(format!("waiting for the device failed: {e}")))?;
         match self.take_errors() {
             Some(message) => Err(Error::Backend(message)),
             None => Ok(()),
@@ -275,6 +297,58 @@ impl Context {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_timeout_above_a_year_counts_as_a_year() {
+        assert_eq!(MAX_TIMEOUT, Duration::from_secs(31_536_000));
+        assert_eq!(clamp_timeout(Duration::MAX), MAX_TIMEOUT);
+        assert_eq!(
+            clamp_timeout(MAX_TIMEOUT + Duration::from_secs(1)),
+            MAX_TIMEOUT
+        );
+        assert_eq!(clamp_timeout(MAX_TIMEOUT), MAX_TIMEOUT);
+        assert_eq!(
+            clamp_timeout(Duration::from_secs(30)),
+            Duration::from_secs(30)
+        );
+        assert_eq!(clamp_timeout(Duration::ZERO), Duration::ZERO);
+        // The clamped value is safe to add to a clock.
+        assert!(std::time::Instant::now().checked_add(MAX_TIMEOUT).is_some());
+    }
+
+    #[test]
+    fn a_wait_reports_a_loss_before_the_poll_failure_before_collected_errors() {
+        let Ok(ctx) = Context::new(LimitsProfile::Adapter) else {
+            return; // no adapter on this machine
+        };
+        // Nothing wrong: fine.
+        assert!(ctx.finish_wait(Ok(())).is_ok());
+        // A failed poll with a healthy device is reported as the poll's failure.
+        let e = ctx
+            .finish_wait(Err("timed out".into()))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("waiting for the device failed: timed out"),
+            "{e}"
+        );
+        // An error collected while waiting is reported once.
+        ctx.record_error("collected");
+        assert!(
+            ctx.finish_wait(Ok(()))
+                .unwrap_err()
+                .to_string()
+                .contains("collected")
+        );
+        assert!(ctx.finish_wait(Ok(())).is_ok());
+        // A device lost during the poll wins over a successful or failed poll.
+        *ctx.lost.lock().unwrap() = Some("device lost (test): gone".into());
+        for polled in [Ok(()), Err("poll broke".into())] {
+            let e = ctx.finish_wait(polled).unwrap_err().to_string();
+            assert!(e.contains("device lost (test): gone"), "{e}");
+            assert!(!e.contains("waiting for the device failed"), "{e}");
+        }
+    }
+
     #[test]
     fn the_adapter_request_prefers_the_faster_device() {
         assert_eq!(

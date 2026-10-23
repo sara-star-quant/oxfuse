@@ -7,7 +7,7 @@ What each op computes, bit for bit where that is promised, and what is deliberat
 | Op | Definition |
 |---|---|
 | `Relu` | `x > 0 ? x : 0`. NaN stays NaN. `-0.0` becomes `+0.0`. |
-| `Sigmoid` | `1 / (1 + exp(-x))` in `f32`, with an `exp` written for this project (`crates/runtime/src/math.rs`) that uses only IEEE operations and fused multiply-adds, so the result does not depend on the platform's math library. That `exp` is within 1 ulp of the correctly rounded result and equal to it for 99.7 percent of the inputs in [-104, 104]. Large negative `x` makes `exp` overflow to infinity and the result 0, without NaN. NaN stays NaN. Tested to stay within an absolute error of 4 times the `f32` epsilon of the float64 formula on `[-20, 20]`. |
+| `Sigmoid` | `1 / (1 + exp(-x))` in `f32`, with an `exp` written for this project (`crates/runtime/src/math.rs`) that uses only IEEE operations and fused multiply-adds, so the result does not depend on the platform's math library. That `exp` is within 1 ulp of the correctly rounded result and equal to it for all but 6,412,479 of the 2^32 `f32` bit patterns (0.15 percent), checked against CORE-MATH over every one of them. Large negative `x` makes `exp` overflow to infinity and the result 0, without NaN. NaN stays NaN. Tested to stay within a relative error of 4 times the `f32` epsilon of the float64 formula on `[-20, 20]`. |
 | `Add`, `Mul` | IEEE `f32` addition and multiplication per element. The operands have equal shapes, or one is rank 0 and is applied to every element of the other. No other broadcasting. |
 | `MatMul` | For `[M, K] x [K, N]`, each output element is the sum over `k` from 0 to K-1 in ascending order, starting from `+0.0`, one fused multiply-add per step (`acc = fma(a, b, acc)`, a single `f32` rounding, defined by IEEE 754, so it does not depend on the platform). No reassociation, and no skipping of a zero operand (`0 * NaN` and `0 * inf` stay NaN). |
 | `Reshape` | The same elements in the same order under a new shape. The element count must match and `-1` is not supported. |
@@ -56,4 +56,6 @@ The reference backend is checked against an independent NumPy float64 oracle (`s
 ## Not specified
 
 - NaN payload and sign bits beyond what the hardware's `f32` operations produce.
+- The floating-point environment: the contract assumes the default one. A thread that sets flush-to-zero or denormals-are-zero (x86 `MXCSR`, AArch64 `FPCR.FZ`) flushes subnormal products, partial sums and `exp` results on that thread only, so a threaded run could then differ from a serial one.
+- The `parallel` feature on 32-bit targets: it is built and tested on 64-bit platforms only (the row-band sizes multiply by the row length, which can overflow a 32-bit `usize` for the largest shapes the limits allow).
 - Any op, dtype or broadcasting rule not listed here. They are rejected at load time.

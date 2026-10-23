@@ -4,6 +4,9 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- GPU backend: `Context::with_timeout` clamps the timeout to one year, so `Duration::MAX` no longer panics; a device loss during `wait_idle` is reported as a loss and not as a poll error.
+- Docs: the `Sigmoid` accuracy claim names the exact count (6,412,479 inputs differ from the correctly rounded result), and `docs/semantics.md` states the default floating-point environment and that `parallel` is tested on 64-bit only.
+
 ## 0.4.0 - 2026-10-23
 
 - Testing and evidence: CI runs the test suite and a hash over all 2^32 `exp` and `Sigmoid` inputs on five platforms (Linux, Windows on x86_64 and arm64, macOS on arm64) and the hash must match; weekly mutation testing runs in nine parallel jobs with a known-survivors ratchet, and all 973 viable mutants of the CPU-side crates are stopped (1062 in total, 0 missed); Kani proofs cover the transpose composition and band placement.

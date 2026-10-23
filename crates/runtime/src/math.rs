@@ -7,9 +7,9 @@
 //! way everywhere, so the result depends on nothing but the input.
 //!
 //! The algorithm is the specification. It is within 1 ulp of the correctly
-//! rounded result, and equal to it for 99.7 percent of the inputs in
-//! `[-104, 104]` (measured over every one of them against CORE-MATH, see
-//! `scripts/exp-oracle`). The output bits of every input are pinned by hash in
+//! rounded result, and equal to it for all but 6,412,479 of the 2^32 `f32` bit
+//! patterns (0.15 percent), checked against CORE-MATH over every one of them,
+//! see `scripts/exp-oracle`. The output bits of every input are pinned by hash in
 //! the tests, so changing a constant here is a visible, deliberate change.
 //!
 //! This file imports nothing from the crate, so `scripts/exp-oracle` can
