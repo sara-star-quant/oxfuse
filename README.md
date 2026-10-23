@@ -152,4 +152,4 @@ Full gate: `just ci`. Oracle check: `just oracle-check` (needs `numpy`, see `scr
 
 [Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
 
-Apache-2.0. See [LICENSE](LICENSE).
+Copyright 2026 SARA STAR QUANT LLC. Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
