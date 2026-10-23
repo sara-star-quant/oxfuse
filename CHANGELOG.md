@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `docs/provenance.md` records the source and licence of every algorithm and of the dependencies; a test fails when a function of the math and kernel files has no row.
+
 - `docs/contract.json` states each operator's numeric contract on the reference, CPU and GPU backends (exact, fused-defined, own-math, bounded or measured). A test fails when an operator has no row, an evidence path is missing or a named test does not exist.
 
 - Tests and docs: a row's result is proven independent of the batch size (1 to 64 rows, across the register block, the k-tile, the tail columns and the thread split) on the reference and fast CPU backends and on fusing GPU adapters; `docs/semantics.md` states it.
