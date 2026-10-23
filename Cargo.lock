@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "insta",
@@ -974,14 +974,14 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "oxfuse-onnx"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oxfuse-core",
  "oxfuse-runtime",
@@ -992,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-runtime"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "criterion",
  "fearless_simd",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "oxfuse-wgpu"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "criterion",
  "naga",

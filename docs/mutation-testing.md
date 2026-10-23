@@ -1,24 +1,30 @@
 # Mutation testing
 
-`cargo-mutants` 27.1.0 breaks the code in small ways (a `<` becomes `<=`, a function returns a constant) and reruns the tests. A mutant that no test notices is a gap in the tests, or a change that cannot alter any result. Every survivor below is the second kind, with the reason. Nothing is left unexplained.
+`cargo-mutants` 27.1.0 breaks the code in small ways (a `<` becomes `<=`, a function returns a constant) and reruns the tests. A mutant that no test notices is a gap in the tests or redundant code. The rule here is to fix the cause, with a test or simpler code, and to list a survivor only when no input and no platform can tell the two programs apart. Today the list is empty.
 
 ## Result
 
-Run on an Apple M1 Pro on 2026-10-21, except the `exec.rs` and `context.rs` rows, rerun on 2026-10-22 after the host path was reworked. Rows without a tree note ran on crates tree 026fd4c; rows with one ran on that tree (`git rev-parse --short HEAD:crates` names the tree).
+CPU-side crates, full run of every shard in CI on 2026-10-23 (run 39985230656, `ubuntu-latest`, commit of PR 42):
 
-| Scope | Mutants | Caught | Timed out (counts as caught) | Unviable (do not compile) | Missed |
+| Shard | Mutants | Caught | Timed out (counts as caught) | Unviable (do not compile) | Missed |
 |---|---|---|---|---|---|
-| `oxfuse-core`, `oxfuse-runtime`, `oxfuse` (CLI, built with the GPU feature) | 594 | 538 | 4 | 49 | 3 |
-| `oxfuse-wgpu` `config.rs` | 100 | 98 | 0 | 1 | 1 |
-| `oxfuse-wgpu` `bounds.rs` | 45 | 45 | 0 | 0 | 0 |
-| `oxfuse-wgpu` `model.rs` (tree 2e3e5d7) | 245 | 240 | 0 | 2 | 3 |
-| `oxfuse-wgpu` `exec.rs` (tree 6204ce2) | 100 | 74 | 0 | 24 | 2 |
-| `oxfuse-wgpu` `context.rs` (tree 6204ce2) | 33 | 23 | 0 | 9 | 1 |
-| `oxfuse-wgpu` `selftest.rs` (tree 2e3e5d7) | 91 | 88 | 0 | 3 | 0 |
-| `oxfuse-onnx` (tree 521c719) | 273 | 254 | 0 | 18 | 1 |
-| Total | 1481 | 1360 | 4 | 106 | 11 |
+| core | 201 | 170 | 0 | 31 | 0 |
+| runtime (6 sub-shards) | 480 | 454 | 0 | 26 | 0 |
+| cli | 113 | 93 | 6 | 14 | 0 |
+| onnx | 268 | 250 | 0 | 18 | 0 |
+| **Total** | **1062** | **967** | **6** | **89** | **0** |
 
-Of the 1375 mutants that compile, 1364 were stopped (99.2%) and the other 11 are explained below. The first self-test run missed 40 of 77, which led to extracting its logic into small functions with their own tests; that is why it has its own tree id.
+All 973 mutants that compile were stopped. The six runtime sub-shards add up to the 480 mutants `cargo mutants --list` reports for the package with the `parallel` feature; check that sum whenever the shard count changes (shards are numbered from 0, and a skipped shard shows only as a smaller total).
+
+GPU crate, run locally on an Apple M1 Pro (Metal) because it needs a real adapter. It has 624 mutants since the Kani-only file `proofs.rs` is excluded (`.cargo/mutants.toml`). It ran in three passes on 2026-10-23, each on the code of that moment:
+
+| Pass | Mutants | Caught | Timed out | Unviable | Missed |
+|---|---|---|---|---|---|
+| 1. whole crate, stopped at 587 of 634 | 587 | 540 | 1 | 37 | 9 |
+| 2. the sites fixed after pass 1 plus the 47 not reached | 212 | 205 | 0 | 6 | 1 |
+| 3. `binary` and `transpose2d` after the last fix | 65 | 65 | 0 | 0 | 0 |
+
+The 9 misses of pass 1 were six speed-only or redundant sites (`tile_grid`, the adapter request, the transpose kernel guard twice, the `(true, true)` arm of `binary`, the transpose tile stride) and three constants inside the Kani-only module. The six were fixed with a pure function, a stored choice a test can read, or deleted code, and the constants were excluded with their file. Pass 2 found one more in `binary` (an `&&` that equal-length operands made equivalent); the length is now the longer operand and pass 3 confirms it. The mutation job for pull requests runs the changed GPU lines on software Vulkan; the whole crate is a local run.
 
 ## Shards
 
@@ -52,21 +58,9 @@ A job turns red when a mutant is missed and is not listed in [known-survivors.tx
 
 ## Survivors
 
-### CPU backends (3)
+None. `known-survivors.txt` is empty, and the mutation job turns red on any miss.
 
-- `cpu/mod.rs`: `uses[slot] += 1` replaced by `*=`, and the guard `uses[slot] == 1` replaced by `false`. They only decide whether an output buffer is moved or copied, so the bits are the same. The opposite mutation (always move) is caught by `same_value_can_be_output_twice`.
-- `cpu/kernels.rs`, `matmul_rows`: the leftover-column guard `j < j1` replaced by `j <= j1`. When `j == j1` the leftover loop runs over empty slices.
-
-### ONNX importer (1)
-
-- `lower.rs`, `resolve_reshape`: the guard `v > 0` replaced by `v >= 0`. The `0` entry is matched by the arm above it, so the guard never sees zero. The first run of this crate missed 19; they led to tests for the absent-output rule, operand counts, error reasons, expansion strides and attribute types, and to a fix: a Dropout with an empty second output name (the mask left out) was rejected. A review of the finished crate then found a panic on a node without outputs, a `beta = 0` Gemm that let infinity in `C` through, and int64 initializers listed as inputs being rejected; each got a test that failed first, and the attribute value check they led to got its own tests.
-
-### GPU host code (7)
-
-- `exec.rs` (2): the guard that sends a rank-two `[1, 0]` transpose to the tiled kernel replaced by `false`, or `==` by `!=`. The generic permute kernel gives the same bits, so only the choice of kernel changes. The identity permutation and rank-zero transposes have their own tests.
-- `context.rs` (1): deleting `power_preference` from the adapter request. It only chooses between several adapters, which a one-adapter machine cannot show.
-- `config.rs` (1): in `tile_grid`, `rows == 0 || cols == 0` with `||` replaced by `&&`. A zero row count still produces zero tiles, which `grid_fold` rejects. Each zero argument has its own test.
-- `model.rs` (3): `k - k0` replaced by `k + k0` in `kmax`. The extra iterations read zero-filled tile cells and add `+0.0`. `t + 1` replaced by `t * 1` in the transpose tile stride: the padding avoids bank conflicts on a device, which the model does not have. The `(true, true)` arm of `binary` deleted: the fallback gives the same length.
+The decisions that used to survive are now visible to tests: whether a Sigmoid or a transpose is split across threads is a pure function with exact boundary tests; whether an executor step reuses a buffer, or copies an output, is counted by a test-only counter; which transpose kernel runs is stored where a test reads it; the order of the operands of an in-place `Add` or `Mul` was deleted, since only a NaN payload depends on it and the contract counts all NaNs as one value.
 
 ## What mutation testing does not cover
 
@@ -77,4 +71,4 @@ A job turns red when a mutant is missed and is not listed in [known-survivors.tx
 
 ## Rule
 
-A new survivor gets a test, or an entry here with the reason it cannot change a result. A mutation score alone says little; the list is the record.
+A surviving mutant gets a test or simpler code. It is listed in `known-survivors.txt` only when no input and no platform can tell the two programs apart, with the reason in this file. A mutation score alone says little; the evidence is the empty list, the shards that reproduce it and the tests that name what they pin.
