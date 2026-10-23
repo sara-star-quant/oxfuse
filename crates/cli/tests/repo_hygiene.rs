@@ -40,6 +40,43 @@ fn no_working_files_are_tracked() {
     assert!(leaked.is_empty(), "working files are tracked: {leaked:?}");
 }
 
+/// Build output and large binaries do not belong in the repository. A tool
+/// outside the workspace (`scripts/exp-oracle`) once had its `target/`
+/// directory committed: 174 files, 20 MiB, compiled third-party objects.
+#[test]
+fn no_build_output_or_large_files_are_tracked() {
+    let Some(files) = tracked() else { return };
+    let root = root();
+    let in_target: Vec<&String> = files
+        .iter()
+        .filter(|f| f.split('/').any(|part| part == "target"))
+        .collect();
+    assert!(
+        in_target.is_empty(),
+        "build output is tracked: {in_target:?}"
+    );
+    let binary: Vec<&String> = files
+        .iter()
+        .filter(|f| {
+            [
+                ".o", ".a", ".rlib", ".rmeta", ".so", ".dylib", ".dll", ".exe",
+            ]
+            .iter()
+            .any(|ext| f.ends_with(ext))
+        })
+        .collect();
+    assert!(binary.is_empty(), "compiled files are tracked: {binary:?}");
+    const LIMIT: u64 = 1 << 20;
+    let large: Vec<String> = files
+        .iter()
+        .filter_map(|f| {
+            let size = fs::metadata(root.join(f)).ok()?.len();
+            (size > LIMIT).then(|| format!("{f} ({size} bytes)"))
+        })
+        .collect();
+    assert!(large.is_empty(), "files over 1 MiB are tracked: {large:?}");
+}
+
 #[test]
 fn there_is_exactly_one_licence_and_it_is_apache_2_0() {
     let root = root();
