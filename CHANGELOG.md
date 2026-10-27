@@ -4,15 +4,14 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
-- `docs/comparison.md`: what ONNX Runtime, tract, rten, candle, Burn and the RepDL paper say about themselves (scope, licence, devices, training, reproducibility, ONNX operators, releases), each cell quoted from the page at a named version with the link and the date read. No speed column, no ranking. `just links` checks the links before a release.
-
-- `docs/provenance.md` records the source and licence of every algorithm and of the dependencies; a test fails when a function of the math and kernel files has no row.
-
-- `docs/contract.json` states each operator's numeric contract on the reference, CPU and GPU backends (exact, fused-defined, own-math, bounded or measured). A test fails when an operator has no row, an evidence path is missing or a named test does not exist.
-
-- Tests and docs: a row's result is proven independent of the batch size (row counts from 1 to 13 and 31 to 70, across the register block, the k-tile, the tail columns and the thread split) on the reference and fast CPU backends and on fusing GPU adapters; `docs/semantics.md` states it.
+## 0.4.1 - 2026-10-27
 
 - GPU backend: a panic in one thread no longer poisons the device state for every later call (locks recover instead of panicking); a failed shader compile is dropped from the shared pipeline cache so a retry compiles again; when a device error and a backend error happen in one call, the device error is reported first and the backend error follows as context (typed errors such as a wrong input count are never replaced).
+- Tests and docs: a row's result is proven independent of the batch size (row counts from 1 to 13 and 31 to 70, across the register block, the k-tile, the tail columns and the thread split) on the reference and fast CPU backends and on fusing GPU adapters; `docs/semantics.md` states it.
+- `docs/contract.json` states each operator's numeric contract on the reference, CPU and GPU backends (exact, fused-defined, own-math, bounded or measured). A test fails when an operator has no row, an evidence path is missing or a named test does not exist.
+- `docs/provenance.md` records the source and licence of every algorithm and of the dependencies; a test fails when a function of the math and kernel files has no row.
+- `docs/comparison.md`: what ONNX Runtime, tract, rten, candle, Burn and the RepDL paper say about themselves (scope, licence, devices, training, reproducibility, ONNX operators, releases), each cell quoted from the page at a named version with the link and the date read. No speed column, no ranking. `just links` checks the links before a release.
+- CI and `cargo deny`: unknown registries and git sources are denied, and the mutants workflow no longer interpolates the base branch name into a shell command.
 
 ## 0.4.0 - 2026-10-23
 
