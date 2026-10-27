@@ -6,3 +6,7 @@ allow = [
     "ISC",
     "Zlib",
 ]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

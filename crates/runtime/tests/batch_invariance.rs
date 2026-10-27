@@ -9,8 +9,12 @@ use common::comparable_bits;
 use oxfuse_core::{GraphBuilder, Limits, Op};
 use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, Tensor};
 
-/// Rows around the 6-row register block, the 16-row thread task and past both.
-const ROWS: [usize; 17] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 31, 32, 33, 64];
+/// Rows around the 6-row register block and the 16-row thread task. With the
+/// sizes below only 64 and 70 reach the thread threshold, and 70 leaves a short
+/// last task (70 = 4 * 16 + 6).
+const ROWS: [usize; 18] = [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 31, 32, 33, 64, 70,
+];
 /// `K` crosses the 256-deep k-tile; `N` and `P` leave tail columns of 6 and 10.
 const K: usize = 300;
 const N: usize = 118;

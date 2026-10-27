@@ -24,7 +24,10 @@ const FILES: [&str; 7] = [
 /// Names of the functions before the test module. `main` is the WGSL entry
 /// point inside the shader strings, not a Rust function.
 fn functions(path: &str) -> BTreeSet<String> {
-    let source = fs::read_to_string(root().join(path)).unwrap();
+    names_in(&fs::read_to_string(root().join(path)).unwrap())
+}
+
+fn names_in(source: &str) -> BTreeSet<String> {
     let code = source.split("\nmod tests {").next().unwrap();
     code.lines()
         .filter_map(|line| {
@@ -32,7 +35,11 @@ fn functions(path: &str) -> BTreeSet<String> {
             let line = line.strip_prefix("pub").map_or(line, |rest| {
                 rest.trim_start_matches(|c| c != ' ').trim_start()
             });
-            let line = line.strip_prefix("const ").unwrap_or(line);
+            let mut line = line;
+            // Qualifiers that can stand between the visibility and `fn`.
+            for qualifier in ["const ", "async ", "unsafe ", "extern \"C\" "] {
+                line = line.strip_prefix(qualifier).unwrap_or(line);
+            }
             let name = line.strip_prefix("fn ")?;
             let end = name.find(|c: char| !(c.is_alphanumeric() || c == '_'))?;
             Some(name[..end].to_owned())
@@ -115,4 +122,13 @@ fn the_scan_finds_the_functions_it_should() {
             .into_iter()
             .collect()
     );
+}
+
+#[test]
+fn the_scan_sees_every_way_to_write_a_function() {
+    let source = "fn a() {}\npub fn b() {}\npub(crate) fn c() {}\npub(super) const fn d() {}\n\
+                  unsafe fn e() {}\npub unsafe fn f() {}\npub(crate) async fn g() {}\n    fn h<T>() {}\n\
+                  mod tests {\nfn hidden() {}\n}";
+    let want: BTreeSet<String> = "abcdefgh".chars().map(|c| c.to_string()).collect();
+    assert_eq!(names_in(&source.replace("mod tests", "\nmod tests")), want);
 }
