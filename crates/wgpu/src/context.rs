@@ -9,9 +9,6 @@ use std::time::Duration;
 /// How long to wait for the device before a run or download fails.
 pub(crate) const POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The longest wait a context accepts. `Duration::MAX` is the natural way to say
-/// "no timeout", but a deadline is `Instant::now() + timeout`, which panics on
-/// overflow, so anything longer is treated as one year.
 /// Locks `mutex` even if a thread panicked while holding it. Every value
 /// guarded in this crate (a list, an `Option`, reusable buffers) is rewritten
 /// or only appended to, so it is consistent after a panic, and a panic inside
@@ -20,6 +17,9 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The longest wait a context accepts. `Duration::MAX` is the natural way to say
+/// "no timeout", but a deadline is `Instant::now() + timeout`, which panics on
+/// overflow, so anything longer is treated as one year.
 pub(crate) const MAX_TIMEOUT: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 
 fn clamp_timeout(timeout: Duration) -> Duration {
@@ -225,7 +225,9 @@ impl Context {
 
     /// Runs `f` in `scoped` and, when it fails, drops from the cache the
     /// pipelines `f` compiled (it lists their sources in the vector it is
-    /// given): an invalid pipeline must not be handed out again.
+    /// given): an invalid pipeline must not be handed out again. Another thread
+    /// that asks for the same source between the failing compile and the
+    /// eviction gets the invalid pipeline once and fails once; it does not stay.
     pub(crate) fn compile_scoped<T>(
         &self,
         f: impl FnOnce(&mut Vec<String>) -> Result<T, Error>,
@@ -530,6 +532,10 @@ mod tests {
         let _ = context.device().poll(wgpu::PollType::Poll);
         let message = context.take_errors().expect("both errors are kept");
         assert!(message.contains("kept"), "{message}");
+        assert!(
+            message.contains("; "),
+            "the callback's error is kept too: {message}"
+        );
         assert_eq!(context.take_errors(), None);
     }
 

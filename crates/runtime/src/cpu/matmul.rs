@@ -277,15 +277,16 @@ mod tests {
         // A tile that starts past the fitting rows has none.
         assert_eq!(direct_rows(50, 10, 0, 4, 1), 0);
     }
-    /// With `parallel`, the 64-row run is split across threads and the single
-    /// rows are not, so equal bits also prove the thread split changes nothing.
+    /// With `parallel`, the 64- and 70-row runs are split across threads (70 leaves
+    /// a short last task) and the single rows are not, so equal bits also prove
+    /// the thread split changes nothing.
     #[test]
     fn rows_of_a_batch_equal_the_single_row_runs_across_the_thread_threshold() {
         let (k, n) = (300, 118);
         let b: Vec<f32> = (0..k * n)
             .map(|i| ((i * 37 % 1999) as f32) / 700.0 - 1.4)
             .collect();
-        for m in (1..=13).chain([31, 32, 33, 64]) {
+        for m in (1..=13).chain([31, 32, 33, 64, 70]) {
             let a: Vec<f32> = (0..m * k)
                 .map(|i| ((i * 53 % 2003) as f32) / 600.0 - 1.6)
                 .collect();

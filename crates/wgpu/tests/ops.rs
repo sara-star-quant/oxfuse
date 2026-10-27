@@ -159,7 +159,7 @@ fn matmul_rows_do_not_depend_on_the_batch_where_the_adapter_fuses() {
     }
     let (k, n) = (300, 118);
     let b = tensor(&[k, n], 5, true);
-    for m in [1usize, 2, 6, 7, 16, 33, 64] {
+    for m in [1usize, 2, 6, 7, 16, 33, 64, 70] {
         let a = tensor(&[m, k], m as u64, true);
         let full = bits(&device(Op::MatMul, &[a.clone(), b.clone()]));
         for r in 0..m {

@@ -35,7 +35,9 @@ jobs:
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-mutants@27.1.0
-      - run: git diff origin/${{ github.base_ref }}.. > pr.diff
+      - run: git diff "origin/$BASE_REF.." > pr.diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
       # The GPU crate needs an adapter; its own job below runs it on software Vulkan.
       - run: |
           status=0
@@ -67,7 +69,9 @@ jobs:
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-mutants@27.1.0
-      - run: git diff origin/${{ github.base_ref }}.. > pr.diff
+      - run: git diff "origin/$BASE_REF.." > pr.diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
       - run: |
           status=0
           cargo mutants --in-diff pr.diff -p oxfuse-wgpu --test-package oxfuse-wgpu -j 2 --timeout-multiplier 5 --minimum-test-timeout 20 || status=$?
