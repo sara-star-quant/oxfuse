@@ -137,3 +137,7 @@ kani:
 # GPU benchmarks against the fast CPU backend. Slow, needs an adapter; writes target/criterion for bench-report.
 bench-gpu:
     cargo bench -p oxfuse-wgpu --locked
+
+# Fetch every link in docs/comparison.md (needs the network; run before a release).
+links:
+    python3 -I scripts/check_links.py

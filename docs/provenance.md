@@ -28,4 +28,4 @@ Licences are those in each crate's metadata, checked with `cargo metadata` on 20
 
 ## Not used
 
-No code, tables or constants from GPL or LGPL projects, from projects without a stated licence, or from closed sources; no vendor or contrib operators (the importer rejects every domain but `ai.onnx`). Statements about other projects appear only with a source and a date.
+No code, tables or constants from GPL or LGPL projects, from projects without a stated licence, or from closed sources; no vendor or contrib operators (the importer rejects every domain but `ai.onnx`). Statements about other projects appear only with a source and a date, in [comparison.md](comparison.md).
