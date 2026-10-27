@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `docs/comparison.md`: what ONNX Runtime, tract, rten, candle, Burn and the RepDL paper say about themselves (scope, licence, devices, training, reproducibility, ONNX operators, releases), each cell quoted from the page at a named version with the link and the date read. No speed column, no ranking. `just links` checks the links before a release.
+
 - `docs/provenance.md` records the source and licence of every algorithm and of the dependencies; a test fails when a function of the math and kernel files has no row.
 
 - `docs/contract.json` states each operator's numeric contract on the reference, CPU and GPU backends (exact, fused-defined, own-math, bounded or measured). A test fails when an operator has no row, an evidence path is missing or a named test does not exist.
