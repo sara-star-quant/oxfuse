@@ -60,6 +60,7 @@ cmp golden.json out.json
 oxfuse run model.onnx --inputs inputs.json --backend reference     # needs --features onnx
 
 # Decide whether a GPU can be trusted for your numerics before you rely on it.
+oxfuse compare a.json b.json                                        # bit differences between two outputs files
 oxfuse gpu-selftest                                                 # needs --features wgpu
 
 # See what each optimization pass changes in a graph.
