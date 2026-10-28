@@ -23,16 +23,19 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 }
 
 /// Over the little-endian bit patterns, so `-0.0` and `0.0` differ.
-pub(crate) fn digest(name: &str, tensor: &Tensor) -> OutputDigest {
-    let bytes: Vec<u8> = tensor
-        .data()
+pub(crate) fn digest_values(values: &[f32]) -> String {
+    let bytes: Vec<u8> = values
         .iter()
         .flat_map(|v| v.to_bits().to_le_bytes())
         .collect();
+    hex(&bytes)
+}
+
+pub(crate) fn digest(name: &str, tensor: &Tensor) -> OutputDigest {
     OutputDigest {
         name: name.to_owned(),
         shape: tensor.shape().to_vec(),
-        sha256: hex(&bytes),
+        sha256: digest_values(tensor.data()),
     }
 }
 

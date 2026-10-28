@@ -3,6 +3,7 @@
 //! [repository README](https://github.com/sara-star-quant/oxfuse).
 
 mod commands;
+mod compare;
 mod error;
 mod format;
 mod loader;
@@ -14,6 +15,7 @@ pub use commands::{
     BackendKind, Dims, RunFailure, RunOptions, RunOutput, check, check_with, dims_from_args,
     inspect, run, run_with,
 };
+pub use compare::compare;
 pub use error::CliError;
 pub use format::{NamedTensorFile, OutputsFile, TensorFile};
 pub use loader::load_graph;

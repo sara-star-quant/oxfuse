@@ -10,7 +10,7 @@ readme = "README.md"
 exclude = ["tests"]
 keywords = ["onnx", "tensor", "inference", "wgpu", "compiler"]
 categories = ["command-line-utilities", "artificial-intelligence", "compilers"]
-description = "Tensor graph compiler and runner: ONNX import, bit-exact CPU backends, optional wgpu GPU backend. Commands: check, run, inspect, gpu-selftest."
+description = "Tensor graph compiler and runner: ONNX import, bit-exact CPU backends, optional wgpu GPU backend. Commands: check, run, compare, inspect, gpu-selftest."
 
 [lib]
 name = "oxfuse_cli"

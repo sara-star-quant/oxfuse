@@ -146,12 +146,26 @@ pub struct RunFailure {
 }
 
 impl RunFailure {
+    pub(crate) fn with_stdout(error: CliError, stdout: String) -> Self {
+        Self {
+            error,
+            stderr: String::new(),
+            stdout,
+        }
+    }
+
     fn bare(error: impl Into<CliError>) -> Self {
         Self {
             error: error.into(),
             stderr: String::new(),
             stdout: String::new(),
         }
+    }
+}
+
+impl From<CliError> for RunFailure {
+    fn from(error: CliError) -> Self {
+        Self::bare(error)
     }
 }
 

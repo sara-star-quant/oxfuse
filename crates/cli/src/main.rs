@@ -54,6 +54,17 @@ enum Command {
         #[arg(long, value_enum)]
         limits: Option<LimitsArg>,
     },
+    /// Compare two outputs files of `run`, bit by bit, and say what the difference means
+    Compare {
+        a: PathBuf,
+        b: PathBuf,
+        /// Run record (from `run --manifest`) of A
+        #[arg(long)]
+        manifest_a: Option<PathBuf>,
+        /// Run record of B
+        #[arg(long)]
+        manifest_b: Option<PathBuf>,
+    },
     /// Print the IR before and after each optimization pass
     Inspect {
         file: PathBuf,
@@ -113,6 +124,18 @@ fn main() -> ExitCode {
                         let _ = emit(&failure.stdout, "");
                         (failure.error, failure.stderr)
                     })
+            }),
+        Command::Compare {
+            a,
+            b,
+            manifest_a,
+            manifest_b,
+        } => oxfuse_cli::compare(a, b, manifest_a.as_deref(), manifest_b.as_deref())
+            .map(|report| (report, String::new()))
+            .map_err(|failure| {
+                // The report goes to stdout even when the verdict fails the run.
+                let _ = emit(&failure.stdout, "");
+                (failure.error, failure.stderr)
             }),
         #[cfg(feature = "wgpu")]
         Command::GpuSelftest { limits } => oxfuse_cli::gpu_selftest(limits.is_some())

@@ -36,6 +36,14 @@ pub enum CliError {
     OnnxDisabled { path: String },
     #[error("--dim `{name}` is given more than once")]
     DuplicateDim { name: String },
+    #[error("outputs differ: {verdict}")]
+    CompareDiffers { verdict: &'static str },
+    #[error("cannot compare: {reason}")]
+    CompareOutputs { reason: String },
+    #[error("run record `{path}`: {reason}")]
+    CompareManifest { path: String, reason: String },
+    #[error("invalid outputs file `{path}`: {reason}")]
+    CompareFile { path: String, reason: String },
     #[error("graph needs about {estimated} multiply-adds, over --max-macs {limit}")]
     TooMuchWork { estimated: usize, limit: usize },
 }
@@ -57,6 +65,10 @@ impl CliError {
             CliError::OnnxDisabled { .. } => "E107",
             CliError::DuplicateDim { .. } => "E108",
             CliError::TooMuchWork { .. } => "E109",
+            CliError::CompareDiffers { .. } => "E110",
+            CliError::CompareOutputs { .. } => "E111",
+            CliError::CompareManifest { .. } => "E112",
+            CliError::CompareFile { .. } => "E113",
         }
     }
 }
