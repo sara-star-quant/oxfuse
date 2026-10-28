@@ -4,6 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `oxfuse run --manifest FILE` writes a JSON record of the run: version, backend, platform, SIMD level, and SHA-256 of the model, inputs and each output. See `docs/manifest.md`.
 - `oxfuse run --max-macs N` refuses a graph that needs more than `N` multiply-adds (`E109`) before any pass runs, and `Graph::estimated_macs` gives the number.
 - The ONNX importer counts messages before decoding and refuses more than ten per `max_values` (`E314`). A 16 MiB file of empty nodes took 1.2 GB to decode and now fails at 21 MB.
 

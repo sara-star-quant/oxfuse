@@ -13,6 +13,13 @@ use oxfuse_core::{Error, Graph, Op};
 
 pub struct CpuBackend;
 
+/// The SIMD level the fast backend picks on this machine, for run records.
+pub fn simd_level() -> String {
+    let debug = format!("{:?}", fearless_simd::Level::new());
+    // `Neon(Neon { .. })`: the variant name is the part worth recording.
+    debug.split('(').next().unwrap_or_default().to_owned()
+}
+
 impl Backend for CpuBackend {
     fn compile(&self, graph: &Graph) -> Result<Box<dyn Executable>, Error> {
         let plan = Plan::build(graph);
@@ -178,6 +185,21 @@ impl Executable for CpuExecutable {
 mod tests {
     use super::*;
     use oxfuse_core::{GraphBuilder, Limits, ValueId};
+
+    #[test]
+    fn the_simd_level_is_a_plain_name() {
+        let name = simd_level();
+        let known = [
+            "Fallback",
+            "Neon",
+            "WasmSimd128",
+            "Sse2",
+            "Sse4_2",
+            "Avx512",
+            "Avx2",
+        ];
+        assert!(known.contains(&name.as_str()), "{name}");
+    }
 
     /// Runs the graph on `[1, -2, 3]` and returns the output buffers copied
     /// and the steps that reused an operand's buffer.
