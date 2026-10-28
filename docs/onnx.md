@@ -7,7 +7,7 @@
     oxfuse check model.onnx
     oxfuse inspect model.onnx
 
-A model with a named dimension (`N`, `batch`) needs a value for it: `--dim N=1`. The flag repeats; naming a dimension twice is an error. Without the feature, an `.onnx` file fails with `E107`.
+A model with a named dimension (`N`, `batch`) needs a value for it: `--dim N=1`. The flag repeats; naming a dimension twice is an error. Without the feature, an `.onnx` file fails with `E107`. A file of many tiny messages costs far more memory than its bytes (a 16 MiB file of empty nodes peaked at 1.2 GB), so the importer counts messages before decoding and refuses more than ten per `max_values` (`E314`).
 
 ## What is supported
 
@@ -55,8 +55,9 @@ A model is untrusted input, like a graph file. The size cap, the tensor element 
 | E311 | a node-level shape or operand error |
 | E312 | a named dimension without `--dim` |
 | E313 | an expansion over a limit |
+| E314 | more messages than the importer allows (ten per `max_values`, so a file of tiny messages cannot exhaust memory) |
 
-Errors from the IR (`E0xx`) pass through with their own codes. `E107` and `E108` come from the CLI.
+Errors from the IR (`E0xx`) pass through with their own codes. `E107`, `E108` and `E109` come from the CLI.
 
 ## How it is checked
 

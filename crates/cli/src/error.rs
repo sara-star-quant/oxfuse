@@ -36,6 +36,8 @@ pub enum CliError {
     OnnxDisabled { path: String },
     #[error("--dim `{name}` is given more than once")]
     DuplicateDim { name: String },
+    #[error("graph needs about {estimated} multiply-adds, over --max-macs {limit}")]
+    TooMuchWork { estimated: usize, limit: usize },
 }
 
 impl CliError {
@@ -54,6 +56,7 @@ impl CliError {
             CliError::Onnx(e) => e.code(),
             CliError::OnnxDisabled { .. } => "E107",
             CliError::DuplicateDim { .. } => "E108",
+            CliError::TooMuchWork { .. } => "E109",
         }
     }
 }

@@ -176,3 +176,86 @@ fn dump_ir_is_printed_even_when_the_run_fails() {
         "the IR must come before the error line: {text}"
     );
 }
+
+fn run_with_limit(graph: &str, inputs: &str, limit: &str) -> Output {
+    let (graph, inputs) = (example(graph), example(inputs));
+    oxfuse(&[
+        "run".as_ref(),
+        graph.as_os_str(),
+        "--inputs".as_ref(),
+        inputs.as_os_str(),
+        "--max-macs".as_ref(),
+        limit.as_ref(),
+    ])
+}
+
+#[test]
+fn max_macs_at_the_estimate_runs_and_one_below_refuses() {
+    // matmul.json is 2 x 2 times 2 x 2: eight multiply-adds.
+    let at = run_with_limit("matmul.json", "matmul.inputs.json", "8");
+    assert!(at.status.success(), "{}", stderr(&at));
+    let below = run_with_limit("matmul.json", "matmul.inputs.json", "7");
+    assert!(!below.status.success());
+    assert!(below.stdout.is_empty(), "nothing runs before the refusal");
+    let text = stderr(&below);
+    assert!(text.contains("error[E109]"), "{text}");
+    assert!(
+        text.contains("8 multiply-adds, over --max-macs 7"),
+        "{text}"
+    );
+}
+
+#[test]
+fn max_macs_zero_refuses_any_graph_with_a_node() {
+    let out = run_with_limit("relu.json", "relu.inputs.json", "0");
+    assert!(stderr(&out).contains("error[E109]"));
+}
+
+#[test]
+fn max_macs_that_is_not_a_number_is_a_usage_error() {
+    let graph = example("relu.json");
+    for bad in ["x", "-1", "1.5", ""] {
+        let flag = format!("--max-macs={bad}");
+        let out = oxfuse(&["run".as_ref(), graph.as_os_str(), flag.as_ref()]);
+        assert!(!out.status.success(), "{bad:?}");
+        assert!(stderr(&out).contains("--max-macs"), "{bad:?}");
+    }
+}
+
+#[test]
+fn max_macs_counts_the_graph_before_the_passes_fold_it() {
+    // const_relu.json is all constants: the fold pass would compute it away,
+    // but the limit still sees the node.
+    let (graph, out) = (example("const_relu.json"), "0");
+    let refused = oxfuse(&[
+        "run".as_ref(),
+        graph.as_os_str(),
+        "--max-macs".as_ref(),
+        out.as_ref(),
+    ]);
+    assert!(stderr(&refused).contains("error[E109]"));
+}
+
+#[test]
+fn without_max_macs_nothing_is_refused() {
+    let out = oxfuse(&["run".as_ref(), example("const_relu.json").as_os_str()]);
+    assert!(out.status.success(), "{}", stderr(&out));
+}
+
+#[test]
+fn max_macs_applies_to_every_backend() {
+    for backend in ["reference", "cpu"] {
+        let (graph, inputs) = (example("matmul.json"), example("matmul.inputs.json"));
+        let out = oxfuse(&[
+            "run".as_ref(),
+            graph.as_os_str(),
+            "--inputs".as_ref(),
+            inputs.as_os_str(),
+            "--backend".as_ref(),
+            backend.as_ref(),
+            "--max-macs".as_ref(),
+            "7".as_ref(),
+        ]);
+        assert!(stderr(&out).contains("error[E109]"), "{backend}");
+    }
+}
