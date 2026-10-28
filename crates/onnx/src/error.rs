@@ -10,6 +10,8 @@ pub enum OnnxError {
     TooLarge { found: usize, limit: usize },
     #[error("model nests messages too deeply")]
     TooDeep,
+    #[error("model has more than {limit} messages")]
+    TooManyMessages { limit: usize },
     #[error("unsupported opset {found}: re-export with opset 13 to 21")]
     Opset { found: String },
     #[error("node `{node}`: unsupported operator domain `{domain}`")]
@@ -51,6 +53,7 @@ impl OnnxError {
             OnnxError::Decode { .. } => "E300",
             OnnxError::TooLarge { .. } => "E301",
             OnnxError::TooDeep => "E302",
+            OnnxError::TooManyMessages { .. } => "E314",
             OnnxError::Opset { .. } => "E303",
             OnnxError::Domain { .. } => "E304",
             OnnxError::UnsupportedOp { .. } => "E305",
@@ -109,13 +112,14 @@ mod tests {
                 found: 2,
                 limit: 1,
             },
+            OnnxError::TooManyMessages { limit: 1 },
         ]
     }
 
     #[test]
     fn codes_are_unique_and_stable() {
         let codes: Vec<_> = one_of_each().iter().map(OnnxError::code).collect();
-        let expected: Vec<String> = (300..314).map(|n| format!("E{n}")).collect();
+        let expected: Vec<String> = (300..315).map(|n| format!("E{n}")).collect();
         assert_eq!(codes, expected);
     }
 

@@ -40,6 +40,9 @@ enum Command {
         /// Value for a named dimension of an ONNX model, as NAME=VALUE; repeatable
         #[arg(long = "dim", value_parser = parse_dim)]
         dim: Vec<(String, usize)>,
+        /// Refuse a graph that needs more than this many multiply-adds
+        #[arg(long)]
+        max_macs: Option<usize>,
     },
     /// Measure the GPU adapter against the reference and print a report
     #[cfg(feature = "wgpu")]
@@ -86,6 +89,7 @@ fn main() -> ExitCode {
             dump_ir,
             backend,
             dim,
+            max_macs,
         } => oxfuse_cli::dims_from_args(dim)
             .map_err(|error| (error, String::new()))
             .and_then(|dims| {
@@ -95,6 +99,7 @@ fn main() -> ExitCode {
                     disabled: disable_pass.clone(),
                     dump_ir: *dump_ir,
                     dims,
+                    max_macs: *max_macs,
                 };
                 oxfuse_cli::run_with(file, inputs.as_deref(), &options)
                     .map(|out| (out.stdout, out.stderr))
@@ -117,6 +122,7 @@ fn main() -> ExitCode {
                     disabled: disable_pass.clone(),
                     dump_ir: false,
                     dims,
+                    max_macs: None,
                 };
                 oxfuse_cli::inspect(file, &options)
             })

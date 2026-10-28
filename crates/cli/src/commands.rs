@@ -51,6 +51,8 @@ pub struct RunOptions {
     pub dump_ir: bool,
     /// Named dimensions of an ONNX model; ignored for JSON graphs.
     pub dims: Dims,
+    /// Refuse a graph whose `Graph::estimated_macs` is above this.
+    pub max_macs: Option<usize>,
 }
 
 impl Default for RunOptions {
@@ -61,6 +63,7 @@ impl Default for RunOptions {
             disabled: Vec::new(),
             dump_ir: false,
             dims: Dims::new(),
+            max_macs: None,
         }
     }
 }
@@ -158,6 +161,13 @@ pub fn run_with(
 ) -> Result<RunOutput, RunFailure> {
     let limits = Limits::default();
     let graph = load_path(graph_path, &limits, &options.dims).map_err(RunFailure::bare)?;
+    // Before the passes: folding runs the constant part of the graph.
+    if let Some(limit) = options.max_macs {
+        let estimated = graph.estimated_macs();
+        if estimated > limit {
+            return Err(RunFailure::bare(CliError::TooMuchWork { estimated, limit }));
+        }
+    }
     let manager = pipeline(options, &limits).map_err(RunFailure::bare)?;
     let optimized = manager.run(&graph).map_err(|error| RunFailure {
         error: error.into(),

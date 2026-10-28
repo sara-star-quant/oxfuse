@@ -4,6 +4,9 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `oxfuse run --max-macs N` refuses a graph that needs more than `N` multiply-adds (`E109`) before any pass runs, and `Graph::estimated_macs` gives the number.
+- The ONNX importer counts messages before decoding and refuses more than ten per `max_values` (`E314`). A 16 MiB file of empty nodes took 1.2 GB to decode and now fails at 21 MB.
+
 ## 0.4.1 - 2026-10-27
 
 - GPU backend: a panic in one thread no longer poisons the device state for every later call (locks recover instead of panicking); a failed shader compile is dropped from the shared pipeline cache so a retry compiles again; when a device error and a backend error happen in one call, the device error is reported first and the backend error follows as context (typed errors such as a wrong input count are never replaced).
