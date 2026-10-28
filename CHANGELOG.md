@@ -4,6 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- A golden corpus for other runtimes' CI: graphs with the exact bits Oxfuse returns, built by `just golden`. See `docs/golden-corpus.md`.
 - `oxfuse compare A B` compares two outputs files bit by bit and gives a verdict (identical, permitted variation, contract violation, unresolved) using the run records from `--manifest`. See `docs/manifest.md`.
 - `oxfuse run --manifest FILE` writes a JSON record of the run: version, backend, platform, SIMD level, and SHA-256 of the model, inputs and each output. See `docs/manifest.md`.
 - `oxfuse run --max-macs N` refuses a graph that needs more than `N` multiply-adds (`E109`) before any pass runs, and `Graph::estimated_macs` gives the number.
