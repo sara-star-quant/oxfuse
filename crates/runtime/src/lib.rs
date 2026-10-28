@@ -32,7 +32,7 @@ mod reference;
 mod tensor;
 
 pub use backend::{Backend, Executable};
-pub use cpu::CpuBackend;
+pub use cpu::{CpuBackend, simd_level};
 pub use evaluator::ReferenceEvaluator;
 pub use math::sigmoid;
 pub use plan::{InputBinding, Plan, Step};

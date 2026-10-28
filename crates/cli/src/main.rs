@@ -43,6 +43,9 @@ enum Command {
         /// Refuse a graph that needs more than this many multiply-adds
         #[arg(long)]
         max_macs: Option<usize>,
+        /// Write a record of the run (versions, model/input/output hashes) to this file
+        #[arg(long)]
+        manifest: Option<PathBuf>,
     },
     /// Measure the GPU adapter against the reference and print a report
     #[cfg(feature = "wgpu")]
@@ -90,6 +93,7 @@ fn main() -> ExitCode {
             backend,
             dim,
             max_macs,
+            manifest,
         } => oxfuse_cli::dims_from_args(dim)
             .map_err(|error| (error, String::new()))
             .and_then(|dims| {
@@ -100,10 +104,15 @@ fn main() -> ExitCode {
                     dump_ir: *dump_ir,
                     dims,
                     max_macs: *max_macs,
+                    manifest: manifest.clone(),
                 };
                 oxfuse_cli::run_with(file, inputs.as_deref(), &options)
                     .map(|out| (out.stdout, out.stderr))
-                    .map_err(|failure| (failure.error, failure.stderr))
+                    .map_err(|failure| {
+                        // A failed manifest write must not lose the results.
+                        let _ = emit(&failure.stdout, "");
+                        (failure.error, failure.stderr)
+                    })
             }),
         #[cfg(feature = "wgpu")]
         Command::GpuSelftest { limits } => oxfuse_cli::gpu_selftest(limits.is_some())
@@ -123,6 +132,7 @@ fn main() -> ExitCode {
                     dump_ir: false,
                     dims,
                     max_macs: None,
+                    manifest: None,
                 };
                 oxfuse_cli::inspect(file, &options)
             })

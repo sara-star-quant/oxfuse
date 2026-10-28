@@ -2,6 +2,7 @@
 //! are testable without spawning the binary.
 
 use crate::format::{InputsFile, NamedTensorFile, OutputsFile};
+use crate::manifest::{self, OutputDigest};
 use crate::{CliError, load_graph};
 use oxfuse_core::passes::{PassManager, default_pipeline};
 use oxfuse_core::{Error, Graph, Limits, Source};
@@ -9,7 +10,7 @@ use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, ReferenceEvaluator, 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Values for the named dimensions of an ONNX model (`--dim NAME=VALUE`).
@@ -53,6 +54,8 @@ pub struct RunOptions {
     pub dims: Dims,
     /// Refuse a graph whose `Graph::estimated_macs` is above this.
     pub max_macs: Option<usize>,
+    /// Write a record of the run (versions, hashes of model, inputs and outputs) here.
+    pub manifest: Option<PathBuf>,
 }
 
 impl Default for RunOptions {
@@ -64,6 +67,7 @@ impl Default for RunOptions {
             dump_ir: false,
             dims: Dims::new(),
             max_macs: None,
+            manifest: None,
         }
     }
 }
@@ -137,6 +141,8 @@ pub fn run(graph_path: &Path, inputs_path: Option<&Path>) -> Result<String, CliE
 pub struct RunFailure {
     pub error: CliError,
     pub stderr: String,
+    /// Results the run produced before it failed (only a failed manifest write).
+    pub stdout: String,
 }
 
 impl RunFailure {
@@ -144,6 +150,7 @@ impl RunFailure {
         Self {
             error: error.into(),
             stderr: String::new(),
+            stdout: String::new(),
         }
     }
 }
@@ -154,6 +161,8 @@ impl From<RunFailure> for CliError {
     }
 }
 
+// A failure carries its error and the text to show with it, once per run.
+#[allow(clippy::result_large_err)]
 pub fn run_with(
     graph_path: &Path,
     inputs_path: Option<&Path>,
@@ -177,12 +186,68 @@ pub fn run_with(
         } else {
             String::new()
         },
+        stdout: String::new(),
     })?;
     let stderr = optimized.dump_text();
-    match execute(optimized.graph, inputs_path, &limits, options.backend) {
-        Ok(stdout) => Ok(RunOutput { stdout, stderr }),
-        Err(error) => Err(RunFailure { error, stderr }),
+    let want_digests = options.manifest.is_some();
+    match execute(
+        optimized.graph,
+        inputs_path,
+        &limits,
+        options.backend,
+        want_digests,
+    ) {
+        Ok((stdout, digests)) => {
+            if let Some(path) = &options.manifest
+                && let Err(error) = write_manifest(path, graph_path, inputs_path, options, &digests)
+            {
+                return Err(RunFailure {
+                    error,
+                    stderr,
+                    stdout,
+                });
+            }
+            Ok(RunOutput { stdout, stderr })
+        }
+        Err(error) => Err(RunFailure {
+            error,
+            stderr,
+            stdout: String::new(),
+        }),
     }
+}
+
+fn read_file(path: &Path) -> Result<Vec<u8>, CliError> {
+    fs::read(path).map_err(|source| CliError::Io {
+        path: path.display().to_string(),
+        source,
+    })
+}
+
+/// Hashes the files again as they are now; a file changed during the run is
+/// not detected.
+fn write_manifest(
+    path: &Path,
+    graph_path: &Path,
+    inputs_path: Option<&Path>,
+    options: &RunOptions,
+    digests: &[OutputDigest],
+) -> Result<(), CliError> {
+    let model = read_file(graph_path)?;
+    let inputs = inputs_path.map(read_file).transpose()?;
+    let backend = match options.backend {
+        BackendKind::Reference => "reference",
+        BackendKind::Cpu => "cpu",
+        #[cfg(feature = "wgpu")]
+        BackendKind::Wgpu => "wgpu",
+    };
+    let value = manifest::build(options, backend, &model, inputs.as_deref(), digests);
+    let mut text = serde_json::to_string_pretty(&value).expect("a manifest is plain JSON");
+    text.push('\n');
+    fs::write(path, text).map_err(|source| CliError::Io {
+        path: path.display().to_string(),
+        source,
+    })
 }
 
 fn execute(
@@ -190,7 +255,8 @@ fn execute(
     inputs_path: Option<&Path>,
     limits: &Limits,
     backend: BackendKind,
-) -> Result<String, CliError> {
+    want_digests: bool,
+) -> Result<(String, Vec<OutputDigest>), CliError> {
     let tensors = bind_inputs(&graph, inputs_path, limits)?;
     #[cfg(feature = "wgpu")]
     let wgpu;
@@ -204,8 +270,16 @@ fn execute(
         }
     };
     let outputs = backend.compile(&graph)?.run(&tensors)?;
-    let named = graph.output_names().iter().cloned().zip(outputs).collect();
-    render_outputs(named)
+    let named: Vec<(String, Tensor)> = graph.output_names().iter().cloned().zip(outputs).collect();
+    let digests = if want_digests {
+        named
+            .iter()
+            .map(|(name, t)| manifest::digest(name, t))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok((render_outputs(named)?, digests))
 }
 
 /// A graph from a file: ONNX when the extension says so (and the build

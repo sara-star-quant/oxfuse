@@ -6,6 +6,7 @@ mod commands;
 mod error;
 mod format;
 mod loader;
+mod manifest;
 
 #[cfg(feature = "wgpu")]
 pub use commands::gpu_selftest;
