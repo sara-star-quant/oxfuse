@@ -5,7 +5,7 @@ Command-line tool for [oxfuse](https://github.com/sara-star-quant/oxfuse), a sma
 ```sh
 cargo install oxfuse                  # add --features onnx,wgpu for ONNX import and the GPU backend
 oxfuse check graph.json
-oxfuse run graph.json --inputs inputs.json [--backend reference|cpu|wgpu]
+oxfuse run graph.json --inputs inputs.json [--backend reference|cpu|wgpu] [--manifest run.json] [--max-macs N]
 oxfuse run model.onnx --inputs inputs.json    # needs --features onnx
 oxfuse inspect graph.json
 oxfuse compare a.json b.json          # bit differences between two outputs files

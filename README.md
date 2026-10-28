@@ -55,12 +55,13 @@ Practical examples:
 oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backend reference > golden.json
 oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backend cpu > out.json
 cmp golden.json out.json
+oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --manifest run.json > out.json   # also writes a record of the run
+oxfuse compare golden.json out.json                                  # bit differences and what they mean (see docs/manifest.md)
 
 # Check a small ONNX model against another runtime: compare its numbers with Oxfuse's exact ones.
 oxfuse run model.onnx --inputs inputs.json --backend reference     # needs --features onnx
 
 # Decide whether a GPU can be trusted for your numerics before you rely on it.
-oxfuse compare a.json b.json                                        # bit differences between two outputs files
 oxfuse gpu-selftest                                                 # needs --features wgpu
 
 # See what each optimization pass changes in a graph.

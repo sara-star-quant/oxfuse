@@ -57,7 +57,7 @@ A model is untrusted input, like a graph file. The size cap, the tensor element 
 | E313 | an expansion over a limit |
 | E314 | more messages than the importer allows (ten per `max_values`, so a file of tiny messages cannot exhaust memory) |
 
-Errors from the IR (`E0xx`) pass through with their own codes. `E107`, `E108` and `E109` come from the CLI.
+Errors from the IR (`E0xx`) pass through with their own codes. `E107` to `E113` come from the CLI.
 
 ## How it is checked
 

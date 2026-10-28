@@ -15,7 +15,7 @@ A stage is marked done only when it is implemented and tested.
 
 ## Considered, no commitment
 
-Next, in order: trust and observability (batch-invariance claim and test, `--manifest`, `compare`, a provenance ledger), distribution (golden corpus, release binaries), small-batch speed (threads over columns for skinny matmul, a shared memory plan, exact bias and activation fusion), then numpy broadcasting and the elementwise operators, a rigorous error bound for a whole graph (`analyze`), and a transformer-lite set (`Softmax`, `LayerNormalization`, `Gelu`, reductions with a fixed order). Later, if there is demand: convolution and pooling, f16 and int8, a WASM build, Python bindings. Each operator ships only with its evidence: an oracle test, SIMD and reference kernels that agree bit for bit, a GPU bound, mutation testing and a row in the claims ledger.
+Next, in order: distribution (golden corpus, release binaries), small-batch speed (threads over columns for skinny matmul, a shared memory plan, exact bias and activation fusion), then numpy broadcasting and the elementwise operators, a rigorous error bound for a whole graph (`analyze`), and a transformer-lite set (`Softmax`, `LayerNormalization`, `Gelu`, reductions with a fixed order). Later, if there is demand: convolution and pooling, f16 and int8, a WASM build, Python bindings. Each operator ships only with its evidence: an oracle test, SIMD and reference kernels that agree bit for bit, a GPU bound, mutation testing and a row in the claims ledger.
 
 ## Not planned
 
