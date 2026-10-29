@@ -31,8 +31,7 @@ ci: fmt-check lint test doc
 oracle-check:
     python3 -I scripts/gen_expected.py examples --check
     python3 -I scripts/gen_expected.py corpus --check
-    python3 -I scripts/test_pack_golden.py
-    python3 -I scripts/test_bench_trend.py
+    just scripts-test
 
 # Check the committed ONNX fixtures against onnxruntime and the onnx reference
 # evaluator. Needs the virtualenv: `uv venv --python 3.14 .venv-onnx` (onnxruntime
@@ -45,6 +44,12 @@ onnx-check:
 golden:
     GOLDEN_OUT="$PWD/target/golden" cargo test -p oxfuse --test golden --locked -- --ignored write_corpus
     python3 -I scripts/pack_golden.py target/golden target/oxfuse-corpus-$(cargo pkgid -p oxfuse | sed 's/.*[#@]//').tar.gz
+
+# The stdlib-only tests of the helper scripts (CI runs this).
+scripts-test:
+    python3 -I scripts/test_pack_golden.py
+    python3 -I scripts/test_bench_trend.py
+    python3 -I scripts/test_package_release.py
 
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:
