@@ -24,6 +24,8 @@ adapters it was measured on; the other GPU ops stay inside the bounds in
 `semantics.md`. `matmul-skinny` and `matmul-head` time a small batch (the id is
 the number of rows) against a 1024 x 1024 weight and a 784 x 10 weight; the
 ratio to `ndarray` uses the single-threaded `cpu` column.
+`mlp` times a 784-256-10 classifier (two matrix products around a `Relu`, no bias) at
+batch 1, 8 and 32; the id is the batch, and `ndarray` runs the same three steps.
 
 ## Optimization log
 
@@ -123,7 +125,7 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 - OS: macOS-26.7.1-arm64-arm-64bit-Mach-O
 - Rust: rustc 1.99.1 (58cf8f9c3 2026-10-13)
 - RUSTFLAGS: ``
-- Code: crates tree 0061bc2 (plus uncommitted changes)
+- Code: crates tree 71912ef (plus uncommitted changes)
 
 ## Results
 
@@ -131,92 +133,100 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 442.9 us | 111.4 us | 113.4 us | 3.98x |
+| 1048576 | 438.0 us | 114.8 us | 121.8 us | 3.82x |
 
 ### gpu-add
 
 | size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
 |---|---|---|---|---|---|---|---|
-| 1048576 | 2.94 ms | 395.2 us | 199.8 us | 2.58 ms | 105.9 us | 112.0 us | 0.27x |
-| 16777216 | 27.99 ms | 3.70 ms | 2.31 ms | 36.25 ms | 2.60 ms | 2.60 ms | 0.70x |
+| 1048576 | 3.00 ms | 357.8 us | 197.2 us | 2.69 ms | 113.0 us | 114.8 us | 0.32x |
+| 16777216 | 27.92 ms | 3.70 ms | 2.28 ms | 37.35 ms | 2.61 ms | 2.62 ms | 0.71x |
 
 ### gpu-many
 
 | size | loop-of-16-runs | run-many-16 |
 |---|---|---|
-| 128 | 6.22 ms | 3.13 ms |
-| 512 | 20.64 ms | 17.20 ms |
+| 128 | 5.42 ms | 3.38 ms |
+| 512 | 20.89 ms | 17.54 ms |
 
 ### gpu-matmul
 
 | size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
 |---|---|---|---|---|---|---|---|
-| 128 | 1.44 ms (2.9 GFLOP/s) | 302.6 us (13.9 GFLOP/s) | 80.7 us (52.0 GFLOP/s) | 383.9 us (10.9 GFLOP/s) | 62.3 us (67.3 GFLOP/s) | 48.5 us (86.5 GFLOP/s) | 0.16x |
-| 256 | 1.99 ms (16.8 GFLOP/s) | 363.3 us (92.4 GFLOP/s) | 140.2 us (239.4 GFLOP/s) | 634.2 us (52.9 GFLOP/s) | 482.0 us (69.6 GFLOP/s) | 160.0 us (209.7 GFLOP/s) | 0.44x |
-| 512 | 2.58 ms (103.9 GFLOP/s) | 774.3 us (346.7 GFLOP/s) | 484.7 us (553.8 GFLOP/s) | 1.29 ms (208.4 GFLOP/s) | 3.83 ms (70.1 GFLOP/s) | 792.3 us (338.8 GFLOP/s) | 1.02x |
-| 1024 | 6.39 ms (336.1 GFLOP/s) | 3.76 ms (571.1 GFLOP/s) | 3.26 ms (658.1 GFLOP/s) | 5.68 ms (378.0 GFLOP/s) | 30.65 ms (70.1 GFLOP/s) | 5.36 ms (400.8 GFLOP/s) | 1.43x |
-| 2048 | 33.20 ms (517.5 GFLOP/s) | 26.21 ms (655.4 GFLOP/s) | 25.11 ms (684.1 GFLOP/s) | 34.05 ms (504.5 GFLOP/s) | 276.51 ms (62.1 GFLOP/s) | 52.35 ms (328.2 GFLOP/s) | 2.00x |
+| 128 | 1.48 ms (2.8 GFLOP/s) | 260.5 us (16.1 GFLOP/s) | 76.3 us (55.0 GFLOP/s) | 335.1 us (12.5 GFLOP/s) | 65.4 us (64.1 GFLOP/s) | 53.4 us (78.6 GFLOP/s) | 0.20x |
+| 256 | 2.04 ms (16.5 GFLOP/s) | 325.8 us (103.0 GFLOP/s) | 135.9 us (246.9 GFLOP/s) | 589.0 us (57.0 GFLOP/s) | 504.8 us (66.5 GFLOP/s) | 167.3 us (200.5 GFLOP/s) | 0.51x |
+| 512 | 2.73 ms (98.4 GFLOP/s) | 759.9 us (353.3 GFLOP/s) | 482.6 us (556.2 GFLOP/s) | 1.31 ms (205.2 GFLOP/s) | 4.00 ms (67.1 GFLOP/s) | 808.9 us (331.9 GFLOP/s) | 1.06x |
+| 1024 | 6.48 ms (331.2 GFLOP/s) | 3.75 ms (572.3 GFLOP/s) | 3.26 ms (657.8 GFLOP/s) | 5.79 ms (370.9 GFLOP/s) | 32.18 ms (66.7 GFLOP/s) | 5.69 ms (377.5 GFLOP/s) | 1.52x |
+| 2048 | 33.48 ms (513.1 GFLOP/s) | 26.15 ms (656.9 GFLOP/s) | 25.05 ms (685.9 GFLOP/s) | 34.29 ms (501.0 GFLOP/s) | 291.90 ms (58.9 GFLOP/s) | 53.85 ms (319.0 GFLOP/s) | 2.06x |
 
 ### gpu-outputs
 
 | size | gpu-with-transfers |
 |---|---|
-| 8 | 479.9 us |
+| 8 | 466.8 us |
 
 ### matmul
 
 | size | reference | cpu | cpu-threads | ndarray | best cpu vs reference | cpu vs ndarray |
 |---|---|---|---|---|---|---|
-| 64 | 202.9 us (2.6 GFLOP/s) | 7.9 us (66.2 GFLOP/s) | 7.9 us (66.0 GFLOP/s) | 6.5 us (81.2 GFLOP/s) | 25.61x | 0.81x |
-| 128 | 2.04 ms (2.1 GFLOP/s) | 61.1 us (68.7 GFLOP/s) | 48.6 us (86.2 GFLOP/s) | 48.1 us (87.3 GFLOP/s) | 41.85x | 0.79x |
-| 256 | 18.90 ms (1.8 GFLOP/s) | 471.1 us (71.2 GFLOP/s) | 160.6 us (209.0 GFLOP/s) | 360.4 us (93.1 GFLOP/s) | 117.71x | 0.76x |
-| 512 | 158.91 ms (1.7 GFLOP/s) | 3.76 ms (71.4 GFLOP/s) | 788.4 us (340.5 GFLOP/s) | 2.81 ms (95.4 GFLOP/s) | 201.56x | 0.75x |
+| 64 | 217.2 us (2.4 GFLOP/s) | 8.1 us (64.6 GFLOP/s) | 8.4 us (62.2 GFLOP/s) | 6.8 us (77.6 GFLOP/s) | 26.77x | 0.83x |
+| 128 | 2.17 ms (1.9 GFLOP/s) | 62.4 us (67.3 GFLOP/s) | 53.7 us (78.2 GFLOP/s) | 50.7 us (82.7 GFLOP/s) | 40.44x | 0.81x |
+| 256 | 20.23 ms (1.7 GFLOP/s) | 473.0 us (70.9 GFLOP/s) | 166.6 us (201.4 GFLOP/s) | 377.9 us (88.8 GFLOP/s) | 121.41x | 0.80x |
+| 512 | 170.38 ms (1.6 GFLOP/s) | 3.79 ms (70.9 GFLOP/s) | 812.6 us (330.4 GFLOP/s) | 2.95 ms (91.1 GFLOP/s) | 209.68x | 0.78x |
 
 ### matmul-head
 
 | size | cpu | cpu-threads | ndarray | cpu vs ndarray |
 |---|---|---|---|---|
-| 1 | 1.3 us (12.5 GFLOP/s) | 1.3 us (12.3 GFLOP/s) | 4.3 us (3.7 GFLOP/s) | 3.41x |
-| 2 | 1.3 us (24.0 GFLOP/s) | 1.3 us (23.5 GFLOP/s) | 4.1 us (7.6 GFLOP/s) | 3.16x |
-| 3 | 1.5 us (30.9 GFLOP/s) | 1.6 us (30.0 GFLOP/s) | 4.3 us (11.0 GFLOP/s) | 2.81x |
-| 5 | 2.2 us (36.2 GFLOP/s) | 2.2 us (35.5 GFLOP/s) | 4.3 us (18.2 GFLOP/s) | 1.99x |
-| 8 | 3.6 us (34.9 GFLOP/s) | 3.7 us (34.3 GFLOP/s) | 4.4 us (28.5 GFLOP/s) | 1.22x |
-| 32 | 12.8 us (39.4 GFLOP/s) | 13.0 us (38.6 GFLOP/s) | 13.8 us (36.3 GFLOP/s) | 1.09x |
+| 1 | 1.3 us (12.5 GFLOP/s) | 1.3 us (11.6 GFLOP/s) | 4.5 us (3.5 GFLOP/s) | 3.60x |
+| 2 | 1.3 us (23.7 GFLOP/s) | 1.4 us (22.4 GFLOP/s) | 4.4 us (7.2 GFLOP/s) | 3.31x |
+| 3 | 1.5 us (30.5 GFLOP/s) | 1.6 us (28.6 GFLOP/s) | 4.5 us (10.4 GFLOP/s) | 2.95x |
+| 5 | 2.2 us (36.1 GFLOP/s) | 2.3 us (33.9 GFLOP/s) | 4.6 us (17.2 GFLOP/s) | 2.10x |
+| 8 | 3.6 us (34.9 GFLOP/s) | 3.8 us (32.6 GFLOP/s) | 4.7 us (26.9 GFLOP/s) | 1.30x |
+| 32 | 12.8 us (39.3 GFLOP/s) | 13.6 us (36.9 GFLOP/s) | 14.7 us (34.2 GFLOP/s) | 1.15x |
 
 ### matmul-skinny
 
 | size | cpu | cpu-threads | ndarray | cpu vs ndarray |
 |---|---|---|---|---|
-| 1 | 78.7 us (26.7 GFLOP/s) | 80.0 us (26.2 GFLOP/s) | 306.9 us (6.8 GFLOP/s) | 3.90x |
-| 2 | 85.1 us (49.3 GFLOP/s) | 84.7 us (49.5 GFLOP/s) | 308.0 us (13.6 GFLOP/s) | 3.62x |
-| 3 | 96.1 us (65.5 GFLOP/s) | 96.2 us (65.4 GFLOP/s) | 308.4 us (20.4 GFLOP/s) | 3.21x |
-| 5 | 158.5 us (66.2 GFLOP/s) | 158.6 us (66.1 GFLOP/s) | 329.2 us (31.9 GFLOP/s) | 2.08x |
-| 8 | 265.3 us (63.2 GFLOP/s) | 265.3 us (63.2 GFLOP/s) | 309.2 us (54.3 GFLOP/s) | 1.17x |
-| 32 | 982.1 us (68.3 GFLOP/s) | 526.9 us (127.4 GFLOP/s) | 829.0 us (80.9 GFLOP/s) | 0.84x |
+| 1 | 80.4 us (26.1 GFLOP/s) | 84.5 us (24.8 GFLOP/s) | 333.5 us (6.3 GFLOP/s) | 4.15x |
+| 2 | 85.3 us (49.2 GFLOP/s) | 90.2 us (46.5 GFLOP/s) | 334.4 us (12.5 GFLOP/s) | 3.92x |
+| 3 | 96.5 us (65.2 GFLOP/s) | 100.8 us (62.4 GFLOP/s) | 334.9 us (18.8 GFLOP/s) | 3.47x |
+| 5 | 158.2 us (66.3 GFLOP/s) | 166.1 us (63.1 GFLOP/s) | 336.1 us (31.2 GFLOP/s) | 2.12x |
+| 8 | 264.8 us (63.4 GFLOP/s) | 266.2 us (63.0 GFLOP/s) | 333.3 us (50.3 GFLOP/s) | 1.26x |
+| 32 | 977.4 us (68.7 GFLOP/s) | 547.8 us (122.5 GFLOP/s) | 881.4 us (76.1 GFLOP/s) | 0.90x |
+
+### mlp
+
+| size | reference | cpu | cpu-threads | ndarray | best cpu vs reference | cpu vs ndarray |
+|---|---|---|---|---|---|---|
+| 1 | 260.9 us (1.6 GFLOP/s) | 23.3 us (17.5 GFLOP/s) | 23.1 us (17.6 GFLOP/s) | 57.5 us (7.1 GFLOP/s) | 11.30x | 2.47x |
+| 8 | 2.09 ms (1.6 GFLOP/s) | 61.2 us (53.1 GFLOP/s) | 61.2 us (53.2 GFLOP/s) | 57.9 us (56.2 GFLOP/s) | 34.12x | 0.95x |
+| 32 | 8.36 ms (1.6 GFLOP/s) | 208.3 us (62.4 GFLOP/s) | 141.4 us (92.0 GFLOP/s) | 168.4 us (77.2 GFLOP/s) | 59.09x | 0.81x |
 
 ### pipeline
 
 | size | cpu-optimized | cpu-threads-optimized | cpu-threads-unoptimized | cpu-unoptimized |
 |---|---|---|---|---|
-| 256 | 125.1 us | 84.0 us | 167.3 us | 167.2 us |
+| 256 | 125.0 us | 87.1 us | 165.5 us | 165.0 us |
 
 ### relu
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 234.8 us | 66.4 us | 64.9 us | 3.62x |
+| 1048576 | 230.2 us | 65.6 us | 67.0 us | 3.51x |
 
 ### sigmoid
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1048576 | 1.02 ms | 822.1 us | 229.6 us | 4.44x |
+| 1048576 | 1.02 ms | 823.0 us | 236.7 us | 4.30x |
 
 ### transpose
 
 | size | reference | cpu | cpu-threads | best cpu vs reference |
 |---|---|---|---|---|
-| 1024 | 2.56 ms | 447.6 us | 278.1 us | 9.22x |
+| 1024 | 2.70 ms | 447.8 us | 287.3 us | 9.40x |
 
 ## Other machines
 
@@ -224,6 +234,19 @@ A Tesla T4 (NVIDIA, Vulkan, driver 580) on a free Kaggle notebook with a 4 vCPU
 Xeon at 2.2 GHz (AVX2), run on 2026-10-22 at commit 4c633ff with the flow in
 [adapters.md](adapters.md). Same method and columns as above; the CPU columns
 are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
+
+### mlp (Xeon, AVX2)
+
+The same classifier on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
+2026-10-29 at commit 7b675de by the flow in the `oxfuse-x86-ab` notes: five
+interleaved rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
+column against `ndarray`; the notebook's timer resolves 1 us.
+
+| size | reference | cpu | ndarray | best cpu vs reference | cpu vs ndarray |
+|---|---|---|---|---|---|
+| 1 | 330 us | 33 us | 106 us | 10.00x | 3.21x |
+| 8 | 2.63 ms | 133 us | 109 us | 19.78x | 0.82x |
+| 32 | 10.45 ms | 502 us | 305 us | 20.81x | 0.61x |
 
 ### gpu-matmul (Tesla T4)
 

@@ -1,7 +1,7 @@
 //! The `mlp` benchmark times this graph; its output is pinned here so the
 //! benchmark cannot drift to another graph or another result.
 
-#[path = "../benches/mlp_graph.rs"]
+#[path = "../benches/mlp_graph/mod.rs"]
 mod mlp_graph;
 
 use mlp_graph::{CLASSES, INPUT, X_SEED, data, mlp_graph};
