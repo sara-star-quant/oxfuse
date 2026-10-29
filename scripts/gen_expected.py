@@ -349,6 +349,14 @@ def compact(doc):
     return json.dumps(doc, separators=(",", ":")) + "\n"
 
 
+def same_file(name, committed, computed):
+    """Expected files are compared by `same_doc`, because a BLAS sum differs in
+    the last bits between machines; graphs and inputs must match text for text."""
+    if name.endswith(".expected.json"):
+        return same_doc(json.loads(committed), json.loads(computed))
+    return committed == computed
+
+
 def corpus_files(count, seed):
     files = {}
 
@@ -370,7 +378,7 @@ def cmd_corpus(count, seed, check):
     existing = {p.name for p in out.glob("[gh]*.json")} if out.exists() else set()
     if check:
         stale = sorted(existing ^ set(files)) + sorted(
-            n for n, text in files.items() if n in existing and (out / n).read_text() != text
+            n for n, text in files.items() if n in existing and not same_file(n, (out / n).read_text(), text)
         )
         print(f"{'ok  ' if not stale else 'FAIL'} corpus ({len(files)} files)")
         for name in stale:
