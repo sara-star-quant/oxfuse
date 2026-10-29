@@ -4,6 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- Benchmarks: an `mlp` group (a 784-256-10 classifier at batch 1, 8 and 32) with an `ndarray` control, the report regenerated from one run, and a weekly non-gating `bench-trend` workflow on one x86_64 and one arm64 runner.
 - A golden corpus for other runtimes' CI: graphs with the exact bits Oxfuse returns, built by `just golden`. See `docs/golden-corpus.md`.
 - `oxfuse compare A B` compares two outputs files bit by bit and gives a verdict (identical, permitted variation, contract violation, unresolved) using the run records from `--manifest`. See `docs/manifest.md`.
 - `oxfuse run --manifest FILE` writes a JSON record of the run: version, backend, platform, SIMD level, and SHA-256 of the model, inputs and each output. See `docs/manifest.md`.

@@ -283,6 +283,19 @@ Xeon at 2.2 GHz (AVX2), run on 2026-10-22 at commit 4c633ff with the flow in
 [adapters.md](adapters.md). Same method and columns as above; the CPU columns
 are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
 
+### mlp (Xeon, AVX2)
+
+The same classifier on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
+2026-10-29 at commit 7b675de by the flow in the `oxfuse-x86-ab` notes: five
+interleaved rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
+column against `ndarray`; the notebook's timer resolves 1 us.
+
+| size | reference | cpu | ndarray | best cpu vs reference | cpu vs ndarray |
+|---|---|---|---|---|---|
+| 1 | 330 us | 33 us | 106 us | 10.00x | 3.21x |
+| 8 | 2.63 ms | 133 us | 109 us | 19.78x | 0.82x |
+| 32 | 10.45 ms | 502 us | 305 us | 20.81x | 0.61x |
+
 ### gpu-matmul (Tesla T4)
 
 | size | gpu-cold | gpu-resident | gpu-batched | gpu-with-transfers | cpu | cpu-threads | best cpu / resident gpu |
