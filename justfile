@@ -50,6 +50,7 @@ scripts-test:
     python3 -I scripts/test_pack_golden.py
     python3 -I scripts/test_bench_trend.py
     python3 -I scripts/test_package_release.py
+    python3 -I scripts/test_gen_expected.py
 
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:
