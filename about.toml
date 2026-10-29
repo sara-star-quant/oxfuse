@@ -1,0 +1,9 @@
+# Licence texts for the release binaries (cargo-about). The list is the one in
+# deny.toml: a dependency under any other licence fails both checks.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Unicode-3.0",
+    "ISC",
+    "Zlib",
+]

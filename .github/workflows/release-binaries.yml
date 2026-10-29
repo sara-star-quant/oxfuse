@@ -1,0 +1,141 @@
+name: release-binaries
+
+# Builds the oxfuse binary for the five tested platforms on hosted runners,
+# smoke-tests each archive, writes SHA256SUMS and attests every file.
+# Run it by hand (Actions > release-binaries > Run workflow). With upload off it
+# only leaves the files as a workflow artifact, a rehearsal. With upload on it
+# attaches them to the existing release for `tag`, and `ref` must be that tag so
+# the binaries come from the tagged commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (a branch, tag or commit)"
+        required: true
+        default: main
+      upload:
+        description: "Attach the files to the release for `tag`"
+        type: boolean
+        default: false
+      tag:
+        description: "Release tag, such as v0.4.2 (used when upload is on)"
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the inputs
+        env:
+          REF: ${{ inputs.ref }}
+          TAG: ${{ inputs.tag }}
+          UPLOAD: ${{ inputs.upload }}
+        run: |
+          if [ "$UPLOAD" = "true" ]; then
+            if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "tag must look like v1.2.3, got: $TAG"; exit 1
+            fi
+            if [ "$REF" != "$TAG" ]; then
+              echo "ref must equal tag when uploading (ref=$REF, tag=$TAG)"; exit 1
+            fi
+          fi
+
+  build:
+    needs: check-inputs
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, py: python3, exe: oxfuse }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, py: python3, exe: oxfuse }
+          - { os: macos-latest, target: aarch64-apple-darwin, py: python3, exe: oxfuse }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, py: python, exe: oxfuse.exe }
+          - { os: windows-11-arm, target: aarch64-pc-windows-msvc, py: python, exe: oxfuse.exe }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-about@0.9.3
+      - name: Build
+        run: cargo build --release --locked -p oxfuse --features onnx,wgpu
+      - name: Package
+        env:
+          PY: ${{ matrix.py }}
+          EXE: ${{ matrix.exe }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          version=$(cargo pkgid -p oxfuse | sed 's/.*[#@]//')
+          cargo about generate about.hbs -c about.toml --manifest-path crates/cli/Cargo.toml --features onnx,wgpu --locked -o THIRD_PARTY.txt
+          mkdir dist
+          "$PY" -I scripts/package_release.py pack "target/release/$EXE" "$version" "$TARGET" dist LICENSE NOTICE THIRD_PARTY.txt
+          "$PY" -I scripts/package_release.py smoke dist/oxfuse-"$version"-"$TARGET".* "$version" "$TARGET" examples
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archive-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  sums:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: archive-*
+          merge-multiple: true
+          path: dist
+      - name: Checksums
+        working-directory: dist
+        run: |
+          test "$(find . -maxdepth 1 -type f | wc -l)" -eq 5
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Verify the attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: dist
+        run: |
+          for f in oxfuse-*; do gh attestation verify "$f" --repo "$GITHUB_REPOSITORY"; done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: dist/*
+
+  upload:
+    needs: sums
+    if: inputs.upload
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
