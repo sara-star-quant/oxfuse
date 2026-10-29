@@ -90,11 +90,9 @@ fn locate(file: &GraphFile, error: &Error) -> Option<String> {
                 node_path(name)
             }
         }
-        Error::LimitExceeded { .. }
-        | Error::InputCount { .. }
-        | Error::InputShape { .. }
-        | Error::Verify(_)
-        | Error::Backend(_) => None,
+        // Limits, run-time input errors, verifier and backend errors have no
+        // single place in the file; so do variants added later.
+        _ => None,
     }
 }
 

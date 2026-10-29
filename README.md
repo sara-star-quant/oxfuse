@@ -16,6 +16,8 @@ git clone https://github.com/sara-star-quant/oxfuse && cd oxfuse
 oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backend cpu
 ```
 
+No Rust toolchain? Each [release](https://github.com/sara-star-quant/oxfuse/releases) has prebuilt binaries (ONNX and GPU on) for the five platforms below, with `SHA256SUMS`. Check one with `shasum -c SHA256SUMS` and `gh attestation verify FILE --repo sara-star-quant/oxfuse`.
+
 As a library, depend on `oxfuse-core` and `oxfuse-runtime`, plus `oxfuse-wgpu` for the GPU backend and `oxfuse-onnx` for ONNX import. [A first run](#a-first-run) below walks through the graph format.
 
 ## Platforms
