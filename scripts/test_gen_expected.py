@@ -9,7 +9,8 @@ from pathlib import Path
 # gen_expected imports NumPy at the top; the comparison needs none of it.
 sys.modules.setdefault("numpy", types.ModuleType("numpy"))
 sys.path.insert(0, str(Path(__file__).parent))
-from gen_expected import same_doc  # noqa: E402
+import json  # noqa: E402
+from gen_expected import same_doc, same_file  # noqa: E402
 
 EXACT = {"abs": 0.0, "rel": 0.0}
 
@@ -49,6 +50,18 @@ class SameDoc(unittest.TestCase):
         other = doc([1.0])
         other["outputs"][0]["name"] = "z"
         self.assertFalse(same_doc(doc([1.0]), other))
+
+
+class SameFile(unittest.TestCase):
+    def test_expected_files_are_compared_as_documents(self):
+        a, b = json.dumps(doc([1.0], [0.5])), json.dumps(doc([1.25], [0.5]))
+        self.assertTrue(same_file("h000.expected.json", a, b))
+        self.assertFalse(same_file("h000.expected.json", a, json.dumps(doc([2.0], [0.5]))))
+
+    def test_graphs_and_inputs_are_compared_as_text(self):
+        self.assertTrue(same_file("h000.json", "{}\n", "{}\n"))
+        self.assertFalse(same_file("h000.json", "{}\n", "{ }\n"))
+        self.assertFalse(same_file("h000.inputs.json", "1", "2"))
 
 
 if __name__ == "__main__":
