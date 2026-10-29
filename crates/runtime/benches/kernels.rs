@@ -84,7 +84,7 @@ fn skinny(c: &mut Criterion) {
         ("matmul-skinny", 1024usize, 1024usize),
         ("matmul-head", 784, 10),
     ] {
-        for m in [1usize, 2, 3, 5, 8, 32] {
+        for m in [1usize, 2, 3, 4, 5, 8, 32] {
             let graph = binary_graph_shapes(Op::MatMul, &[m, k], &[k, n]);
             let inputs = [tensor(&[m, k], 1), tensor(&[k, n], 2)];
             let mut group = c.benchmark_group(name);
