@@ -50,7 +50,7 @@ Do not switch branches or edit files while a shard runs. `cargo-mutants` copies 
 
 `.github/workflows/mutants.yml` runs three kinds of job, none of which blocks a merge:
 
-- **Pull request, CPU side:** only the mutants that overlap the diff (`--in-diff`), all features built, so code behind `onnx`, `wgpu` and `parallel` is tested.
+- **Pull request, CPU side:** only the mutants that overlap the diff (`--in-diff`), all features built, so code behind `onnx`, `wgpu` and `parallel` is tested. The job runs as four shards on four runners, and a new push to the pull request cancels the running jobs.
 - **Pull request, GPU:** the same for `oxfuse-wgpu` on a software Vulkan adapter.
 - **Weekly (Sunday 03:00 UTC) and on demand:** every shard above except wgpu, one job each. Start one with `gh workflow run mutants --ref <branch>`.
 
