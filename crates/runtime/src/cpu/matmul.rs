@@ -297,7 +297,7 @@ const COLUMN_PANEL: usize = 4 * W;
 /// Multiply-adds from which a few rows are split by columns. Waking a thread
 /// costs 10 us or more, which a smaller product does not earn back.
 #[cfg(feature = "parallel")]
-pub(super) const COLUMN_SPLIT_MIN_MACS: usize = 1 << 21;
+pub(super) const COLUMN_SPLIT_MIN_MACS: usize = 4 << 20;
 
 /// Multiply-adds one task of a column split should have, and the most tasks:
 /// more cores than that only add wake-up time on a product this small
