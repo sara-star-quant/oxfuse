@@ -27,7 +27,7 @@ pub(super) const W: usize = 16;
 /// are the same, in the same order.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
-fn micro<S: Simd, const RR: usize>(
+fn micro<S: Simd, const RR: usize, const NS: usize>(
     simd: S,
     a: &[f32],
     lda: usize,
@@ -37,28 +37,42 @@ fn micro<S: Simd, const RR: usize>(
     ldc: usize,
     klen: usize,
 ) {
-    let mut acc = [f32x16::splat(simd, 0.0); RR];
+    let mut acc = [[f32x16::splat(simd, 0.0); NS]; RR];
     for (r, row) in acc.iter_mut().enumerate() {
-        *row = f32x16::from_slice(simd, &c[r * ldc..r * ldc + W]);
+        for (s, v) in row.iter_mut().enumerate() {
+            let at = r * ldc + s * W;
+            *v = f32x16::from_slice(simd, &c[at..at + W]);
+        }
     }
     for p in 0..klen {
-        let bv = f32x16::from_slice(simd, &b[p * ldb..p * ldb + W]);
+        let mut bv = [f32x16::splat(simd, 0.0); NS];
+        for (s, v) in bv.iter_mut().enumerate() {
+            let at = p * ldb + s * W;
+            *v = f32x16::from_slice(simd, &b[at..at + W]);
+        }
         for (r, row) in acc.iter_mut().enumerate() {
             let x = f32x16::splat(simd, a[r * lda + p]);
-            *row = x.mul_add_precise(bv, *row);
+            for (s, v) in row.iter_mut().enumerate() {
+                *v = x.mul_add_precise(bv[s], *v);
+            }
         }
     }
     for (r, row) in acc.iter().enumerate() {
-        row.store_slice(&mut c[r * ldc..r * ldc + W]);
+        for (s, v) in row.iter().enumerate() {
+            let at = r * ldc + s * W;
+            v.store_slice(&mut c[at..at + W]);
+        }
     }
 }
 
-/// `micro` for a row count only known at run time (`1 ..= R`).
+/// `micro` for a row count only known at run time (`1 ..= R`), `ns` strips
+/// of `W` columns wide (`ns` is 1 unless `wide_strips(rows)` says more).
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn micro_rows<S: Simd>(
     simd: S,
     rows: usize,
+    ns: usize,
     a: &[f32],
     lda: usize,
     b: &[f32],
@@ -67,14 +81,31 @@ fn micro_rows<S: Simd>(
     ldc: usize,
     klen: usize,
 ) {
-    match rows {
-        1 => micro::<S, 1>(simd, a, lda, b, ldb, c, ldc, klen),
-        2 => micro::<S, 2>(simd, a, lda, b, ldb, c, ldc, klen),
-        3 => micro::<S, 3>(simd, a, lda, b, ldb, c, ldc, klen),
-        4 => micro::<S, 4>(simd, a, lda, b, ldb, c, ldc, klen),
-        5 => micro::<S, 5>(simd, a, lda, b, ldb, c, ldc, klen),
-        _ => micro::<S, 6>(simd, a, lda, b, ldb, c, ldc, klen),
+    match (rows, ns) {
+        (1, 4) => micro::<S, 1, 4>(simd, a, lda, b, ldb, c, ldc, klen),
+        (2, 2) => micro::<S, 2, 2>(simd, a, lda, b, ldb, c, ldc, klen),
+        (1, _) => micro::<S, 1, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (2, _) => micro::<S, 2, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (3, _) => micro::<S, 3, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (4, _) => micro::<S, 4, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (5, _) => micro::<S, 5, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        _ => micro::<S, 6, 1>(simd, a, lda, b, ldb, c, ldc, klen),
     }
+}
+
+/// Strips of `W` columns the next micro-kernel call covers, with `left` columns
+/// (a multiple of `W`) remaining before the tail of the column tile. With one or two rows there are too few
+/// independent accumulators to hide the latency of the fused multiply-add, so
+/// the block is made wider instead of taller. The sums are the same, element by
+/// element; only how many columns share one pass over `k` changes.
+fn strips_for(rows: usize, left: usize) -> usize {
+    let strips = left / W;
+    let wide = match rows {
+        1 => 4,
+        2 => 2,
+        _ => 1,
+    };
+    if strips >= wide { wide } else { 1 }
 }
 
 /// Of the `klen` rows of B from row `k0`, how many have a full vector of `W`
@@ -142,10 +173,13 @@ fn matmul_rows_simd<S: Simd>(
             for i in (0..m).step_by(R) {
                 let rows = (m - i).min(R);
                 let a_block = &a[i * k + k0..];
-                for j in (j0..j_full).step_by(W) {
+                let mut j = j0;
+                while j < j_full {
+                    let ns = strips_for(rows, j_full - j);
                     micro_rows(
                         simd,
                         rows,
+                        ns,
                         a_block,
                         k,
                         &b[k0 * n + j..],
@@ -154,7 +188,12 @@ fn matmul_rows_simd<S: Simd>(
                         n,
                         klen,
                     );
+                    j += ns * W;
                 }
+            }
+            for i in (0..m).step_by(R) {
+                let rows = (m - i).min(R);
+                let a_block = &a[i * k + k0..];
                 if tail > 0 {
                     let mut edge = [0.0f32; R * W];
                     for r in 0..rows {
@@ -163,10 +202,10 @@ fn matmul_rows_simd<S: Simd>(
                     }
                     // Either call does nothing when its row count is 0.
                     let b_tail = &b[k0 * n + j_full..];
-                    micro_rows(simd, rows, a_block, k, b_tail, n, &mut edge, W, direct);
+                    micro_rows(simd, rows, 1, a_block, k, b_tail, n, &mut edge, W, direct);
                     let a_rest = &a[i * k + k0 + direct..];
                     let rest = klen - direct;
-                    micro_rows(simd, rows, a_rest, k, &packed, W, &mut edge, W, rest);
+                    micro_rows(simd, rows, 1, a_rest, k, &packed, W, &mut edge, W, rest);
                     for r in 0..rows {
                         let to = (i + r) * n + j_full;
                         c[to..to + tail].copy_from_slice(&edge[r * W..r * W + tail]);
@@ -277,6 +316,23 @@ mod tests {
         // A tile that starts past the fitting rows has none.
         assert_eq!(direct_rows(50, 10, 0, 4, 1), 0);
     }
+    #[test]
+    fn strips_for_widens_only_a_whole_group_of_few_rows() {
+        // One row: 4 strips when 4 or more remain, else one at a time.
+        assert_eq!(strips_for(1, 4 * W), 4);
+        assert_eq!(strips_for(1, 9 * W), 4);
+        assert_eq!(strips_for(1, 3 * W), 1);
+        assert_eq!(strips_for(1, W), 1);
+        // Two rows: 2 strips when 2 or more remain.
+        assert_eq!(strips_for(2, 2 * W), 2);
+        assert_eq!(strips_for(2, 7 * W), 2);
+        assert_eq!(strips_for(2, W), 1);
+        // Three or more rows never widen.
+        for rows in 3..=R {
+            assert_eq!(strips_for(rows, 9 * W), 1);
+        }
+    }
+
     /// With `parallel`, the 64- and 70-row runs are split across threads (70 leaves
     /// a short last task) and the single rows are not, so equal bits also prove
     /// the thread split changes nothing.
