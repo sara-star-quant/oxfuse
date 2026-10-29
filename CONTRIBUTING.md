@@ -68,7 +68,7 @@ The floor is now set by `fearless_simd` 1.1, which declares 1.89, and `just msrv
 
 Version 0.1.0 of `oxfuse-core`, `oxfuse-runtime` and `oxfuse` was published first. Version 0.2.0 added `oxfuse-wgpu` and `Error::Backend`, which breaks exhaustive matches on `Error`; 0.3.0 added `oxfuse-onnx`. All five crates move together. A release, in order:
 
-1. Run the gate: `just ci && just test-parallel && just test-wgpu && just oracle-check && just msrv`, and `cargo publish --workspace --dry-run --locked`.
+1. Run the gate (CI runs `cargo semver-checks --workspace` on `release-*` branches; run it yourself early): `just ci && just test-parallel && just test-wgpu && just oracle-check && just msrv`, and `cargo publish --workspace --dry-run --locked`.
 2. Publish with a token scoped to `publish-new` and `publish-update` for these names (or with crates.io trusted publishing from GitHub Actions): `cargo publish --workspace --locked`. It publishes `oxfuse-core`, `oxfuse-runtime`, `oxfuse-wgpu`, `oxfuse-onnx`, then `oxfuse` (the command-line tool).
 3. Tag the commit and create a GitHub release. Then run the `release-binaries` workflow with `ref` and `tag` set to the tag and `upload` on; rehearse it first with `upload` off.
 4. In a clean directory with no path dependencies, run `cargo install oxfuse --version <new>` and a small consumer crate against the registry versions, and check docs.rs built every crate.

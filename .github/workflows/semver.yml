@@ -1,0 +1,23 @@
+name: semver
+
+# Checks the public API against the latest published version, so a release
+# whose version number is too small for its changes fails before it is
+# published. Runs on release branches (named release-*) and on demand.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semver:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-semver-checks@0.51.0
+      - run: cargo semver-checks --workspace

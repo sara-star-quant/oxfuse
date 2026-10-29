@@ -47,7 +47,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test -p oxfuse --locked --test claims --test docs --test readme --test op_coverage --test repo_hygiene
 
-  # The helper scripts' own tests (standard library only), on every change.
+  # The helper scripts' own tests (standard library only) and the NumPy oracle check, on every change.
   scripts:
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +56,12 @@ jobs:
         with:
           tool: just@1.59.0
       - run: just scripts-test
+      # The NumPy float64 oracle: the committed expected outputs must match.
+      - run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r scripts/requirements.txt
+          .venv/bin/python -I scripts/gen_expected.py examples --check
+          .venv/bin/python -I scripts/gen_expected.py corpus --check
 
   test:
     needs: changes
