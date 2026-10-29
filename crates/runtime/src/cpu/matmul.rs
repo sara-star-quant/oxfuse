@@ -119,7 +119,8 @@ fn direct_rows(b_len: usize, n: usize, j_full: usize, k0: usize, klen: usize) ->
 }
 
 /// Row-major `[m, k] x [k, n]` into `c` (`m * n`, zero on entry), bit-identical
-/// to the reference kernel.
+/// to the reference kernel. `b` has rows `ldb` floats apart (`ldb == n` unless
+/// `b` starts at a column panel of a wider matrix).
 ///
 /// The loop order is j-tile, k-tile, row block, k, j. For any one output
 /// element the contributions still arrive with `k` ascending (k-tiles run in
@@ -142,6 +143,7 @@ fn matmul_rows_simd<S: Simd>(
     b: &[f32],
     k: usize,
     n: usize,
+    ldb: usize,
     c: &mut [f32],
     kc: usize,
     nc: usize,
@@ -160,12 +162,12 @@ fn matmul_rows_simd<S: Simd>(
             let direct = if tail == 0 {
                 klen
             } else {
-                direct_rows(b.len(), n, j_full, k0, klen)
+                direct_rows(b.len(), ldb, j_full, k0, klen)
             };
             // Empty when every row is direct.
             packed.clear();
             for p in direct..klen {
-                let from = (k0 + p) * n + j_full;
+                let from = (k0 + p) * ldb + j_full;
                 let mut row = [0.0f32; W];
                 row[..tail].copy_from_slice(&b[from..from + tail]);
                 packed.extend_from_slice(&row);
@@ -182,8 +184,8 @@ fn matmul_rows_simd<S: Simd>(
                         ns,
                         a_block,
                         k,
-                        &b[k0 * n + j..],
-                        n,
+                        &b[k0 * ldb + j..],
+                        ldb,
                         &mut c[i * n + j..],
                         n,
                         klen,
@@ -201,8 +203,8 @@ fn matmul_rows_simd<S: Simd>(
                         edge[r * W..r * W + tail].copy_from_slice(&c[from..from + tail]);
                     }
                     // Either call does nothing when its row count is 0.
-                    let b_tail = &b[k0 * n + j_full..];
-                    micro_rows(simd, rows, 1, a_block, k, b_tail, n, &mut edge, W, direct);
+                    let b_tail = &b[k0 * ldb + j_full..];
+                    micro_rows(simd, rows, 1, a_block, k, b_tail, ldb, &mut edge, W, direct);
                     let a_rest = &a[i * k + k0 + direct..];
                     let rest = klen - direct;
                     micro_rows(simd, rows, 1, a_rest, k, &packed, W, &mut edge, W, rest);
@@ -223,11 +225,12 @@ fn matmul_rows(
     b: &[f32],
     k: usize,
     n: usize,
+    ldb: usize,
     c: &mut [f32],
     kc: usize,
     nc: usize,
 ) {
-    dispatch!(level, simd => matmul_rows_simd(simd, a, b, k, n, c, kc, nc));
+    dispatch!(level, simd => matmul_rows_simd(simd, a, b, k, n, ldb, c, kc, nc));
 }
 
 pub(super) fn matmul_tiled(
@@ -252,7 +255,7 @@ pub(super) fn matmul_tiled_at(
     (kc, nc): (usize, usize),
 ) -> Vec<f32> {
     let mut c = vec![0.0f32; m * n];
-    matmul_rows(level, a, b, k, n, &mut c, kc, nc);
+    matmul_rows(level, a, b, k, n, n, &mut c, kc, nc);
     c
 }
 
@@ -281,12 +284,101 @@ pub(super) fn matmul_parallel(a: &[f32], b: &[f32], m: usize, k: usize, n: usize
         .enumerate()
         .for_each(|(task, rows)| {
             let first = task * ROWS_PER_TASK;
-            matmul_rows(level, &a[first * k..], b, k, n, rows, KC, NC);
+            matmul_rows(level, &a[first * k..], b, k, n, n, rows, KC, NC);
         });
     c
 }
 
+/// Columns per task of a column split: a multiple of one wide block (four
+/// strips), so no task starts in the middle of a block of the same rows.
+#[cfg(feature = "parallel")]
+const COLUMN_PANEL: usize = 4 * W;
+
+/// Multiply-adds from which a few rows are split by columns. Waking a thread
+/// costs 10 us or more, which a smaller product does not earn back.
+#[cfg(feature = "parallel")]
+pub(super) const COLUMN_SPLIT_MIN_MACS: usize = 4 << 20;
+
+/// Multiply-adds one task of a column split should have, and the most tasks:
+/// more cores than that only add wake-up time on a product this small
+/// (docs/benchmarks.md).
+#[cfg(feature = "parallel")]
+pub(super) const COLUMN_TASK_MACS: usize = 1 << 20;
+#[cfg(feature = "parallel")]
+pub(super) const MAX_COLUMN_TASKS: usize = 4;
+
+/// Up to `ROWS_PER_TASK` rows form one row task, so threads can only help by
+/// splitting the columns. Each element's sum stays whole in one task.
+#[cfg(feature = "parallel")]
+pub(super) fn use_column_split(m: usize, k: usize, n: usize) -> bool {
+    m <= ROWS_PER_TASK
+        && m.saturating_mul(k).saturating_mul(n) >= COLUMN_SPLIT_MIN_MACS
+        && n >= 2 * COLUMN_PANEL
+}
+
+/// The number of tasks to split `[m, k] x [k, n]` into by columns on `threads`
+/// threads, or `None` when it should run in one piece.
+#[cfg(feature = "parallel")]
+pub(super) fn column_split_tasks(m: usize, k: usize, n: usize, threads: usize) -> Option<usize> {
+    if !use_column_split(m, k, n) {
+        return None;
+    }
+    let macs = m.saturating_mul(k).saturating_mul(n);
+    Some(column_tasks(macs, threads)).filter(|&tasks| tasks >= 2)
+}
+
+/// Tasks of a column split of `macs` multiply-adds on `threads` threads.
+#[cfg(feature = "parallel")]
+pub(super) fn column_tasks(macs: usize, threads: usize) -> usize {
+    (macs / COLUMN_TASK_MACS)
+        .clamp(2, MAX_COLUMN_TASKS)
+        .min(threads.max(1))
+}
+
+/// Columns of one task when `n` columns go to `tasks` tasks.
+#[cfg(feature = "parallel")]
+pub(super) fn column_panel(n: usize, tasks: usize) -> usize {
+    n.div_ceil(tasks.max(1)).div_ceil(COLUMN_PANEL) * COLUMN_PANEL
+}
+
+/// `[m, k] x [k, n]` with the columns of the output split over `tasks`
+/// tasks. A task reads its panel of `b` in place (rows `n` apart) and writes
+/// its own `[m, panel]` block, which is copied into place afterwards.
+#[cfg(feature = "parallel")]
+pub(super) fn matmul_columns(
+    a: &[f32],
+    b: &[f32],
+    (m, k, n): (usize, usize, usize),
+    tasks: usize,
+) -> Vec<f32> {
+    use rayon::prelude::*;
+    let level = Level::new();
+    let panel = column_panel(n, tasks);
+    let starts: Vec<usize> = (0..n).step_by(panel).collect();
+    let blocks: Vec<Vec<f32>> = starts
+        .par_iter()
+        .map(|&j0| {
+            let width = panel.min(n - j0);
+            let mut block = vec![0.0f32; m * width];
+            matmul_rows(level, a, &b[j0..], k, width, n, &mut block, KC, NC);
+            block
+        })
+        .collect();
+    let mut c = vec![0.0f32; m * n];
+    for (&j0, block) in starts.iter().zip(&blocks) {
+        let width = block.len() / m;
+        for r in 0..m {
+            c[r * n + j0..r * n + j0 + width].copy_from_slice(&block[r * width..(r + 1) * width]);
+        }
+    }
+    c
+}
+
 pub(super) fn matmul(a: &[f32], b: &[f32], m: usize, k: usize, n: usize) -> Vec<f32> {
+    #[cfg(feature = "parallel")]
+    if let Some(tasks) = column_split_tasks(m, k, n, rayon::current_num_threads()) {
+        return matmul_columns(a, b, (m, k, n), tasks);
+    }
     #[cfg(feature = "parallel")]
     if use_threads(m, k, n) {
         return matmul_parallel(a, b, m, k, n);
@@ -331,6 +423,90 @@ mod tests {
         for rows in 3..=R {
             assert_eq!(strips_for(rows, 9 * W), 1);
         }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn a_column_split_is_bit_identical_to_the_single_thread_kernel() {
+        for (k, n) in [(1, 128), (5, 130), (300, 250), (KC + 3, 515)] {
+            let b: Vec<f32> = (0..k * n)
+                .map(|i| ((i * 37 % 1999) as f32) / 700.0 - 1.4)
+                .collect();
+            for m in (1..=ROWS_PER_TASK).chain([19]) {
+                let a: Vec<f32> = (0..m * k)
+                    .map(|i| ((i * 53 % 2003) as f32) / 600.0 - 1.6)
+                    .collect();
+                let want = matmul_tiled(&a, &b, m, k, n, KC, NC);
+                for tasks in [2, 3, 4, 7] {
+                    let got = matmul_columns(&a, &b, (m, k, n), tasks);
+                    assert_eq!(got.len(), m * n);
+                    let same = got
+                        .iter()
+                        .zip(&want)
+                        .all(|(x, y)| x.to_bits() == y.to_bits());
+                    assert!(same, "m={m} k={k} n={n} tasks={tasks}");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn column_panel_is_a_whole_number_of_wide_blocks() {
+        assert_eq!(column_panel(256, 4), 64);
+        assert_eq!(column_panel(250, 4), 64);
+        assert_eq!(column_panel(1024, 3), 384);
+        assert_eq!(column_panel(128, 8), 64);
+        assert_eq!(column_panel(256, 2), 128);
+        assert_eq!(column_panel(257, 2), 192);
+        assert_eq!(column_panel(100, 0), 128);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn column_tasks_grow_with_the_work_up_to_four_and_the_threads() {
+        let task = COLUMN_TASK_MACS;
+        assert_eq!(column_tasks(task, 8), 2);
+        assert_eq!(column_tasks(3 * task, 8), 3);
+        assert_eq!(column_tasks(4 * task, 8), 4);
+        assert_eq!(column_tasks(64 * task, 8), MAX_COLUMN_TASKS);
+        assert_eq!(column_tasks(64 * task, 3), 3);
+        assert_eq!(column_tasks(64 * task, 1), 1);
+        assert_eq!(column_tasks(0, 8), 2);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn column_split_tasks_is_none_unless_it_splits_into_two_or_more() {
+        let (k, n) = (1024, 1024);
+        let rows_at_min = COLUMN_SPLIT_MIN_MACS / (k * n);
+        // Enough work, enough threads.
+        let at_min = column_split_tasks(rows_at_min, k, n, 8);
+        assert_eq!(at_min, Some(4));
+        assert_eq!(
+            column_split_tasks(ROWS_PER_TASK, k, n, 8),
+            Some(MAX_COLUMN_TASKS)
+        );
+        assert_eq!(column_split_tasks(ROWS_PER_TASK, k, n, 3), Some(3));
+        assert_eq!(column_split_tasks(ROWS_PER_TASK, k, n, 2), Some(2));
+        // One thread cannot split; too little work does not.
+        assert_eq!(column_split_tasks(ROWS_PER_TASK, k, n, 1), None);
+        assert_eq!(column_split_tasks(rows_at_min - 1, k, n, 8), None);
+        assert_eq!(column_split_tasks(ROWS_PER_TASK + 1, k, n, 8), None);
+    }
+
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn use_column_split_needs_few_rows_enough_work_and_two_blocks_of_columns() {
+        let (k, n) = (1024, 1024);
+        let rows_at_min = COLUMN_SPLIT_MIN_MACS / (k * n);
+        assert!(use_column_split(rows_at_min, k, n));
+        assert!(!use_column_split(rows_at_min - 1, k, n));
+        assert!(use_column_split(ROWS_PER_TASK, k, n));
+        assert!(!use_column_split(ROWS_PER_TASK + 1, k, n));
+        // 128 columns are two panels; 127 are not.
+        assert!(use_column_split(8, 1 << 16, 2 * COLUMN_PANEL));
+        assert!(!use_column_split(8, 1 << 16, 2 * COLUMN_PANEL - 1));
     }
 
     /// With `parallel`, the 64- and 70-row runs are split across threads (70 leaves
