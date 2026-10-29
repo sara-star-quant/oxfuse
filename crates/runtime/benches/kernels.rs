@@ -11,22 +11,14 @@ use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, ReferenceEvaluator, 
 use std::hint::black_box;
 use std::sync::Arc;
 
+mod mlp_graph;
+use mlp_graph::{CLASSES, HIDDEN, INPUT, W1_SEED, W2_SEED, X_SEED, data, mlp_graph};
+
 const CPU: &str = if cfg!(feature = "parallel") {
     "cpu-threads"
 } else {
     "cpu"
 };
-
-/// Deterministic values in [-1, 1).
-fn data(len: usize, seed: u32) -> Vec<f32> {
-    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
-    (0..len)
-        .map(|_| {
-            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            (state >> 8) as f32 / (1u32 << 23) as f32 - 1.0
-        })
-        .collect()
-}
 
 fn tensor(shape: &[usize], seed: u32) -> Tensor {
     Tensor::new(shape.to_vec(), data(shape.iter().product(), seed)).unwrap()
@@ -176,5 +168,36 @@ fn pipeline(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, matmul, skinny, elementwise, transpose, pipeline);
+/// A small classifier at batch 1, 8 and 32 (see `mlp_graph.rs`): two
+/// matrix products around a `Relu`, the work of one inference call. The size
+/// in the id is the batch. `ndarray` runs the same three steps as a control.
+fn mlp(c: &mut Criterion) {
+    for batch in [1usize, 8, 32] {
+        let graph = mlp_graph(batch);
+        let inputs = [tensor(&[batch, INPUT], X_SEED)];
+        time_backends(c, "mlp", batch, &graph, &inputs);
+        let x = Array2::from_shape_vec((batch, INPUT), data(batch * INPUT, X_SEED)).unwrap();
+        let w1 = Array2::from_shape_vec((INPUT, HIDDEN), data(INPUT * HIDDEN, W1_SEED)).unwrap();
+        let w2 =
+            Array2::from_shape_vec((HIDDEN, CLASSES), data(HIDDEN * CLASSES, W2_SEED)).unwrap();
+        let mut group = c.benchmark_group("mlp");
+        group.bench_function(format!("ndarray/{batch}"), |bench| {
+            bench.iter(|| {
+                let hidden = black_box(&x).dot(black_box(&w1)).mapv(|v| v.max(0.0));
+                black_box(hidden.dot(black_box(&w2)))
+            })
+        });
+        group.finish();
+    }
+}
+
+criterion_group!(
+    benches,
+    matmul,
+    skinny,
+    elementwise,
+    transpose,
+    pipeline,
+    mlp
+);
 criterion_main!(benches);

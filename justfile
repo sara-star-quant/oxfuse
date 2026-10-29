@@ -32,6 +32,7 @@ oracle-check:
     python3 -I scripts/gen_expected.py examples --check
     python3 -I scripts/gen_expected.py corpus --check
     python3 -I scripts/test_pack_golden.py
+    python3 -I scripts/test_bench_trend.py
 
 # Check the committed ONNX fixtures against onnxruntime and the onnx reference
 # evaluator. Needs the virtualenv: `uv venv --python 3.14 .venv-onnx` (onnxruntime

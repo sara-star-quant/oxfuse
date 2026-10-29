@@ -1,0 +1,50 @@
+name: bench-trend
+
+# Weekly numbers for the small-batch benchmarks on one x86_64 and one arm64
+# runner. Not a gate: hosted runners are noisy, so this only keeps a record and
+# marks big moves against the last run.
+
+on:
+  schedule:
+    - cron: "0 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the benchmarks
+        run: |
+          filter='mlp/|matmul-(head|skinny)/|pipeline/'
+          cargo bench -p oxfuse-runtime --locked -- "$filter"
+          cargo bench -p oxfuse-runtime --locked --features parallel -- "$filter"
+      - name: Collect the medians
+        run: python3 -I scripts/bench_trend.py collect trend.json
+      - name: Fetch the last run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh run list --workflow bench-trend.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$id" ]; then
+            gh run download "$id" --name "bench-${{ matrix.os }}" --dir last || true
+          fi
+      - name: Compare
+        run: |
+          if [ -f last/trend.json ]; then
+            python3 -I scripts/bench_trend.py compare trend.json last/trend.json | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            python3 -I scripts/bench_trend.py compare trend.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-${{ matrix.os }}
+          path: trend.json
