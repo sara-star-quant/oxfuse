@@ -119,11 +119,25 @@ def same_doc(committed, computed):
         return False
     for a, b in zip(committed["outputs"], computed["outputs"]):
         tol = effective(b, computed)
-        if effective(a, committed) != tol or a.get("bound") != b.get("bound"):
+        if effective(a, committed) != tol:
             return False
         if a["shape"] != b["shape"] or len(a["values"]) != len(b["values"]):
             return False
-        if not all(close(x, y, tol) for x, y in zip(a["values"], b["values"])):
+        bound_a, bound_b = a.get("bound"), b.get("bound")
+        if (bound_a is None) != (bound_b is None):
+            return False
+        if bound_b is None:
+            if not all(close(x, y, tol) for x, y in zip(a["values"], b["values"])):
+                return False
+            continue
+        # Sums done by a BLAS differ in the last bits between machines, so a
+        # bounded output is compared inside its own bound, and the bound to
+        # a relative 1e-9.
+        if len(bound_a) != len(bound_b):
+            return False
+        if not all(abs(x - y) <= 1e-9 * abs(y) for x, y in zip(bound_a, bound_b)):
+            return False
+        if not all(abs(x - y) <= e for x, y, e in zip(a["values"], b["values"], bound_b)):
             return False
     return True
 
