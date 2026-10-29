@@ -4,6 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- The fast CPU matmul runs one and two rows as wider blocks (four and two strips of 16 columns), which hides the latency of the fused multiply-add. The bits do not change. A 784-256-10 classifier at batch 1 is 1.5x faster on an M1 Pro and on x86 (Xeon 2.2 GHz), batch 8 is 8 percent faster, batch 32 is unchanged.
 ## 0.5.0 - 2026-10-29
 
 - Breaking: `Error`, `OnnxError` and `CliError` are `#[non_exhaustive]`, so a `match` on them needs a `_` arm and later variants are not breaking. `OnnxError::TooManyMessages` and the new `CliError` variants (`E109` to `E113`) arrive with this release, and `RunOptions` gained fields.
