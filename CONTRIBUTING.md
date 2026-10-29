@@ -70,6 +70,6 @@ Version 0.1.0 of `oxfuse-core`, `oxfuse-runtime` and `oxfuse` was published firs
 
 1. Run the gate: `just ci && just test-parallel && just test-wgpu && just oracle-check && just msrv`, and `cargo publish --workspace --dry-run --locked`.
 2. Publish with a token scoped to `publish-new` and `publish-update` for these names (or with crates.io trusted publishing from GitHub Actions): `cargo publish --workspace --locked`. It publishes `oxfuse-core`, `oxfuse-runtime`, `oxfuse-wgpu`, `oxfuse-onnx`, then `oxfuse` (the command-line tool).
-3. Tag the commit and create a GitHub release.
+3. Tag the commit and create a GitHub release. Then run the `release-binaries` workflow with `ref` and `tag` set to the tag and `upload` on; rehearse it first with `upload` off.
 4. In a clean directory with no path dependencies, run `cargo install oxfuse --version <new>` and a small consumer crate against the registry versions, and check docs.rs built every crate.
 5. Add the `sara-star-quant` team as an owner of all five crates.

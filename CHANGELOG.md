@@ -4,6 +4,10 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+## 0.5.0 - 2026-10-29
+
+- Breaking: `Error`, `OnnxError` and `CliError` are `#[non_exhaustive]`, so a `match` on them needs a `_` arm and later variants are not breaking. `OnnxError::TooManyMessages` and the new `CliError` variants (`E109` to `E113`) arrive with this release, and `RunOptions` gained fields.
+- Prebuilt `oxfuse` binaries (ONNX and GPU features on) for Linux and Windows on x86_64 and arm64 and macOS on arm64, attached to each release with `SHA256SUMS` and a build attestation (`gh attestation verify`). Each archive carries `LICENSE`, `NOTICE` and `THIRD_PARTY.txt`.
 - Benchmarks: an `mlp` group (a 784-256-10 classifier at batch 1, 8 and 32) with an `ndarray` control, the report regenerated from one run, and a weekly non-gating `bench-trend` workflow on one x86_64 and one arm64 runner.
 - A golden corpus for other runtimes' CI: graphs with the exact bits Oxfuse returns, built by `just golden`. See `docs/golden-corpus.md`.
 - `oxfuse compare A B` compares two outputs files bit by bit and gives a verdict (identical, permitted variation, contract violation, unresolved) using the run records from `--manifest`. See `docs/manifest.md`.

@@ -3,6 +3,7 @@
 use oxfuse_core::Error;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum CliError {
     #[error(transparent)]
     Core(#[from] Error),

@@ -2,6 +2,7 @@
 //! code so tests and users can match on it without parsing messages.
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("unsupported format_version {found} (supported: {supported})")]
     UnsupportedVersion { found: u32, supported: u32 },

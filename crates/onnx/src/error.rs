@@ -3,6 +3,7 @@
 use oxfuse_core::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum OnnxError {
     #[error("cannot decode the model: {reason}")]
     Decode { reason: String },
