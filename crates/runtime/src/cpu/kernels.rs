@@ -250,6 +250,41 @@ mod tests {
         }
     }
 
+    /// One and two rows run a block several strips wide. Column counts below,
+    /// at and above a whole group (4 strips for one row, 2 for two), with a
+    /// column tile that cuts a group short, and a k that spans two k-tiles.
+    #[test]
+    fn wide_blocks_for_few_rows_are_bit_identical() {
+        for level in [Level::baseline(), Level::new()] {
+            for m in [1, 2, 3, 7, 8, 9] {
+                for n in [
+                    W,
+                    2 * W - 1,
+                    2 * W,
+                    3 * W,
+                    4 * W - 1,
+                    4 * W,
+                    4 * W + 1,
+                    5 * W,
+                    8 * W + 5,
+                    250,
+                ] {
+                    for k in [1, 5, KC + 3] {
+                        let (a, b) = (values(m * k, 51), values(k * n, 52));
+                        let want = bits(&reference_matmul(&a, &b, m, k, n));
+                        for (kc, nc) in [(3, 3 * W), (KC, 4 * W), (KC, 5 * W + 3), (KC, NC)] {
+                            assert_eq!(
+                                bits(&matmul_tiled_at(level, &a, &b, (m, k, n), (kc, nc))),
+                                want,
+                                "{level:?} m={m} k={k} n={n} kc={kc} nc={nc}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// The machine's best level and its baseline (SSE2 on x86, which has no
     /// FMA: the multiply-add is computed in software there) give the same bits.
     #[test]
