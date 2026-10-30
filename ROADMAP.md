@@ -22,4 +22,4 @@ Next, in order: numpy broadcasting and the elementwise operators, then error bou
 
 ## Not planned
 
-Broadcasting beyond scalars, batched `MatMul`, operator fusion, Python bindings, a C interface with a C++ example, a RISC-V vector backend checked under emulation, a formally verified hardware block. Each needs a design and evidence first. No dates.
+Broadcasting outside `Add` and `Mul`, batched `MatMul`, operator fusion, Python bindings, a C interface with a C++ example, a RISC-V vector backend checked under emulation, a formally verified hardware block. Each needs a design and evidence first. No dates.

@@ -151,6 +151,18 @@ fn caps_of(limits: &wgpu::Limits) -> DeviceCaps {
     }
 }
 
+/// The GPU kernels read two equal shapes, or one scalar against a tensor; the
+/// graph IR also allows NumPy broadcasting, which they do not implement yet.
+fn check_binary_shapes(op: &str, lhs: &[usize], rhs: &[usize]) -> Result<(), String> {
+    if lhs == rhs || lhs.is_empty() || rhs.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{op} of shapes {lhs:?} and {rhs:?} needs broadcasting, which the GPU backend does not support yet (equal shapes or a scalar only)"
+        ))
+    }
+}
+
 /// Which operand of an Add or Mul is a rank-0 scalar applied to the other. When
 /// both are scalars neither is broadcast: the single element is read directly.
 fn scalar_flags(lhs: &[usize], rhs: &[usize]) -> (bool, bool) {
@@ -223,6 +235,8 @@ impl WgpuExecutable {
                     } else {
                         Binary::Mul
                     };
+                    check_binary_shapes(step.op.name(), shape_of(0), shape_of(1))
+                        .map_err(backend_error)?;
                     let (lhs, rhs) = scalar_flags(shape_of(0), shape_of(1));
                     let groups = fold(out_elements, &cfg, &caps)?;
                     Some(Planned {
@@ -747,6 +761,21 @@ impl Executable for WgpuExecutable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_equal_shapes_and_scalars_are_accepted_by_the_binary_kernels() {
+        assert!(check_binary_shapes("Add", &[2, 3], &[2, 3]).is_ok());
+        assert!(check_binary_shapes("Add", &[], &[2, 3]).is_ok());
+        assert!(check_binary_shapes("Mul", &[2, 3], &[]).is_ok());
+        assert!(check_binary_shapes("Mul", &[], &[]).is_ok());
+        let err = check_binary_shapes("Add", &[2, 3], &[3]).unwrap_err();
+        assert!(
+            err.starts_with("Add of shapes [2, 3] and [3] needs broadcasting"),
+            "{err}"
+        );
+        assert!(check_binary_shapes("Mul", &[2, 1], &[1, 3]).is_err());
+        assert!(check_binary_shapes("Mul", &[1], &[3]).is_err());
+    }
 
     #[test]
     fn scalar_flags_mark_only_the_broadcast_operand() {

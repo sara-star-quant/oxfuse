@@ -4,6 +4,7 @@
 use fearless_simd::{Level, Simd, dispatch};
 use fearless_simd_macros::simd;
 use oxfuse_core::Op;
+use oxfuse_core::shape::{broadcast_map, numpy_broadcast};
 
 /// Applies `op`. `inputs` and `shapes` are parallel slices. The graph was
 /// verified, so shapes are consistent with the op's shape rule.
@@ -11,8 +12,8 @@ pub(crate) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
     match op {
         Op::Relu => relu(inputs[0]),
         Op::Sigmoid => sigmoid(inputs[0]),
-        Op::Add => zip_scalar(inputs, shapes, |x, y| x + y),
-        Op::Mul => zip_scalar(inputs, shapes, |x, y| x * y),
+        Op::Add => zip_broadcast(inputs, shapes, |x, y| x + y),
+        Op::Mul => zip_broadcast(inputs, shapes, |x, y| x * y),
         Op::Reshape { .. } => inputs[0].to_vec(),
         Op::Transpose { perm } => transpose(inputs[0], shapes[0], perm),
         Op::MatMul => matmul(
@@ -25,15 +26,24 @@ pub(crate) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
     }
 }
 
-/// Elementwise binary op over equal shapes or with one scalar operand.
-fn zip_scalar(inputs: &[&[f32]], shapes: &[&[usize]], f: impl Fn(f32, f32) -> f32) -> Vec<f32> {
+/// Elementwise binary op with NumPy broadcasting. Equal shapes and a scalar
+/// operand take their own loops; any other pair reads each operand through
+/// `broadcast_map`.
+fn zip_broadcast(inputs: &[&[f32]], shapes: &[&[usize]], f: impl Fn(f32, f32) -> f32) -> Vec<f32> {
     let (a, b) = (inputs[0], inputs[1]);
-    if shapes[0].is_empty() && !shapes[1].is_empty() {
+    if shapes[0] == shapes[1] {
+        a.iter().zip(b).map(|(&x, &y)| f(x, y)).collect()
+    } else if shapes[0].is_empty() {
         b.iter().map(|&y| f(a[0], y)).collect()
-    } else if shapes[1].is_empty() && !shapes[0].is_empty() {
+    } else if shapes[1].is_empty() {
         a.iter().map(|&x| f(x, b[0])).collect()
     } else {
-        a.iter().zip(b).map(|(&x, &y)| f(x, y)).collect()
+        let out = numpy_broadcast(shapes[0], shapes[1]).expect("the graph was verified");
+        let (ia, ib) = (
+            broadcast_map(&out, shapes[0]),
+            broadcast_map(&out, shapes[1]),
+        );
+        ia.iter().zip(&ib).map(|(&i, &j)| f(a[i], b[j])).collect()
     }
 }
 

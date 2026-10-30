@@ -3,4 +3,4 @@ source: crates/cli/tests/invalid_graphs.rs
 expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
 input_file: tests/invalid/add_shape_mismatch.json
 ---
-error[E017]: node `y`: Add: operand shapes [2, 3] and [3, 2] must be equal or one operand must be a scalar (at nodes[0])
+error[E017]: node `y`: Add: operand shapes [2, 3] and [3, 2] cannot be broadcast (at nodes[0])

@@ -1,0 +1,6 @@
+---
+source: crates/cli/tests/invalid_graphs.rs
+expression: "String::from_utf8_lossy(&output.stderr).trim_end()"
+input_file: tests/invalid/mul_cannot_broadcast_in_the_middle.json
+---
+error[E017]: node `y`: Mul: operand shapes [2, 3, 4] and [3, 1, 4] cannot be broadcast (at nodes[0])

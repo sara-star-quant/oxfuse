@@ -17,7 +17,7 @@ Default-domain opsets 13 through 21 only. Anything else fails with "re-export wi
 |---|---|---|
 | `Relu`, `Sigmoid` | same op | |
 | `MatMul` | `MatMul` | rank 2 only |
-| `Add`, `Mul` | same op | equal shapes or a scalar run as is; a constant operand is expanded to the broadcast shape at import; a non-constant operand that needs broadcasting is an error |
+| `Add`, `Mul` | same op | equal shapes, a scalar or a bias run as is; at import a constant operand is expanded to the broadcast shape and a non-constant operand that needs broadcasting is an error (the importer does not use the IR's broadcasting yet) |
 | `Gemm` | `MatMul`, then `Transpose`, `Mul`, `Add` as needed | `alpha`, `beta`, `transA`, `transB`, optional `C` (a constant `C` is scaled by `beta` at import; `beta = 0` drops `C` as ONNX does, even a `C` full of infinity or NaN, and still checks its shape) |
 | `Reshape` | `Reshape` | the shape is an int64 initializer or `Constant`; `0` and `-1` are resolved at import; `allowzero=1` with a literal `0` is an error, the IR has no zero-size tensors |
 | `Flatten` | `Reshape` | `axis` in `[-rank, rank]` |

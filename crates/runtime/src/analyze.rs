@@ -17,6 +17,7 @@
 //! Elements that are not finite get an infinite bound.
 
 use crate::{Plan, Tensor, kernels};
+use oxfuse_core::shape::{broadcast_map, numpy_broadcast};
 use oxfuse_core::{Error, Graph, Op};
 
 /// The result of [`analyze`] for one output.
@@ -132,10 +133,17 @@ pub fn analyze(graph: &Graph, inputs: &[Tensor]) -> Result<Vec<Certificate>, Err
         .collect())
 }
 
-/// Index of the operand element that pairs with output element `i`, for an op
-/// whose operands have equal shapes or one scalar.
-fn operand_index(shape: &[usize], i: usize) -> usize {
-    if shape.is_empty() { 0 } else { i }
+/// For each output element of `Add` or `Mul`, the element each operand
+/// contributes (NumPy broadcasting).
+fn operand_maps(shapes: &[&[usize]], len: usize) -> (Vec<usize>, Vec<usize>) {
+    if shapes[0] == shapes[1] {
+        return ((0..len).collect(), (0..len).collect());
+    }
+    let out = numpy_broadcast(shapes[0], shapes[1]).expect("the graph was verified");
+    (
+        broadcast_map(&out, shapes[0]),
+        broadcast_map(&out, shapes[1]),
+    )
 }
 
 fn propagate(op: &Op, v: &[&[f32]], e: &[&[f64]], shapes: &[&[usize]], out: &[f32]) -> Vec<f64> {
@@ -143,20 +151,26 @@ fn propagate(op: &Op, v: &[&[f32]], e: &[&[f64]], shapes: &[&[usize]], out: &[f3
         Op::Relu => e[0].to_vec(),
         Op::Reshape { .. } => e[0].to_vec(),
         Op::Transpose { perm } => kernels::transpose(e[0], shapes[0], perm),
-        Op::Add => (0..out.len())
-            .map(|i| {
-                let (a, b) = (operand_index(shapes[0], i), operand_index(shapes[1], i));
-                add(add(e[0][a], e[1][b]), half_ulp(out[i]))
-            })
-            .collect(),
-        Op::Mul => (0..out.len())
-            .map(|i| {
-                let (a, b) = (operand_index(shapes[0], i), operand_index(shapes[1], i));
-                let (x, y) = (f64::from(v[0][a]), f64::from(v[1][b]));
-                let cross = add(mul(x.abs(), e[1][b]), mul(y.abs(), e[0][a]));
-                add(add(cross, mul(e[0][a], e[1][b])), half_ulp(out[i]))
-            })
-            .collect(),
+        Op::Add => {
+            let (ia, ib) = operand_maps(shapes, out.len());
+            (0..out.len())
+                .map(|i| {
+                    let (a, b) = (ia[i], ib[i]);
+                    add(add(e[0][a], e[1][b]), half_ulp(out[i]))
+                })
+                .collect()
+        }
+        Op::Mul => {
+            let (ia, ib) = operand_maps(shapes, out.len());
+            (0..out.len())
+                .map(|i| {
+                    let (a, b) = (ia[i], ib[i]);
+                    let (x, y) = (f64::from(v[0][a]), f64::from(v[1][b]));
+                    let cross = add(mul(x.abs(), e[1][b]), mul(y.abs(), e[0][a]));
+                    add(add(cross, mul(e[0][a], e[1][b])), half_ulp(out[i]))
+                })
+                .collect()
+        }
         Op::Sigmoid => out
             .iter()
             .zip(v[0].iter().zip(e[0]))
@@ -319,6 +333,22 @@ mod tests {
             .collect()
     }
 
+    /// Where output element `i` reads an operand, by splitting `i` into
+    /// per-dimension indices (written apart from `broadcast_map` on purpose).
+    fn naive_operand_index(out: &[usize], operand: &[usize], mut i: usize) -> usize {
+        let mut coords = vec![0usize; out.len()];
+        for d in (0..out.len()).rev() {
+            coords[d] = i % out[d];
+            i /= out[d];
+        }
+        let mut index = 0;
+        for (k, &size) in operand.iter().enumerate() {
+            let d = out.len() - operand.len() + k;
+            index = index * size + if size == 1 { 0 } else { coords[d] };
+        }
+        index
+    }
+
     /// The exact real result, to within float64's own error (about 1e-16
     /// relative), which is far below any bound the analysis returns.
     fn exact(graph: &Graph, inputs: &[Tensor]) -> Vec<Vec<f64>> {
@@ -345,11 +375,12 @@ mod tests {
                 Op::Add | Op::Mul => {
                     let b = &slots[step.inputs[1]];
                     let n = plan.slot_shapes[step.output].iter().product::<usize>();
+                    let out_shape = &plan.slot_shapes[step.output];
                     (0..n)
                         .map(|i| {
                             let (x, y) = (
-                                a[operand_index(shapes[0], i)],
-                                b[operand_index(shapes[1], i)],
+                                a[naive_operand_index(out_shape, shapes[0], i)],
+                                b[naive_operand_index(out_shape, shapes[1], i)],
                             );
                             if matches!(step.op, Op::Add) {
                                 x + y

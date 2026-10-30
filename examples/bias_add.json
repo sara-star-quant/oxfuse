@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "inputs": [{ "name": "x", "dtype": "f32", "shape": [2, 3] }],
+  "constants": [
+    { "name": "w", "dtype": "f32", "shape": [3, 2], "values": [1.0, 0.0, 0.0, 1.0, 1.0, 1.0] },
+    { "name": "b", "dtype": "f32", "shape": [2], "values": [-5.0, 0.0] },
+    { "name": "scale", "dtype": "f32", "shape": [2, 1], "values": [2.0, 0.5] }
+  ],
+  "nodes": [
+    { "name": "projection", "op": "MatMul", "inputs": ["x", "w"] },
+    { "name": "biased", "op": "Add", "inputs": ["projection", "b"] },
+    { "name": "activated", "op": "Relu", "inputs": ["biased"] },
+    { "name": "out", "op": "Mul", "inputs": ["activated", "scale"] }
+  ],
+  "outputs": ["out"]
+}
