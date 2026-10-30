@@ -1,10 +1,12 @@
 # oxfuse-wgpu
 
-Part of [oxfuse](https://github.com/sara-star-quant/oxfuse), a small tensor graph compiler in Rust. Start with the [repository README](https://github.com/sara-star-quant/oxfuse#readme) if you landed here from a search. What it is for: exact, repeatable float32 results and a reference for checking other runtimes; not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
+Part of [oxfuse](https://github.com/sara-star-quant/oxfuse), a small tensor graph compiler in Rust. Start with the [repository README](https://github.com/sara-star-quant/oxfuse#readme) if you landed here from a search.
 
 An optional GPU backend for [oxfuse](https://github.com/sara-star-quant/oxfuse) tensor graphs, written as WGSL compute kernels on wgpu. Tensors stay on the device between ops. The index arithmetic of the kernels is checked with Kani bounded model checking, and every kernel has a CPU model that is tested against it. Results are exact where the shading language allows and bounded elsewhere; the contract is in `docs/semantics.md` and the devices it was measured on are in `docs/adapters.md`, both in the repository.
 
-The command-line tool builds it with `--features wgpu` (`oxfuse run --backend wgpu`, `oxfuse gpu-selftest`). `gpu-selftest` measures any adapter against the reference backend.
+**For AI work:** run the same graph on a GPU and measure how its numbers differ from the exact CPU reference, on any adapter. Not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
+
+The quickest try is the command-line tool: `cargo install oxfuse --features wgpu`, then `oxfuse gpu-selftest` (it needs a GPU or a software Vulkan adapter). `oxfuse run --backend wgpu` runs a graph on it. `gpu-selftest` measures any adapter against the reference backend.
 
 A complete example, with the bound check and the device-resident path, is `examples/matmul.rs`:
 
