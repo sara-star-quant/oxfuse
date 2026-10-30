@@ -66,10 +66,25 @@ The floor is now set by `fearless_simd` 1.1, which declares 1.89, and `just msrv
 
 ## Releasing
 
-Version 0.1.0 of `oxfuse-core`, `oxfuse-runtime` and `oxfuse` was published first. Version 0.2.0 added `oxfuse-wgpu` and `Error::Backend`, which breaks exhaustive matches on `Error`; 0.3.0 added `oxfuse-onnx`. All five crates move together. A release, in order:
+All five crates (`oxfuse-core`, `oxfuse-runtime`, `oxfuse-wgpu`, `oxfuse-onnx`, `oxfuse`) move together on one version. **The version lives in one place:** `[workspace.package] version` in the root `Cargo.toml`. Everything that follows it is moved or checked by `scripts/release.py`:
 
-1. Run the gate (CI runs `cargo semver-checks --workspace` on `release-*` branches; run it yourself early): `just ci && just test-parallel && just test-wgpu && just oracle-check && just msrv`, and `cargo publish --workspace --dry-run --locked`.
-2. Publish with a token scoped to `publish-new` and `publish-update` for these names (or with crates.io trusted publishing from GitHub Actions): `cargo publish --workspace --locked`. It publishes `oxfuse-core`, `oxfuse-runtime`, `oxfuse-wgpu`, `oxfuse-onnx`, then `oxfuse` (the command-line tool).
-3. Tag the commit and create a GitHub release. Then run the `release-binaries` workflow with `ref` and `tag` set to the tag and `upload` on; rehearse it first with `upload` off.
-4. In a clean directory with no path dependencies, run `cargo install oxfuse --version <new>` and a small consumer crate against the registry versions, and check docs.rs built every crate.
-5. Add the `sara-star-quant` team as an owner of all five crates.
+| Command | What it does |
+|---|---|
+| `just release-status` | prints the version and every place that repeats it (path dependencies, `Cargo.lock`, the comparison row) |
+| `just release-check` | fails when a path dependency or `Cargo.lock` drifted, the changelog lacks `## Unreleased`, or a tool or action is pinned to two different versions across the workflows. CI runs it on every change |
+| `just release-bump X.Y.Z` | sets the version and the path dependencies, rolls `## Unreleased` into `## X.Y.Z - today`, runs `cargo update --workspace` |
+| `just release-post` | after publishing: sets the "Latest release" row of `docs/comparison.md` to the current version and date |
+
+On a `release-*` branch CI also runs `release.py check --release` (the changelog must carry the version) and `cargo semver-checks --workspace` against the last published version. Run `cargo semver-checks --workspace` yourself early: a new variant on a public enum or a new field on a public struct needs a minor bump while the crates are 0.x.
+
+A release, in order:
+
+1. **Content PRs first**, each with its own changelog bullet under `## Unreleased`. Then one docs sweep PR (benchmark report, mutation totals from the last full run, crate READMEs: they cannot be edited on crates.io after publishing).
+2. **The release PR.** Branch `release-X.Y.Z`, run `just release-bump X.Y.Z`, `just release-check --release`, commit as `release X.Y.Z`. Right after opening it, run the `mutants` and `fuzz` workflows on the branch (`gh workflow run mutants.yml --ref release-X.Y.Z`).
+3. **After the merge, on the merged head:** CI green on all platforms, the gate (`just ci && just test-parallel && just oracle-check && cargo deny check`), `cargo publish --workspace --dry-run --locked` (no `--allow-dirty`), a `release-binaries` rehearsal with `upload` off, and the evidence archive (gate output, sweep, workspace tests, mutation outcomes, `Cargo.lock`, `rustc -vV`, machine notes, benchmark report, `SHA256SUMS`; `$HOME` scrubbed).
+4. **Publish** with a token scoped to `publish-new` and `publish-update` for these names: `cargo publish --workspace --locked`. It publishes in dependency order and ends with `oxfuse`. Crates.io is immutable: a mistake means `cargo yank` and a fix in the next version.
+5. **Tag and release:** `git tag -a vX.Y.Z -m vX.Y.Z <commit>`, `git push origin vX.Y.Z`, `gh release create vX.Y.Z` with the evidence archive and the golden corpus (`just golden`). Then run `release-binaries` with `ref` and `tag` set to the tag and `upload` on.
+6. **Check what shipped:** `cargo install oxfuse --version X.Y.Z` in a clean directory, run the README session, compare `--backend reference` and `--backend cpu` with `cmp`, open docs.rs for all five crates, `cargo owner --list` for each, and download one binary to check `SHA256SUMS` and `gh attestation verify`.
+7. **Afterwards:** `just release-post`, open a small PR with the changed row.
+
+New crates join the publish list before `oxfuse`, and the `sara-star-quant` team becomes an owner of each right after its first publish.
