@@ -12,10 +12,10 @@ mod manifest;
 #[cfg(feature = "wgpu")]
 pub use commands::gpu_selftest;
 pub use commands::{
-    BackendKind, Dims, RunFailure, RunOptions, RunOutput, check, check_with, dims_from_args,
-    inspect, run, run_with,
+    BackendKind, Dims, RunFailure, RunOptions, RunOutput, analyze, check, check_with,
+    dims_from_args, inspect, run, run_with,
 };
 pub use compare::compare;
 pub use error::CliError;
-pub use format::{NamedTensorFile, OutputsFile, TensorFile};
+pub use format::{CertificatesFile, CertifiedTensorFile, NamedTensorFile, OutputsFile, TensorFile};
 pub use loader::load_graph;

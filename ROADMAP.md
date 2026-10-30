@@ -13,10 +13,12 @@ A stage is marked done only when it is implemented and tested.
 | 7 | ONNX import for a small operator subset, validated against an independent runtime | done |
 | 8 | Speed and trust: buffer reuse, SIMD matmul with run time dispatch, GPU host path and device-loss handling, fused-multiply-add `MatMul` and an `exp` of our own so the result no longer depends on the platform's math library, mutation testing in CI, Kani proofs | done, shipped in 0.4.0 |
 | 9 | Distribution and observability: a golden corpus for other runtimes, `oxfuse run --manifest` and `oxfuse compare`, work and message limits for hostile input, an `mlp` benchmark with a weekly trend, prebuilt binaries with checksums and attestations for the five tested platforms | done on `main`, ships in 0.5.0 |
+| 10 | Small-batch speed: one and two rows as wide blocks, a few rows split by columns over threads (a profile ruled out a memory plan and fusion), same bits | done, shipped in 0.5.1 |
+| 11 | Certified error bounds: `oxfuse analyze` gives each output element an interval that contains the exact real result, for the inputs given | done on `main` |
 
 ## Considered, no commitment
 
-Next, in order: small-batch speed (threads over columns for skinny matmul, a shared memory plan, exact bias and activation fusion), then numpy broadcasting and the elementwise operators, a rigorous error bound for a whole graph (`analyze`), and a transformer-lite set (`Softmax`, `LayerNormalization`, `Gelu`, reductions with a fixed order). Later, if there is demand: convolution and pooling, f16 and int8, a WASM build, Python bindings. Each operator ships only with its evidence: an oracle test, SIMD and reference kernels that agree bit for bit, a GPU bound, mutation testing and a row in the claims ledger.
+Next, in order: numpy broadcasting and the elementwise operators, then error bounds over a range of inputs, and a transformer-lite set (`Softmax`, `LayerNormalization`, `Gelu`, reductions with a fixed order). Later, if there is demand: convolution and pooling, f16 and int8, a WASM build, Python bindings. Each operator ships only with its evidence: an oracle test, SIMD and reference kernels that agree bit for bit, a GPU bound, mutation testing and a row in the claims ledger.
 
 ## Not planned
 

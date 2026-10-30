@@ -22,6 +22,7 @@
 //! # }
 //! ```
 
+mod analyze;
 mod backend;
 mod cpu;
 mod evaluator;
@@ -31,6 +32,7 @@ mod plan;
 mod reference;
 mod tensor;
 
+pub use analyze::{Certificate, analyze};
 pub use backend::{Backend, Executable};
 pub use cpu::{CpuBackend, simd_level};
 pub use evaluator::ReferenceEvaluator;

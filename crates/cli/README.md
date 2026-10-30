@@ -9,6 +9,7 @@ oxfuse run graph.json --inputs inputs.json [--backend reference|cpu|wgpu] [--man
 oxfuse run model.onnx --inputs inputs.json    # needs --features onnx
 oxfuse inspect graph.json
 oxfuse compare a.json b.json          # bit differences between two outputs files
+oxfuse analyze graph.json --inputs inputs.json   # each output with a bound on its distance from the exact result
 oxfuse gpu-selftest                   # needs --features wgpu
 ```
 

@@ -59,6 +59,7 @@ oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backe
 cmp golden.json out.json
 oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --manifest run.json > out.json   # also writes a record of the run
 oxfuse compare golden.json out.json                                  # bit differences and what they mean (see docs/manifest.md)
+oxfuse analyze examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json   # every output with a bound on its distance from the exact result (docs/analysis.md)
 
 # Check a small ONNX model against another runtime: compare its numbers with Oxfuse's exact ones.
 oxfuse run model.onnx --inputs inputs.json --backend reference     # needs --features onnx
@@ -154,6 +155,6 @@ Full gate: `just ci`. Oracle check: `just oracle-check` (needs `numpy`, see `scr
 
 ## Documentation
 
-[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [Numeric contract matrix](docs/contract.json) | [Provenance](docs/provenance.md) | [Comparison](docs/comparison.md) | [Run record](docs/manifest.md) | [Golden corpus](docs/golden-corpus.md) | [Use cases](docs/use-cases.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
+[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [Numeric contract matrix](docs/contract.json) | [Provenance](docs/provenance.md) | [Comparison](docs/comparison.md) | [Run record](docs/manifest.md) | [Golden corpus](docs/golden-corpus.md) | [Error bounds](docs/analysis.md) | [Use cases](docs/use-cases.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Adding an op](docs/adding-an-op.md) | [Roadmap](ROADMAP.md) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md)
 
 Copyright 2026 SARA STAR QUANT LLC. Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
