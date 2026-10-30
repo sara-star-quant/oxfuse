@@ -51,6 +51,7 @@ scripts-test:
     python3 -I scripts/test_bench_trend.py
     python3 -I scripts/test_package_release.py
     python3 -I scripts/test_gen_expected.py
+    python3 -I scripts/test_release.py
 
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:
@@ -154,3 +155,16 @@ bench-gpu:
 # Fetch every link in docs/comparison.md (needs the network; run before a release).
 links:
     python3 -I scripts/check_links.py
+
+# The release version lives in one place (see CONTRIBUTING.md, "Releasing").
+release-status:
+    python3 -I scripts/release.py status
+
+release-check *flags:
+    python3 -I scripts/release.py check {{flags}}
+
+release-bump version:
+    python3 -I scripts/release.py bump {{version}}
+
+release-post:
+    python3 -I scripts/release.py post
