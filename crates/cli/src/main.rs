@@ -65,6 +65,16 @@ enum Command {
         #[arg(long)]
         manifest_b: Option<PathBuf>,
     },
+    /// Certify the outputs: print each value with a bound on its distance from the exact result
+    Analyze {
+        file: PathBuf,
+        /// JSON file mapping each graph input name to {"shape": [...], "values": [...]}
+        #[arg(long)]
+        inputs: Option<PathBuf>,
+        /// Value for a named dimension of an ONNX model, as NAME=VALUE; repeatable
+        #[arg(long = "dim", value_parser = parse_dim)]
+        dim: Vec<(String, usize)>,
+    },
     /// Print the IR before and after each optimization pass
     Inspect {
         file: PathBuf,
@@ -139,6 +149,10 @@ fn main() -> ExitCode {
             }),
         #[cfg(feature = "wgpu")]
         Command::GpuSelftest { limits } => oxfuse_cli::gpu_selftest(limits.is_some())
+            .map(|text| (text, String::new()))
+            .map_err(|error| (error, String::new())),
+        Command::Analyze { file, inputs, dim } => oxfuse_cli::dims_from_args(dim)
+            .and_then(|dims| oxfuse_cli::analyze(file, inputs.as_deref(), &dims))
             .map(|text| (text, String::new()))
             .map_err(|error| (error, String::new())),
         Command::Inspect {

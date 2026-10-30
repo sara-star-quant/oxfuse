@@ -122,3 +122,19 @@ impl<'de> Deserialize<'de> for InputsFile {
         deserializer.deserialize_map(InputsVisitor)
     }
 }
+
+/// One output of `analyze`: the values `run` prints, and for each value a bound
+/// such that the exact result lies within `value +- bound`. A `null` bound means
+/// no certificate: the element is, or came from, a non-finite value.
+#[derive(Debug, Serialize)]
+pub struct CertifiedTensorFile {
+    pub name: String,
+    pub shape: Vec<usize>,
+    pub values: Vec<f32>,
+    pub bounds: Vec<Option<f64>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CertificatesFile {
+    pub outputs: Vec<CertifiedTensorFile>,
+}

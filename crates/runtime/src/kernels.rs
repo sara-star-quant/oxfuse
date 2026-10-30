@@ -102,7 +102,7 @@ fn matmul_loops<S: Simd>(
 /// Output dimension `i` is input dimension `perm[i]`. Walks the output in
 /// row-major order with an odometer index and reads the input through
 /// permuted strides.
-fn transpose(input: &[f32], in_shape: &[usize], perm: &[usize]) -> Vec<f32> {
+pub(crate) fn transpose<T: Copy>(input: &[T], in_shape: &[usize], perm: &[usize]) -> Vec<T> {
     let rank = in_shape.len();
     let mut in_strides = vec![1usize; rank];
     for d in (0..rank.saturating_sub(1)).rev() {

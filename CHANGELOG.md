@@ -4,6 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `oxfuse analyze graph.json --inputs inputs.json` prints every output with a bound: the exact real-number result lies within `value +- bound`, computed by replaying the fixed operator order with the standard rounding model. `oxfuse_runtime::analyze` is the library entry point. For the inputs given only, and pessimistic (3.7 times the real error at the median on the oracle corpus). See `docs/analysis.md`.
 ## 0.5.1 - 2026-10-30
 
 - With the `parallel` feature, a few rows (4 to 16) of a large product are split by columns over up to four threads, where before they ran on one. With a 1024 by 1024 weight, 5 rows take 0.6x and 8 rows 0.5x of the time on an M1 Pro and on x86 (4 vCPU Xeon). Each sum stays whole in one task, so the bits do not change with the thread count.

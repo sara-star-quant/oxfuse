@@ -1,7 +1,9 @@
 //! The `check` and `run` commands. Both return the text to print, so they
 //! are testable without spawning the binary.
 
-use crate::format::{InputsFile, NamedTensorFile, OutputsFile};
+use crate::format::{
+    CertificatesFile, CertifiedTensorFile, InputsFile, NamedTensorFile, OutputsFile,
+};
 use crate::manifest::{self, OutputDigest};
 use crate::{CliError, load_graph};
 use oxfuse_core::passes::{PassManager, default_pipeline};
@@ -426,6 +428,37 @@ fn render_outputs(outputs: Vec<(String, Tensor)>) -> Result<String, CliError> {
     }
     let mut text = serde_json::to_string(&OutputsFile { outputs: rendered })
         .expect("serializing finite tensors cannot fail");
+    text.push('\n');
+    Ok(text)
+}
+
+/// Runs the reference kernels on the inputs and certifies every output element
+/// (see `oxfuse_runtime::analyze`). The graph is analyzed as written, without
+/// the passes. A non-finite value is an error, as in `run`.
+pub fn analyze(
+    graph_path: &Path,
+    inputs_path: Option<&Path>,
+    dims: &Dims,
+) -> Result<String, CliError> {
+    let limits = Limits::default();
+    let graph = load_path(graph_path, &limits, dims)?;
+    let tensors = bind_inputs(&graph, inputs_path, &limits)?;
+    let mut outputs = Vec::new();
+    for cert in oxfuse_runtime::analyze(&graph, &tensors)? {
+        ensure_finite(&cert.name, &cert.values)?;
+        outputs.push(CertifiedTensorFile {
+            name: cert.name,
+            shape: cert.shape,
+            values: cert.values,
+            bounds: cert
+                .bounds
+                .iter()
+                .map(|&b| b.is_finite().then_some(b))
+                .collect(),
+        });
+    }
+    let mut text = serde_json::to_string(&CertificatesFile { outputs })
+        .expect("finite values and optional bounds serialize");
     text.push('\n');
     Ok(text)
 }
