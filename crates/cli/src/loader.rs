@@ -516,10 +516,7 @@ mod tests {
 
     #[test]
     fn oversized_file_is_rejected() {
-        let limits = Limits {
-            max_file_bytes: 10,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_file_bytes(10);
         let err = load_graph(&graph(&relu("y", "x"), r#""y""#), &limits).unwrap_err();
         assert!(matches!(
             err,
@@ -532,10 +529,7 @@ mod tests {
 
     #[test]
     fn too_many_nodes_are_rejected() {
-        let limits = Limits {
-            max_values: 1,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_values(1);
         let nodes = format!("{},{}", relu("a", "x"), relu("b", "a"));
         let err = load_graph(&graph(&nodes, r#""b""#), &limits).unwrap_err();
         assert!(matches!(err, CliError::Core(Error::LimitExceeded { .. })));
@@ -548,10 +542,7 @@ mod tests {
             "constants":[{"name":"c","dtype":"f32","shape":[1],"values":[1]}],
             "nodes":[{"name":"y","op":"Relu","inputs":["x"]}],
             "outputs":["y"]}"#;
-        let limits = Limits {
-            max_values: 2,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_values(2);
         let err = load_graph(json, &limits).unwrap_err();
         assert!(matches!(
             err,
@@ -561,10 +552,7 @@ mod tests {
                 limit: 2
             })
         ));
-        let at_limit = Limits {
-            max_values: 3,
-            ..Limits::default()
-        };
+        let at_limit = Limits::default().with_max_values(3);
         assert!(load_graph(json, &at_limit).is_ok());
     }
 
@@ -725,15 +713,9 @@ mod tests {
     #[test]
     fn a_file_exactly_at_the_size_limit_loads_and_one_byte_less_does_not() {
         let json = graph(&relu("y", "x"), r#""y""#);
-        let exactly = Limits {
-            max_file_bytes: json.len(),
-            ..Limits::default()
-        };
+        let exactly = Limits::default().with_max_file_bytes(json.len());
         assert!(load_graph(&json, &exactly).is_ok());
-        let one_less = Limits {
-            max_file_bytes: json.len() - 1,
-            ..Limits::default()
-        };
+        let one_less = Limits::default().with_max_file_bytes(json.len() - 1);
         assert!(matches!(
             load_graph(&json, &one_less),
             Err(CliError::Core(Error::LimitExceeded { what: "file bytes", found, limit }))
@@ -750,10 +732,7 @@ mod tests {
             "constants":[{"name":"x","dtype":"f32","shape":[1],"values":[1]}],
             "nodes":[{"name":"y","op":"Relu","inputs":["x"]}],
             "outputs":["y"]}"#;
-        let limits = Limits {
-            max_values: 2,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_values(2);
         assert!(matches!(
             load_graph(json, &limits),
             Err(CliError::Core(Error::LimitExceeded {
@@ -915,10 +894,7 @@ mod tests {
 
     #[test]
     fn whole_graph_limits_have_no_path() {
-        let limits = Limits {
-            max_values: 1,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_values(1);
         let json = graph(&relu("y", "x"), r#""y""#);
         assert!(matches!(
             load_graph(&json, &limits),

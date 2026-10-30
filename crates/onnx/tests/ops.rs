@@ -73,6 +73,30 @@ fn matmul_rank2() {
 }
 
 #[test]
+fn the_work_limit_applies_to_an_imported_model() {
+    // a[2,3] @ b[3,2] costs 12 multiply-adds.
+    let m = single(
+        "MatMul",
+        vec![input("a", &[2, 3]), input("b", &[3, 2])],
+        vec![],
+        &["a", "b"],
+    );
+    let with = |limit| ImportOptions {
+        limits: oxfuse_core::Limits::default().with_max_macs(limit),
+        ..ImportOptions::default()
+    };
+    assert!(import(&bytes(&m), &with(12)).is_ok());
+    assert_eq!(
+        import(&bytes(&m), &with(11)).unwrap_err(),
+        OnnxError::Core(Error::LimitExceeded {
+            what: "multiply-adds",
+            found: 12,
+            limit: 11
+        })
+    );
+}
+
+#[test]
 fn matmul_rank3_and_rank1_rejected() {
     for (a, b) in [(vec![2, 2, 2], vec![2, 2]), (vec![3], vec![3, 2])] {
         let m = single(
@@ -283,10 +307,7 @@ fn expansion_over_the_total_limit_is_rejected_before_allocating() {
     );
     // Input 16 + constant 4 = 20 elements exist; expanding adds 16 more.
     let tight = ImportOptions {
-        limits: oxfuse_core::Limits {
-            max_total_elements: 20,
-            ..oxfuse_core::Limits::default()
-        },
+        limits: oxfuse_core::Limits::default().with_max_total_elements(20),
         ..ImportOptions::default()
     };
     match import(&bytes(&m), &tight) {
@@ -307,11 +328,9 @@ fn expansion_over_the_total_limit_is_rejected_before_allocating() {
 #[test]
 fn expansion_over_the_per_tensor_limit() {
     let opts = ImportOptions {
-        limits: oxfuse_core::Limits {
-            max_tensor_elements: 16,
-            max_total_elements: 1000,
-            ..oxfuse_core::Limits::default()
-        },
+        limits: oxfuse_core::Limits::default()
+            .with_max_tensor_elements(16)
+            .with_max_total_elements(1000),
         ..ImportOptions::default()
     };
     // Expanding to exactly 16 elements fits the cap.

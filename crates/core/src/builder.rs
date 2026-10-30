@@ -107,6 +107,14 @@ impl GraphBuilder {
             output_names,
         };
         graph.verify()?;
+        let macs = graph.estimated_macs();
+        if macs > self.limits.max_macs {
+            return Err(Error::LimitExceeded {
+                what: "multiply-adds",
+                found: macs,
+                limit: self.limits.max_macs,
+            });
+        }
         Ok(graph)
     }
 
@@ -428,5 +436,39 @@ mod tests {
                 limit: 10
             }
         );
+    }
+
+    /// x[2,3] @ w[3,4] costs 24, and Relu of the 8 outputs 8 more.
+    fn matmul_relu(limits: Limits) -> Result<crate::Graph, Error> {
+        let mut b = GraphBuilder::new(limits);
+        let x = b.input("x", vec![2, 3]).unwrap();
+        let w = b.input("w", vec![3, 4]).unwrap();
+        let m = b.node("m", Op::MatMul, &[x, w]).unwrap();
+        let y = b.node("y", Op::Relu, &[m]).unwrap();
+        b.finish(&[y])
+    }
+
+    #[test]
+    fn the_work_limit_accepts_exactly_the_estimate_and_rejects_one_less() {
+        let graph = matmul_relu(Limits::default()).unwrap();
+        assert_eq!(graph.estimated_macs(), 32);
+        assert!(matmul_relu(Limits::default().with_max_macs(32)).is_ok());
+        assert_eq!(
+            matmul_relu(Limits::default().with_max_macs(31)).unwrap_err(),
+            Error::LimitExceeded {
+                what: "multiply-adds",
+                found: 32,
+                limit: 31
+            }
+        );
+    }
+
+    #[test]
+    fn there_is_no_work_limit_by_default() {
+        let mut b = GraphBuilder::new(Limits::default());
+        let x = b.input("x", vec![1000, 1000]).unwrap();
+        let w = b.input("w", vec![1000, 1000]).unwrap();
+        let m = b.node("m", Op::MatMul, &[x, w]).unwrap();
+        assert_eq!(b.finish(&[m]).unwrap().estimated_macs(), 1_000_000_000);
     }
 }

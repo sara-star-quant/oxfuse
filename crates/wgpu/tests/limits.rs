@@ -111,10 +111,7 @@ fn a_transpose_of_rank_above_eight_is_a_compile_error_not_a_panic() {
     if !available() {
         return;
     }
-    let limits = Limits {
-        max_rank: 9,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_rank(9);
     let mut b = GraphBuilder::new(limits);
     let x = b.input("x", vec![1; 9]).unwrap();
     let perm: Vec<usize> = (0..9).rev().collect();

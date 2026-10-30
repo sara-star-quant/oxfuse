@@ -298,10 +298,7 @@ mod tests {
 
     #[test]
     fn dims_over_the_limit_are_rejected_before_any_copy() {
-        let small = Limits {
-            max_tensor_elements: 16,
-            ..Limits::default()
-        };
+        let small = Limits::default().with_max_tensor_elements(16);
         let mut t = base(&[17], data_type::FLOAT);
         t.float_data = vec![0.0; 17];
         assert!(reason(read_tensor(&t, &small)).contains("limit of 16"));
