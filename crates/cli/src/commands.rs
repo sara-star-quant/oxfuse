@@ -184,15 +184,14 @@ pub fn run_with(
     inputs_path: Option<&Path>,
     options: &RunOptions,
 ) -> Result<RunOutput, RunFailure> {
-    let limits = Limits::default();
-    let graph = load_path(graph_path, &limits, &options.dims).map_err(RunFailure::bare)?;
-    // Before the passes: folding runs the constant part of the graph.
+    let mut limits = Limits::default();
     if let Some(limit) = options.max_macs {
-        let estimated = graph.estimated_macs();
-        if estimated > limit {
-            return Err(RunFailure::bare(CliError::TooMuchWork { estimated, limit }));
-        }
+        limits = limits.with_max_macs(limit);
     }
+    // The graph is refused when it is built, before the passes: folding runs
+    // the constant part of the graph.
+    let graph = load_path(graph_path, &limits, &options.dims)
+        .map_err(|error| RunFailure::bare(too_much_work(error)))?;
     let manager = pipeline(options, &limits).map_err(RunFailure::bare)?;
     let optimized = manager.run(&graph).map_err(|error| RunFailure {
         error: error.into(),
@@ -230,6 +229,28 @@ pub fn run_with(
             stderr,
             stdout: String::new(),
         }),
+    }
+}
+
+/// The work limit is a core limit; the command line reports it with its own code.
+fn too_much_work(error: CliError) -> CliError {
+    let limit_error = match &error {
+        CliError::Core(e) => Some(e),
+        CliError::Located { source, .. } => Some(&**source),
+        #[cfg(feature = "onnx")]
+        CliError::Onnx(oxfuse_onnx::OnnxError::Core(e)) => Some(e),
+        _ => None,
+    };
+    match limit_error {
+        Some(Error::LimitExceeded {
+            what: "multiply-adds",
+            found,
+            limit,
+        }) => CliError::TooMuchWork {
+            estimated: *found,
+            limit: *limit,
+        },
+        _ => error,
     }
 }
 
@@ -584,10 +605,7 @@ mod tests {
     #[test]
     fn oversized_file_is_rejected_before_reading() {
         let path = temp("big.json", GRAPH);
-        let limits = Limits {
-            max_file_bytes: 4,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_file_bytes(4);
         assert!(matches!(
             read_limited(&path, &limits),
             Err(CliError::Core(Error::LimitExceeded {
@@ -616,10 +634,7 @@ mod tests {
                 let _ = file.write_all(&vec![b' '; 1 << 20]);
             }
         });
-        let limits = Limits {
-            max_file_bytes: 64,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_file_bytes(64);
         let result = read_limited(&fifo, &limits);
         writer.join().unwrap();
         assert!(matches!(
@@ -855,10 +870,7 @@ mod tests {
 
     #[test]
     fn a_regular_file_at_the_limit_reads_and_a_larger_one_reports_its_real_size() {
-        let at_limit = Limits {
-            max_file_bytes: 64,
-            ..Limits::default()
-        };
+        let at_limit = Limits::default().with_max_file_bytes(64);
         let exactly = temp("exactly64.json", &" ".repeat(64));
         assert_eq!(read_limited(&exactly, &at_limit).unwrap().len(), 64);
         let large = temp("size200.json", &" ".repeat(200));
@@ -893,10 +905,7 @@ mod tests {
                 .unwrap();
             file.write_all(&[b' '; 64]).unwrap();
         });
-        let limits = Limits {
-            max_file_bytes: 64,
-            ..Limits::default()
-        };
+        let limits = Limits::default().with_max_file_bytes(64);
         let text = read_limited(&fifo, &limits).unwrap();
         writer.join().unwrap();
         assert_eq!(text.len(), 64);

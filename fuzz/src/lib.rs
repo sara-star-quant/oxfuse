@@ -13,13 +13,12 @@ use std::sync::Arc;
 
 /// Small limits keep each run fast and bound memory.
 pub fn small() -> Limits {
-    Limits {
-        max_file_bytes: 1 << 20,
-        max_values: 256,
-        max_tensor_elements: 1 << 13,
-        max_total_elements: 1 << 17,
-        max_rank: 8,
-    }
+    Limits::default()
+        .with_max_file_bytes(1 << 20)
+        .with_max_values(256)
+        .with_max_tensor_elements(1 << 13)
+        .with_max_total_elements(1 << 17)
+        .with_max_rank(8)
 }
 
 /// Values that exercise signs, zeros, magnitudes, infinity and NaN. Inputs are

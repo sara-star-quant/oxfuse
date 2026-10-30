@@ -141,10 +141,7 @@ fn deep_nesting_hits_cap_without_overflow() {
 
 #[test]
 fn oversize_file_rejected_before_decoding() {
-    let limits = Limits {
-        max_file_bytes: 4,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_file_bytes(4);
     // Garbage that would also fail decoding: the size error must win.
     let r = decode_model(&[0xff; 5], &limits);
     assert_eq!(r, Err(OnnxError::TooLarge { found: 5, limit: 4 }));
@@ -152,10 +149,7 @@ fn oversize_file_rejected_before_decoding() {
 
 #[test]
 fn file_at_the_limit_is_decoded() {
-    let limits = Limits {
-        max_file_bytes: 4,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_file_bytes(4);
     assert!(decode_model(&[], &limits).is_ok());
     // Exactly 4 bytes: tag, then a three-byte varint.
     let at_limit = [0x08, 0x80, 0x80, 0x01];
@@ -171,10 +165,7 @@ fn file_at_the_limit_is_decoded() {
 
 fn small_budget() -> Limits {
     // Budget: 10 messages per value, so 100 messages in all.
-    Limits {
-        max_values: 10,
-        ..Limits::default()
-    }
+    Limits::default().with_max_values(10)
 }
 
 fn model_with_nodes(n: usize) -> Vec<u8> {
@@ -194,10 +185,7 @@ fn the_graph_and_its_nodes_count_and_the_budget_is_inclusive() {
 
 #[test]
 fn the_budget_scales_with_max_values() {
-    let wide = Limits {
-        max_values: 11,
-        ..Limits::default()
-    };
+    let wide = Limits::default().with_max_values(11);
     assert!(decode_model(&model_with_nodes(100), &wide).is_ok());
     assert_eq!(
         decode_model(&model_with_nodes(110), &wide),
@@ -207,10 +195,7 @@ fn the_budget_scales_with_max_values() {
 
 #[test]
 fn a_huge_budget_does_not_overflow() {
-    let huge = Limits {
-        max_values: usize::MAX,
-        ..Limits::default()
-    };
+    let huge = Limits::default().with_max_values(usize::MAX);
     assert!(decode_model(&model_with_nodes(5), &huge).is_ok());
 }
 
@@ -288,10 +273,7 @@ fn malformed_bytes_are_still_a_decode_error_not_a_count_error() {
 
 #[test]
 fn the_size_cap_is_still_checked_first() {
-    let limits = Limits {
-        max_file_bytes: 4,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_file_bytes(4);
     assert!(matches!(
         decode_model(&model_with_nodes(10), &limits),
         Err(OnnxError::TooLarge { .. })
@@ -312,10 +294,7 @@ fn chain_with_flood(levels: usize, flood: usize) -> Vec<u8> {
 fn a_flood_at_the_deepest_level_prost_accepts_is_counted_and_deeper_is_too_deep() {
     // Each level is graph > node > attribute, so 34 levels put the flood at
     // depth 100, where prost still decodes; one more level is past its limit.
-    let limits = Limits {
-        max_values: 1000,
-        ..Limits::default()
-    };
+    let limits = Limits::default().with_max_values(1000);
     assert_eq!(
         decode_model(&chain_with_flood(34, 10_001), &limits),
         Err(OnnxError::TooManyMessages { limit: 10_000 })
