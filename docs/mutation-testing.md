@@ -4,17 +4,17 @@
 
 ## Result
 
-CPU-side crates, full run of every shard in CI on 2026-10-23 (run 39985230656, `ubuntu-latest`, commit of PR 42):
+CPU-side crates, full run of every shard in CI on 2026-10-30 (run 41041205367, `ubuntu-latest`, the 0.5.1 release tree):
 
 | Shard | Mutants | Caught | Timed out (counts as caught) | Unviable (do not compile) | Missed |
 |---|---|---|---|---|---|
-| core | 201 | 170 | 0 | 31 | 0 |
-| runtime (6 sub-shards) | 480 | 454 | 0 | 26 | 0 |
-| cli | 113 | 93 | 6 | 14 | 0 |
-| onnx | 268 | 250 | 0 | 18 | 0 |
-| **Total** | **1062** | **967** | **6** | **89** | **0** |
+| core | 205 | 174 | 0 | 31 | 0 |
+| runtime (6 sub-shards) | 562 | 530 | 3 | 29 | 0 |
+| cli | 182 | 151 | 6 | 25 | 0 |
+| onnx | 317 | 296 | 1 | 20 | 0 |
+| **Total** | **1266** | **1151** | **10** | **105** | **0** |
 
-All 973 mutants that compile were stopped. The six runtime sub-shards add up to the 480 mutants `cargo mutants --list` reports for the package with the `parallel` feature; check that sum whenever the shard count changes (shards are numbered from 0, and a skipped shard shows only as a smaller total).
+All 1161 mutants that compile were stopped. The six runtime sub-shards add up to the 562 mutants `cargo mutants --list` reports for the package with the `parallel` feature; check that sum whenever the shard count changes (shards are numbered from 0, and a skipped shard looks like a smaller total).
 
 GPU crate, run locally on an Apple M1 Pro (Metal) because it needs a real adapter. It has 624 mutants since the Kani-only file `proofs.rs` is excluded (`.cargo/mutants.toml`). It ran in three passes on 2026-10-23, each on the code of that moment:
 
