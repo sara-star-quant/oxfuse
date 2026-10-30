@@ -4,8 +4,11 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+## 0.5.1 - 2026-10-30
+
 - With the `parallel` feature, a few rows (4 to 16) of a large product are split by columns over up to four threads, where before they ran on one. With a 1024 by 1024 weight, 5 rows take 0.6x and 8 rows 0.5x of the time on an M1 Pro and on x86 (4 vCPU Xeon). Each sum stays whole in one task, so the bits do not change with the thread count.
-- The fast CPU matmul runs one and two rows as wider blocks (four and two strips of 16 columns), which hides the latency of the fused multiply-add. The bits do not change. A 784-256-10 classifier at batch 1 is 1.5x faster on an M1 Pro and on x86 (Xeon 2.2 GHz), batch 8 is 8 percent faster, batch 32 is unchanged.
+- The fast CPU matmul runs one and two rows as wider blocks (four and two strips of 16 columns), which hides the latency of the fused multiply-add. The bits do not change. A 784-256-10 classifier at batch 1 is 1.5x faster on an M1 Pro and on x86 (Xeon 2.2 GHz), batch 8 is 8 percent faster, batch 32 is unchanged.- CI: `cargo semver-checks` runs on release branches, the NumPy oracle check runs on every change (bounded outputs are compared inside their bound, since a BLAS differs in the last bits between machines), and the pull request mutants job runs as four shards and is cancelled by a new push.
+
 ## 0.5.0 - 2026-10-29
 
 - Breaking: `Error`, `OnnxError` and `CliError` are `#[non_exhaustive]`, so a `match` on them needs a `_` arm and later variants are not breaking. `OnnxError::TooManyMessages` and the new `CliError` variants (`E109` to `E113`) arrive with this release, and `RunOptions` gained fields.
