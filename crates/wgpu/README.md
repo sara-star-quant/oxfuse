@@ -1,6 +1,6 @@
 # oxfuse-wgpu
 
-Part of [oxfuse](https://github.com/sara-star-quant/oxfuse), a small tensor graph compiler in Rust. Start with the [repository README](https://github.com/sara-star-quant/oxfuse#readme) if you landed here from a search.
+Part of [oxfuse](https://github.com/sara-star-quant/oxfuse), a small tensor graph compiler in Rust. Start with the [repository README](https://github.com/sara-star-quant/oxfuse#readme) if you landed here from a search. What it is for: exact, repeatable float32 results and a reference for checking other runtimes; not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
 
 An optional GPU backend for [oxfuse](https://github.com/sara-star-quant/oxfuse) tensor graphs, written as WGSL compute kernels on wgpu. Tensors stay on the device between ops. The index arithmetic of the kernels is checked with Kani bounded model checking, and every kernel has a CPU model that is tested against it. Results are exact where the shading language allows and bounded elsewhere; the contract is in `docs/semantics.md` and the devices it was measured on are in `docs/adapters.md`, both in the repository.
 
