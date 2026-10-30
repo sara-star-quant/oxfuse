@@ -43,7 +43,7 @@ Each cell links the page at the version we read, not the main branch. Our own ce
 | rten v0.27.0 | ONNX operators | README: "RTen supports most standard ONNX operators", with a tracking issue for details, and some operators from the ONNX Runtime contrib set. | <https://github.com/robertknight/rten/blob/v0.27.0/README.md> | 2026-10-27 |
 | candle 0.11.0 | ONNX operators | Not stated in the README linked. | <https://github.com/huggingface/candle/blob/0.11.0/README.md> | 2026-10-27 |
 | Burn v0.22.1 | ONNX operators | README lists an ONNX import project (`burn-onnx`) that turns ONNX models into Rust code. | <https://github.com/tracel-ai/burn/blob/v0.22.1/README.md> | 2026-10-27 |
-| Oxfuse 0.5.0 | Latest release | 0.5.0, 2026-10-29. | <https://crates.io/api/v1/crates/oxfuse/0.5.0> | 2026-10-29 |
+| Oxfuse 0.5.1 | Latest release | 0.5.1, 2026-10-30. | <https://crates.io/api/v1/crates/oxfuse/0.5.1> | 2026-10-30 |
 | ONNX Runtime | Latest release | v1.31.1, 2026-10-26. | <https://github.com/microsoft/onnxruntime/releases/tag/v1.31.1> | 2026-10-27 |
 | tract | Latest release | v0.23.9, 2026-10-15. | <https://github.com/sonos/tract/releases/tag/v0.23.9> | 2026-10-27 |
 | rten | Latest release | 0.27.0, 2026-10-02. | <https://crates.io/api/v1/crates/rten/0.27.0> | 2026-10-27 |
