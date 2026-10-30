@@ -4,7 +4,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
-- Licensing: `docs/licensing.md` records the licence review (what ships, under what terms, the options compared, why Apache-2.0 stays). `NOTICE` now credits the ONNX project for the file format description the importer follows, and the binary's `THIRD_PARTY_LICENSES.txt` says its own crates are listed under their own licence.
+- Licensing: a sign-off (DCO) rule for outside commits, a ScanCode licence scan on release branches and a local snippet scan (`just licence-snippets`) for releases. `docs/licensing.md` records the licence review (what ships, under what terms, the options compared, why Apache-2.0 stays). `NOTICE` now credits the ONNX project for the file format description the importer follows, and the binary's `THIRD_PARTY_LICENSES.txt` says its own crates are listed under their own licence.
 - `oxfuse analyze graph.json --inputs inputs.json` prints every output with a bound: the exact real-number result lies within `value +- bound`, computed by replaying the fixed operator order with the standard rounding model. `oxfuse_runtime::analyze` is the library entry point. For the inputs given only, and pessimistic (3.7 times the real error at the median on the oracle corpus). See `docs/analysis.md`.
 ## 0.5.1 - 2026-10-30
 

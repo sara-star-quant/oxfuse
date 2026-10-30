@@ -52,6 +52,8 @@ scripts-test:
     python3 -I scripts/test_package_release.py
     python3 -I scripts/test_gen_expected.py
     python3 -I scripts/test_release.py
+    python3 -I scripts/test_dco_check.py
+    python3 -I scripts/test_licence_scan_check.py
 
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:
@@ -168,3 +170,12 @@ release-bump version:
 
 release-post:
     python3 -I scripts/release.py post
+
+# Snippet scan before a release: fingerprints of our source against open-source code (SCANOSS,
+# public API, no source leaves the machine). Needs `uv`. A new match fails until it is read and
+# added to ASSESSED in scripts/licence_scan_check.py.
+licence-snippets:
+    rm -rf target/snippets-in && mkdir -p target/snippets-in
+    git ls-files -- '*.rs' '*.py' '*.wgsl' '*.yml' '*.toml' '*.hbs' justfile | tar -cf - -T - | tar -xf - -C target/snippets-in
+    uvx --from scanoss==1.54.3 scanoss-py scan target/snippets-in -o target/snippets.json
+    python3 -I scripts/licence_scan_check.py snippets target/snippets.json
