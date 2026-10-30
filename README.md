@@ -94,7 +94,7 @@ It is not for production inference, large models, training, or speed-critical CP
 | ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
 | Builds on Rust 1.89 or newer | MSRV job in CI |
 
-Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.78x of `ndarray`'s speed (3.6x with threads), and one row against a 784x10 weight runs at 3.6x `ndarray`'s speed. A 784-256-10 classifier runs at 2.5x `ndarray`'s speed at batch 1, 0.95x at batch 8 and 0.81x at batch 32 (1.2x with threads), all on the recorded machine.
+Every claim maps to a row and a reproduction command in [docs/claims.md](docs/claims.md). Measured speeds, with machine and commands, are in [docs/benchmarks.md](docs/benchmarks.md). On a 512x512 matmul the single-threaded fast backend runs at 0.80x of `ndarray`'s speed (3.7x with threads), and one row against a 784x10 weight runs at 3.3x `ndarray`'s speed. A 784-256-10 classifier runs at 3.7x `ndarray`'s speed at batch 1, 1.03x at batch 8 and 0.79x at batch 32 (1.1x with threads), all on the recorded machine.
 
 ## Scope
 
