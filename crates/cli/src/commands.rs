@@ -236,7 +236,6 @@ pub fn run_with(
 fn too_much_work(error: CliError) -> CliError {
     let limit_error = match &error {
         CliError::Core(e) => Some(e),
-        CliError::Located { source, .. } => Some(&**source),
         #[cfg(feature = "onnx")]
         CliError::Onnx(oxfuse_onnx::OnnxError::Core(e)) => Some(e),
         _ => None,
