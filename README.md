@@ -71,7 +71,7 @@ oxfuse gpu-selftest                                                 # needs --fe
 oxfuse inspect examples/tiny_mlp.json
 ```
 
-It is not for production inference, large models, training, or speed-critical CPU work. For those, use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`. The operator set is seven float32 ops plus a small ONNX subset, with no broadcasting beyond a scalar operand.
+It is not for production inference, large models, training, or speed-critical CPU work. For those, use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`. The operator set is seven float32 ops plus a small ONNX subset, with NumPy broadcasting only in `Add` and `Mul`.
 
 ## What it does
 
@@ -103,15 +103,15 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 |---|---|---|---|
 | `Relu` | 1 | none | `x > 0 ? x : 0`, NaN propagates |
 | `Sigmoid` | 1 | none | `1 / (1 + exp(-x))` in `f32` |
-| `Add` | 2 | none | equal shapes, or one scalar operand |
-| `Mul` | 2 | none | equal shapes, or one scalar operand |
+| `Add` | 2 | none | NumPy broadcasting: trailing dimensions are aligned, and a dimension of 1 (or a missing one) stretches |
+| `Mul` | 2 | none | as `Add` |
 | `MatMul` | 2 | none | rank 2: `[M, K] x [K, N]` |
 | `Reshape` | 1 | `shape` | element count must match |
 | `Transpose` | 1 | `perm` | output dim `i` is input dim `perm[i]` |
 
 `f32` only, row-major. CPU by default; an optional GPU backend (`--features wgpu`, `--backend wgpu`) is measured on the devices in [docs/adapters.md](docs/adapters.md), with no support claimed for any device.
 
-Not supported: broadcasting beyond a scalar operand, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, a GPU in the default build. No device or vendor support is claimed or implied.
+Not supported: broadcasting in `MatMul`, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, a GPU in the default build. No device or vendor support is claimed or implied.
 
 ## GPUs
 

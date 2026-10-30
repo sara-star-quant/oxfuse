@@ -89,6 +89,14 @@ fn take_reusable(
     let size = plan.slot_shapes[step.output].iter().product::<usize>();
     for &at in candidates {
         let slot = step.inputs[at];
+        // The other operand of Add and Mul must be a scalar or as large as the
+        // result: a smaller one is broadcast and `apply_in_place` cannot index it.
+        if let Some(&other) = step.inputs.get(1 - at).filter(|_| step.inputs.len() == 2) {
+            let other_size = plan.slot_shapes[other].iter().product::<usize>();
+            if other_size != 1 && other_size != size {
+                continue;
+            }
+        }
         let reusable = remaining[slot] == 1
             && matches!(slots[slot], Slot::Owned(_))
             && plan.slot_shapes[slot].iter().product::<usize>() == size;

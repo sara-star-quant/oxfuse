@@ -65,31 +65,54 @@ pub fn numpy_broadcast(a: &[usize], b: &[usize]) -> Option<Vec<usize>> {
         .collect()
 }
 
-/// The subset of `numpy_broadcast` that v1 accepts: equal shapes, or one
-/// operand that is a scalar. Widening this is a change to this one function.
+/// The shape of `Add` and `Mul`: NumPy broadcasting of the two operand shapes
+/// (a scalar has rank 0 and broadcasts to anything).
 pub fn elementwise_shape(
     node: &str,
     op: &str,
     a: &[usize],
     b: &[usize],
 ) -> Result<Vec<usize>, Error> {
-    if a == b || b.is_empty() {
-        return Ok(a.to_vec());
+    numpy_broadcast(a, b).ok_or_else(|| {
+        mismatch(
+            node,
+            format!("{op}: operand shapes {a:?} and {b:?} cannot be broadcast"),
+        )
+    })
+}
+
+/// For each element of an output of shape `out` (row-major), the index of the
+/// element of an operand of shape `operand` it reads when the operand is
+/// broadcast to `out`. The caller has checked that `out` is the broadcast of
+/// `operand` with another shape.
+pub fn broadcast_map(out: &[usize], operand: &[usize]) -> Vec<usize> {
+    let rank = out.len();
+    // Row-major strides of the operand, aligned to the output's trailing
+    // dimensions; a stride is 0 where the operand has 1 or no such dimension.
+    let mut strides = vec![0usize; rank];
+    let mut stride = 1usize;
+    for d in (0..operand.len()).rev() {
+        let at = d + rank - operand.len();
+        strides[at] = if operand[d] == 1 { 0 } else { stride };
+        stride *= operand[d];
     }
-    if a.is_empty() {
-        return Ok(b.to_vec());
+    let total = out.iter().product::<usize>();
+    let mut map = Vec::with_capacity(total);
+    let mut index = vec![0usize; rank];
+    let mut offset = 0usize;
+    for _ in 0..total {
+        map.push(offset);
+        for d in (0..rank).rev() {
+            index[d] += 1;
+            offset += strides[d];
+            if index[d] < out[d] {
+                break;
+            }
+            offset -= strides[d] * out[d];
+            index[d] = 0;
+        }
     }
-    let hint = if numpy_broadcast(a, b).is_some() {
-        " (NumPy broadcasting is not supported yet)"
-    } else {
-        ""
-    };
-    Err(mismatch(
-        node,
-        format!(
-            "{op}: operand shapes {a:?} and {b:?} must be equal or one operand must be a scalar{hint}"
-        ),
-    ))
+    map
 }
 
 /// `[M, K] x [K, N] -> [M, N]`. The rule generalizes to `[..., M, K] x
@@ -280,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn elementwise_accepts_equal_shapes_and_scalars_only() {
+    fn elementwise_accepts_equal_shapes_scalars_and_numpy_broadcasts() {
         assert_eq!(
             elementwise_shape("n", "Add", &[2, 3], &[2, 3]),
             Ok(vec![2, 3])
@@ -291,21 +314,124 @@ mod tests {
     }
 
     #[test]
-    fn elementwise_rejects_incompatible_shapes() {
-        let err = elementwise_shape("y", "Add", &[2, 3], &[3, 2]).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "node `y`: Add: operand shapes [2, 3] and [3, 2] must be equal or one operand must be a scalar"
-        );
+    fn elementwise_broadcasts_the_way_numpy_does() {
+        for (a, b, want) in [
+            (vec![2, 3], vec![3], vec![2, 3]),
+            (vec![3], vec![2, 3], vec![2, 3]),
+            (vec![2, 1], vec![1, 3], vec![2, 3]),
+            (vec![2, 1, 4], vec![3, 1], vec![2, 3, 4]),
+            (vec![1], vec![5], vec![5]),
+            (vec![4, 1], vec![], vec![4, 1]),
+            (vec![1, 3], vec![2, 1], vec![2, 3]),
+        ] {
+            assert_eq!(
+                elementwise_shape("n", "Add", &a, &b),
+                Ok(want),
+                "{a:?} {b:?}"
+            );
+        }
     }
 
     #[test]
-    fn elementwise_names_the_missing_broadcast_feature() {
-        let err = elementwise_shape("y", "Mul", &[2, 3], &[3]).unwrap_err();
+    fn elementwise_rejects_shapes_that_do_not_broadcast() {
+        let err = elementwise_shape("y", "Add", &[2, 3], &[3, 2]).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "node `y`: Mul: operand shapes [2, 3] and [3] must be equal or one operand must be a scalar (NumPy broadcasting is not supported yet)"
+            "node `y`: Add: operand shapes [2, 3] and [3, 2] cannot be broadcast"
         );
+        let err = elementwise_shape("y", "Mul", &[2], &[3]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "node `y`: Mul: operand shapes [2] and [3] cannot be broadcast"
+        );
+    }
+
+    /// Every pair of shapes up to rank 3 with dimensions 1, 2 and 3, against a
+    /// definition written differently: broadcast succeeds when, from the last
+    /// dimension backwards, the sizes are equal or one of them is 1.
+    #[test]
+    fn broadcast_agrees_with_a_direct_definition_on_every_small_shape() {
+        let mut shapes = vec![vec![]];
+        for rank in 1..=3usize {
+            for code in 0..3usize.pow(rank as u32) {
+                shapes.push(
+                    (0..rank)
+                        .map(|d| 1 + (code / 3usize.pow(d as u32)) % 3)
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+        assert_eq!(shapes.len(), 1 + 3 + 9 + 27);
+        for a in &shapes {
+            for b in &shapes {
+                let rank = a.len().max(b.len());
+                let mut want = Some(Vec::new());
+                for back in 0..rank {
+                    let x = a.len().checked_sub(back + 1).map_or(1, |i| a[i]);
+                    let y = b.len().checked_sub(back + 1).map_or(1, |i| b[i]);
+                    want = match (want, x == y || x == 1 || y == 1) {
+                        (Some(mut w), true) => {
+                            w.insert(0, x.max(y));
+                            Some(w)
+                        }
+                        _ => None,
+                    };
+                }
+                assert_eq!(
+                    elementwise_shape("n", "Add", a, b).ok(),
+                    want,
+                    "{a:?} {b:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn broadcast_map_reads_each_operand_element_where_numpy_does() {
+        assert_eq!(broadcast_map(&[2, 3], &[3]), [0, 1, 2, 0, 1, 2]);
+        assert_eq!(broadcast_map(&[2, 3], &[2, 1]), [0, 0, 0, 1, 1, 1]);
+        assert_eq!(broadcast_map(&[2, 3], &[1, 3]), [0, 1, 2, 0, 1, 2]);
+        assert_eq!(broadcast_map(&[2, 3], &[2, 3]), [0, 1, 2, 3, 4, 5]);
+        assert_eq!(broadcast_map(&[2, 3], &[]), [0; 6]);
+        assert_eq!(broadcast_map(&[2, 2, 2], &[2, 1]), [0, 0, 1, 1, 0, 0, 1, 1]);
+        assert_eq!(
+            broadcast_map(&[2, 3, 2], &[3, 1]),
+            [0, 0, 1, 1, 2, 2, 0, 0, 1, 1, 2, 2]
+        );
+        assert_eq!(broadcast_map(&[], &[]), [0]);
+        assert_eq!(broadcast_map(&[3], &[1]), [0, 0, 0]);
+    }
+
+    /// Against the direct definition on every small pair: the map has one entry
+    /// per output element, stays inside the operand, and reaches all of it.
+    #[test]
+    fn broadcast_map_covers_the_operand_for_every_small_pair() {
+        let mut shapes = vec![vec![]];
+        for rank in 1..=3usize {
+            for code in 0..3usize.pow(rank as u32) {
+                shapes.push(
+                    (0..rank)
+                        .map(|d| 1 + (code / 3usize.pow(d as u32)) % 3)
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+        for a in &shapes {
+            for b in &shapes {
+                let Some(out) = numpy_broadcast(a, b) else {
+                    continue;
+                };
+                for operand in [a, b] {
+                    let map = broadcast_map(&out, operand);
+                    let count = operand.iter().product::<usize>();
+                    assert_eq!(map.len(), out.iter().product::<usize>());
+                    assert!(map.iter().all(|&i| i < count), "{out:?} {operand:?}");
+                    let mut seen = vec![false; count];
+                    map.iter().for_each(|&i| seen[i] = true);
+                    assert!(seen.iter().all(|&s| s), "{out:?} {operand:?}");
+                }
+            }
+        }
     }
 
     #[test]

@@ -1,0 +1,1 @@
+{"format_version":1,"inputs":[{"name":"x","dtype":"f32","shape":[2,3,4]},{"name":"s","dtype":"f32","shape":[3,1,4]}],"nodes":[{"name":"y","op":"Mul","inputs":["x","s"]}],"outputs":["y"]}

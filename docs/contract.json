@@ -58,6 +58,10 @@
         {
           "file": "crates/runtime/src/kernels.rs",
           "test": "add_and_mul_on_equal_shapes"
+        },
+        {
+          "file": "crates/runtime/tests/broadcast.rs",
+          "test": "both_backends_broadcast_every_small_pair_like_a_direct_loop"
         }
       ]
     },
@@ -72,6 +76,10 @@
         {
           "file": "crates/runtime/src/kernels.rs",
           "test": "add_and_mul_on_equal_shapes"
+        },
+        {
+          "file": "crates/runtime/tests/broadcast.rs",
+          "test": "both_backends_broadcast_every_small_pair_like_a_direct_loop"
         }
       ]
     },
@@ -165,6 +173,10 @@
         {
           "file": "crates/runtime/tests/cpu_equivalence.rs",
           "test": "the_cpu_backend_returns_the_reference_bits"
+        },
+        {
+          "file": "crates/runtime/tests/broadcast.rs",
+          "test": "both_backends_broadcast_every_small_pair_like_a_direct_loop"
         }
       ]
     },
@@ -179,6 +191,10 @@
         {
           "file": "crates/runtime/tests/cpu_equivalence.rs",
           "test": "the_cpu_backend_returns_the_reference_bits"
+        },
+        {
+          "file": "crates/runtime/tests/broadcast.rs",
+          "test": "both_backends_broadcast_every_small_pair_like_a_direct_loop"
         }
       ]
     },
