@@ -275,3 +275,15 @@ mod enabled {
         );
     }
 }
+
+#[cfg(feature = "onnx")]
+#[test]
+fn max_macs_refuses_an_onnx_model_with_the_same_code_as_a_json_graph() {
+    let model = format!("{FIXTURES}/linear.onnx");
+    let ok = oxfuse(&["check", &model]);
+    assert!(ok.status.success(), "{}", text(&ok.stderr));
+    let out = oxfuse(&["run", &model, "--max-macs", "0", "--dim", "N=1"]);
+    assert!(!out.status.success());
+    let err = text(&out.stderr);
+    assert!(err.contains("error[E109]"), "{err}");
+}
