@@ -1,0 +1,39 @@
+name: licence-scan
+
+# Scans the repository for licences and copyright holders (ScanCode) and for
+# snippets of other open-source code (SCANOSS fingerprints, no source leaves
+# the runner). Runs on release branches and on demand; the reports are
+# uploaded. ScanCode's findings are checked against scripts/licence_scan_check.py.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-') || startsWith(github.head_ref, 'licence-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y libmagic1
+      # pluggy 1.5.0: ScanCode 32.5.0 does not start with newer pluggy releases.
+      - run: python3 -m pip install "scancode-toolkit==32.5.0" "pluggy==1.5.0" "scanoss==1.54.3"
+      - name: ScanCode (licences, copyrights)
+        run: scancode --license --copyright --json-pp scancode.json --processes 2 --ignore ".git/*" .
+      - name: SCANOSS (snippets)
+        run: scanoss-py scan . -o scanoss.json --skip-folder .git
+      - run: python3 -I scripts/licence_scan_check.py scancode.json scanoss.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: licence-scan
+          path: |
+            scancode.json
+            scanoss.json
