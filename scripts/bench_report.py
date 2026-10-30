@@ -137,6 +137,27 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   attempt was five times slower: a generic helper that took the vector
   function as a parameter was not compiled with the AVX2 features, and writing
   the loop out in each function fixed it.
+- MatMul, wide blocks for one and two rows: with few rows the 6 x 16 block has
+  too few independent accumulators to cover the latency of the fused
+  multiply-add, so one row ran at 18 GFLOP/s and eight rows cost as much as two
+  blocks of six. One row now covers four strips of 16 columns in one pass over
+  k, two rows cover two strips. The sums are the same, element by element. A
+  profile of the classifier first showed 97 to 99 percent of its time in the
+  first matmul, which ruled out a memory plan and fusing `Relu` (under 1
+  percent each). Batch 1 of the classifier went from 22 us to 14 us on the M1
+  Pro and from 32 us to 21 us on the Xeon; the 1024 x 1024 weight with one row
+  from 140 us to 65 us. Three rows and more are unchanged.
+- Threads, few rows: with 16 rows or fewer there was one row task, so threads
+  never helped a small batch. From four rows and 4 Mi multiply-adds the
+  columns are split over up to four tasks (one per Mi multiply-adds), each
+  reading its panel of B in place and keeping every sum whole in one task. On
+  the M1 Pro with a 1024 x 1024 weight, in a run against the same binary run
+  twice (the two copies agreed within 1 percent): 4 rows 117 us to 87 us, 5
+  rows 155 us to 101 us, 8 rows 246 us to 128 us; one to three rows,
+  32 rows, the narrow head and the classifier did not move. On the 4 vCPU Xeon
+  5 rows went from 545 us to 327 us and 8 rows from 856 us to 468 us. A lower
+  threshold made two rows 10 percent slower on both machines, because waking a
+  thread costs more than the product, so it starts at four.
 """
 
 
@@ -286,15 +307,15 @@ are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
 ### mlp (Xeon, AVX2)
 
 The same classifier on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
-2026-10-29 at commit 7b675de by the flow in the `oxfuse-x86-ab` notes: five
+2026-10-29 at commit 691d07b (the wide blocks; the column split changes only the threaded path) by the flow in the `oxfuse-x86-ab` notes: five
 interleaved rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
 column against `ndarray`; the notebook's timer resolves 1 us.
 
 | size | reference | cpu | ndarray | best cpu vs reference | cpu vs ndarray |
 |---|---|---|---|---|---|
-| 1 | 330 us | 33 us | 106 us | 10.00x | 3.21x |
-| 8 | 2.63 ms | 133 us | 109 us | 19.78x | 0.82x |
-| 32 | 10.45 ms | 502 us | 305 us | 20.81x | 0.61x |
+| 1 | 342 us | 21 us | 98 us | 16.29x | 4.67x |
+| 8 | 2.74 ms | 114 us | 108 us | 24.06x | 0.95x |
+| 32 | 11.11 ms | 468 us | 286 us | 23.74x | 0.61x |
 
 ### gpu-matmul (Tesla T4)
 
