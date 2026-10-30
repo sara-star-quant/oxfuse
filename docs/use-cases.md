@@ -4,6 +4,21 @@ Oxfuse runs small float32 graphs and gives you the same bits on every platform i
 
 Every statement below points at a command you can run or a row in [claims.md](claims.md).
 
+## Find yourself
+
+| If you are | Oxfuse gives you | Start with |
+|---|---|---|
+| Testing a runtime, a compiler or a kernel library | Graphs with the exact output bits, and a verdict on a difference | the [golden corpus](golden-corpus.md), `oxfuse compare` |
+| Studying numerical reproducibility or error | A fixed summation order and an `exp` with a known error, on five platforms | [semantics.md](semantics.md), `oxfuse run --manifest` |
+| Choosing a GPU or a driver for numerics | A report on fused multiply-add use, flushing and error per adapter | `oxfuse gpu-selftest`, [adapters.md](adapters.md) |
+| Keeping regression tests for a small model | Golden outputs that fail when one bit moves | `--backend reference`, then `cmp` |
+| Learning how a tensor compiler fits together | A small typed IR, a verifier and four exact passes | [architecture.md](architecture.md) |
+| Running a large model, training, or serving traffic | Nothing. Use ONNX Runtime, `tract`, `candle` or `burn` | [comparison.md](comparison.md) |
+
+## Why exact bits matter
+
+Two runtimes can run the same model and disagree in the last bits of a result. A bit is one "ulp", the unit in the last place of a float32. A difference of a few ulp is usually harmless, but it turns a regression test into a judgment call ("is this drift or a bug?"), and on near-tied scores it can change which class wins. When every platform agrees to the bit, any difference you see is a real change, and you can say so. Oxfuse gets there by defining the arithmetic: `MatMul` is one fused multiply-add (a multiply and an add with one rounding) per step in a fixed order, and `Sigmoid` uses an `exp` written for this project.
+
 ## Research
 
 - **Reproducibility studies.** The reference and the fast CPU backend return the same bits on Linux and Windows (x86_64, arm64) and macOS (arm64), at any SIMD level and thread count. If two runs differ, the difference is not Oxfuse's arithmetic. `oxfuse run --manifest run.json` records the version, backend, SIMD level and SHA-256 of the model, inputs and each output; `oxfuse compare a.json b.json` reports the bit differences and whether the contract permits them ([manifest.md](manifest.md)).
@@ -36,4 +51,12 @@ oxfuse run examples/tiny_mlp.json --inputs examples/tiny_mlp.inputs.json --backe
 oxfuse compare ref_out.json cpu_out.json
 ```
 
-The last command prints `verdict: identical`.
+The last command prints `verdict: identical`. Output from another runtime has no run record, so `compare` cannot say whether a difference is allowed. It reports it and exits 1:
+
+```
+out: 1 of 4 values differ, max 8 ulp, first at index 1
+verdict: unresolved
+error[E110]: outputs differ: unresolved
+```
+
+With run records from two Oxfuse runs (`--manifest-a`, `--manifest-b`) the verdict is `identical`, `permitted variation` (for example a GPU inside its documented bound) or `contract violation` ([manifest.md](manifest.md)).
