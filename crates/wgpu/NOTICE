@@ -2,3 +2,5 @@ Oxfuse
 Copyright 2026 SARA STAR QUANT LLC
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes a hand-written Rust description of part of the ONNX file format (the field numbers and names of onnx.proto) from the ONNX project, which is licensed under the Apache License, Version 2.0: https://github.com/onnx/onnx
