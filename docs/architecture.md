@@ -39,7 +39,7 @@ Dependencies point one way: core knows nothing about files or backends. That is 
 
 - **`WgpuBackend`** (optional feature, crate `oxfuse-wgpu`) runs the plan as compute dispatches on a device. Shapes are static, so compile fixes every buffer, pipeline and dispatch size. It keeps intermediate tensors on the device, offers an explicit `upload`, `run_device` and `download`, and copies results into fresh buffers so they stay valid after the next run. Its numerical contract has two tiers: [semantics.md](semantics.md). Measured devices: [adapters.md](adapters.md).
 
-The CPU executor borrows inputs and constants and moves computed output buffers out instead of copying. The optional `parallel` feature splits matmul by output rows only, which is why the thread count cannot change a result.
+The CPU executor borrows inputs and constants and moves computed output buffers out instead of copying. The optional `parallel` feature splits matmul by output rows, or by output columns when there are 16 rows or fewer, and never splits the `k` sum, which is why the thread count cannot change a result.
 
 ## How the checks fit together
 
