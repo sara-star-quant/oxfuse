@@ -1,6 +1,6 @@
 //! Lowering: a checked `Model` into an oxfuse `Graph`. Every op maps onto
-//! the existing IR ops; broadcasting is done by expanding constants at
-//! import, so the IR, the optimizer and the backends stay unchanged.
+//! the existing IR ops; `Add` and `Mul` broadcast in the IR, so an operand of
+//! any kind (an initializer, an input or a computed value) is passed as is.
 
 use crate::{
     ImportOptions, OnnxError,
@@ -23,7 +23,7 @@ enum Val {
 struct T {
     id: ValueId,
     shape: Vec<usize>,
-    /// Present for constants, so Add and Mul can expand them.
+    /// Present for constants, so Reshape and the Gemm scaling can read them.
     data: Option<Arc<[f32]>>,
 }
 
@@ -209,25 +209,16 @@ impl Cx<'_> {
         self.arity(n, 2)?;
         let a = self.tensor(&n.inputs[0], &n.inputs[0])?;
         let b = self.tensor(&n.inputs[1], &n.inputs[1])?;
-        let (a, b) = self.align(n, a, b)?;
-        let shape = if a.shape.is_empty() {
-            b.shape.clone()
-        } else {
-            a.shape.clone()
-        };
+        let shape = self.broadcast_shape(n, &a, &b)?;
         let y = self.emit(&n.outputs[0], op, &[&a, &b], shape)?;
         self.define(&n.outputs[0], Val::Tensor(y));
         Ok(())
     }
 
-    /// Make two operands acceptable to the IR (equal shape or one scalar) by
-    /// expanding constants to the broadcast shape. A non-constant operand
-    /// that would need broadcasting is rejected.
-    fn align(&mut self, n: &Node, a: T, b: T) -> Result<(T, T), OnnxError> {
-        if a.shape == b.shape || a.shape.is_empty() || b.shape.is_empty() {
-            return Ok((a, b));
-        }
-        let target = numpy_broadcast(&a.shape, &b.shape).ok_or_else(|| {
+    /// The NumPy broadcast of two operand shapes, or the error ONNX gives for
+    /// shapes that do not match.
+    fn broadcast_shape(&self, n: &Node, a: &T, b: &T) -> Result<Vec<usize>, OnnxError> {
+        numpy_broadcast(&a.shape, &b.shape).ok_or_else(|| {
             shape_err(
                 n,
                 format!(
@@ -235,61 +226,6 @@ impl Cx<'_> {
                     n.op, a.shape, b.shape
                 ),
             )
-        })?;
-        let a = self.expand(n, a, &target, 0)?;
-        let b = self.expand(n, b, &target, 1)?;
-        Ok((a, b))
-    }
-
-    fn expand(&mut self, n: &Node, t: T, target: &[usize], side: usize) -> Result<T, OnnxError> {
-        if t.shape == target {
-            return Ok(t);
-        }
-        let Some(data) = t.data.as_ref() else {
-            return Err(shape_err(
-                n,
-                format!(
-                    "{}: operand {side} of shape {:?} needs broadcasting to {target:?} and is not a constant; only constants are expanded",
-                    n.op, t.shape
-                ),
-            ));
-        };
-        let count = target
-            .iter()
-            .try_fold(1usize, |acc, d| acc.checked_mul(*d))
-            .unwrap_or(usize::MAX);
-        let limits = &self.opts.limits;
-        for (what, found, limit) in [
-            (
-                "expanded constant elements",
-                count,
-                limits.max_tensor_elements,
-            ),
-            (
-                "total tensor elements",
-                self.total.saturating_add(count),
-                limits.max_total_elements,
-            ),
-        ] {
-            if found > limit {
-                return Err(OnnxError::Limit {
-                    node: n.label.clone(),
-                    what,
-                    found,
-                    limit,
-                });
-            }
-        }
-        let expanded = broadcast_data(data, &t.shape, target);
-        let name = format!("{}.operand{side}", n.outputs[0]);
-        let id = self
-            .b
-            .constant_shared(&name, target.to_vec(), expanded.clone().into())?;
-        self.total = self.total.saturating_add(count);
-        Ok(T {
-            id,
-            shape: target.to_vec(),
-            data: Some(expanded.into()),
         })
     }
 
@@ -370,7 +306,6 @@ impl Cx<'_> {
             if !is_one(beta) {
                 c = self.scale(&format!("{out}.beta"), c, beta)?;
             }
-            let (y, c) = self.align(n, y, c)?;
             let y = self.emit(&out, Op::Add, &[&y, &c], shape)?;
             self.define(&out, Val::Tensor(y));
         } else {
@@ -666,41 +601,6 @@ fn is_zero(v: f32) -> bool {
 /// Bit comparison, so only exactly `1.0` skips the scaling (not `-0.0`, not NaN).
 fn is_one(v: f32) -> bool {
     v.to_bits() == 1.0f32.to_bits()
-}
-
-/// `data` of shape `from` repeated into shape `to` (NumPy broadcasting;
-/// the caller has checked that `to` is the broadcast of `from` with another).
-fn broadcast_data(data: &[f32], from: &[usize], to: &[usize]) -> Vec<f32> {
-    let offset = to.len() - from.len();
-    // Stride of each output axis into `data`; stretched axes step by 0.
-    let mut strides = vec![0usize; to.len()];
-    let mut stride = 1;
-    for axis in (0..from.len()).rev() {
-        if from[axis] != 1 {
-            strides[axis + offset] = stride;
-        }
-        stride *= from[axis];
-    }
-    let count: usize = to.iter().product();
-    let mut out = Vec::with_capacity(count);
-    let mut index = vec![0usize; to.len()];
-    for _ in 0..count {
-        out.push(
-            data[index
-                .iter()
-                .zip(&strides)
-                .map(|(i, s)| i * s)
-                .sum::<usize>()],
-        );
-        for axis in (0..to.len()).rev() {
-            index[axis] += 1;
-            if index[axis] < to[axis] {
-                break;
-            }
-            index[axis] = 0;
-        }
-    }
-    out
 }
 
 /// A node's attributes. A handler takes the ones it understands; `finish`

@@ -227,19 +227,26 @@ fn add_const_rank1_of_size_one() {
 }
 
 #[test]
-fn add_non_constant_broadcast_rejected() {
+fn add_non_constant_broadcast_runs() {
+    // Both operands are inputs; the bias row is added to every row.
     let m = single(
         "Add",
         vec![input("a", &[2, 3]), input("b", &[3])],
         vec![],
         &["a", "b"],
     );
-    match load(&m) {
-        Err(OnnxError::Shape { reason, .. }) => {
-            assert!(reason.contains("not a constant"), "{reason}")
-        }
-        other => panic!("{other:?}"),
-    }
+    let g = load_ok(&m);
+    assert_eq!(ops(&g), vec!["Add"]);
+    assert_eq!(
+        run(
+            &g,
+            &[
+                (&[2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+                (&[3], &[10.0, 20.0, 30.0])
+            ]
+        ),
+        vec![vec![11.0, 22.0, 33.0, 14.0, 25.0, 36.0]]
+    );
 }
 
 #[test]
@@ -298,70 +305,24 @@ fn mul_expands_like_add() {
 }
 
 #[test]
-fn expansion_over_the_total_limit_is_rejected_before_allocating() {
+fn a_broadcast_output_is_held_to_the_limits() {
+    // The output of [4, 4] + [4] has 16 elements; the cap is 15.
     let m = single(
         "Add",
         vec![input("x", &[4, 4])],
         vec![init("b", &[4], &[0.0; 4])],
         &["x", "b"],
     );
-    // Input 16 + constant 4 = 20 elements exist; expanding adds 16 more.
-    let tight = ImportOptions {
-        limits: oxfuse_core::Limits::default().with_max_total_elements(20),
-        ..ImportOptions::default()
-    };
-    match import(&bytes(&m), &tight) {
-        Err(OnnxError::Limit {
-            node,
-            what,
-            found,
-            limit,
-        }) => {
-            assert!(node.contains("Add"));
-            assert_eq!(what, "total tensor elements");
-            assert_eq!((found, limit), (36, 20));
-        }
-        other => panic!("{other:?}"),
-    }
-}
-
-#[test]
-fn expansion_over_the_per_tensor_limit() {
-    let opts = ImportOptions {
+    let opts = |cap| ImportOptions {
         limits: oxfuse_core::Limits::default()
-            .with_max_tensor_elements(16)
+            .with_max_tensor_elements(cap)
             .with_max_total_elements(1000),
         ..ImportOptions::default()
     };
-    // Expanding to exactly 16 elements fits the cap.
-    let fits = single(
-        "Add",
-        vec![input("x", &[4, 4])],
-        vec![init("b", &[4], &[0.0; 4])],
-        &["x", "b"],
-    );
-    import(&bytes(&fits), &opts).unwrap();
-    // Two constants broadcast to [3, 4, 4] = 48 elements.
-    let over = model(
-        13,
-        graph(
-            vec![input("x", &[2])],
-            vec![
-                init("c", &[3, 1, 1], &[0.0; 3]),
-                init("r", &[4, 4], &[0.0; 16]),
-            ],
-            vec![node("Add", &["c", "r"], &["y"])],
-            &["y"],
-        ),
-    );
-    match import(&bytes(&over), &opts) {
-        Err(OnnxError::Limit {
-            what, found, limit, ..
-        }) => {
-            assert_eq!(what, "expanded constant elements");
-            assert_eq!((found, limit), (48, 16));
-        }
-        other => panic!("{other:?}"),
+    import(&bytes(&m), &opts(16)).unwrap();
+    match import(&bytes(&m), &opts(15)) {
+        Err(e) => assert!(e.to_string().contains("16"), "{e}"),
+        Ok(_) => panic!("the 16 element output passed a cap of 15"),
     }
 }
 

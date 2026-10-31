@@ -17,8 +17,8 @@ Default-domain opsets 13 through 21 only. Anything else fails with "re-export wi
 |---|---|---|
 | `Relu`, `Sigmoid` | same op | |
 | `MatMul` | `MatMul` | rank 2 only |
-| `Add`, `Mul` | same op | equal shapes, a scalar or a bias run as is; at import a constant operand is expanded to the broadcast shape and a non-constant operand that needs broadcasting is an error (the importer does not use the IR's broadcasting yet) |
-| `Gemm` | `MatMul`, then `Transpose`, `Mul`, `Add` as needed | `alpha`, `beta`, `transA`, `transB`, optional `C` (a constant `C` is scaled by `beta` at import; `beta = 0` drops `C` as ONNX does, even a `C` full of infinity or NaN, and still checks its shape) |
+| `Add`, `Mul` | same op | operands broadcast like NumPy in the IR, whether they are initializers, inputs or computed values; nothing is expanded at import |
+| `Gemm` | `MatMul`, then `Transpose`, `Mul`, `Add` as needed | `alpha`, `beta`, `transA`, `transB`, optional `C` (any shape that broadcasts to the output, constant or not; a constant `C` is scaled by `beta` at import; `beta = 0` drops `C` as ONNX does, even a `C` full of infinity or NaN, and still checks its shape) |
 | `Reshape` | `Reshape` | the shape is an int64 initializer or `Constant`; `0` and `-1` are resolved at import; `allowzero=1` with a literal `0` is an error, the IR has no zero-size tensors |
 | `Flatten` | `Reshape` | `axis` in `[-rank, rank]` |
 | `Transpose` | `Transpose` | default `perm` reverses the axes |
@@ -35,7 +35,7 @@ Lowering never changes a computation. With `alpha = beta = 1` and no transposes 
 
 ## Limits and untrusted models
 
-A model is untrusted input, like a graph file. The size cap, the tensor element caps and the value cap are the core `Limits`. Nesting is capped by the protobuf decoder (100 messages). Every dimension product and every constant expansion is checked with checked arithmetic against the limits before anything is allocated.
+A model is untrusted input, like a graph file. The size cap, the tensor element caps and the value cap are the core `Limits`. Nesting is capped by the protobuf decoder (100 messages). Every dimension product is checked with checked arithmetic against the limits before anything is allocated.
 
 ## Errors
 
@@ -54,7 +54,7 @@ A model is untrusted input, like a graph file. The size cap, the tensor element 
 | E310 | a value name defined twice |
 | E311 | a node-level shape or operand error |
 | E312 | a named dimension without `--dim` |
-| E313 | an expansion over a limit |
+| E313 | reserved: a limit exceeded at import (now reported by the core limit codes) |
 | E314 | more messages than the importer allows (ten per `max_values`, so a file of tiny messages cannot exhaust memory) |
 
 Errors from the IR (`E0xx`) pass through with their own codes. `E107` to `E113` come from the CLI.
