@@ -4,8 +4,8 @@
 
 use oxfuse_core::{Graph, GraphBuilder, Limits, Op};
 
-/// A small classifier: 784 inputs, 256 hidden units with `Relu`, 10 outputs.
-/// No bias terms: the IR has no broadcasting beyond scalars.
+/// A small classifier: 784 inputs, 256 hidden units with `Relu`, 10 outputs,
+/// and a bias row after each product.
 pub const INPUT: usize = 784;
 pub const HIDDEN: usize = 256;
 pub const CLASSES: usize = 10;
@@ -24,6 +24,8 @@ pub fn data(len: usize, seed: u32) -> Vec<f32> {
 pub const W1_SEED: u32 = 11;
 pub const W2_SEED: u32 = 12;
 pub const X_SEED: u32 = 13;
+pub const B1_SEED: u32 = 14;
+pub const B2_SEED: u32 = 15;
 
 pub fn mlp_graph(batch: usize) -> Graph {
     let mut b = GraphBuilder::new(Limits::default());
@@ -34,8 +36,16 @@ pub fn mlp_graph(batch: usize) -> Graph {
     let w2 = b
         .constant("w2", vec![HIDDEN, CLASSES], data(HIDDEN * CLASSES, W2_SEED))
         .unwrap();
+    let b1 = b
+        .constant("b1", vec![HIDDEN], data(HIDDEN, B1_SEED))
+        .unwrap();
+    let b2 = b
+        .constant("b2", vec![CLASSES], data(CLASSES, B2_SEED))
+        .unwrap();
     let h = b.node("h", Op::MatMul, &[x, w1]).unwrap();
-    let a = b.node("a", Op::Relu, &[h]).unwrap();
-    let y = b.node("y", Op::MatMul, &[a, w2]).unwrap();
+    let hb = b.node("hb", Op::Add, &[h, b1]).unwrap();
+    let a = b.node("a", Op::Relu, &[hb]).unwrap();
+    let o = b.node("o", Op::MatMul, &[a, w2]).unwrap();
+    let y = b.node("y", Op::Add, &[o, b2]).unwrap();
     b.finish(&[y]).unwrap()
 }

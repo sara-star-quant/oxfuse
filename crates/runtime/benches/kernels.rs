@@ -4,7 +4,7 @@
 //! which is what a user pays.
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 use oxfuse_core::passes::default_pipeline;
 use oxfuse_core::{Graph, GraphBuilder, Limits, Op};
 use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, ReferenceEvaluator, Tensor};
@@ -12,7 +12,9 @@ use std::hint::black_box;
 use std::sync::Arc;
 
 mod mlp_graph;
-use mlp_graph::{CLASSES, HIDDEN, INPUT, W1_SEED, W2_SEED, X_SEED, data, mlp_graph};
+use mlp_graph::{
+    B1_SEED, B2_SEED, CLASSES, HIDDEN, INPUT, W1_SEED, W2_SEED, X_SEED, data, mlp_graph,
+};
 
 const CPU: &str = if cfg!(feature = "parallel") {
     "cpu-threads"
@@ -169,8 +171,8 @@ fn pipeline(c: &mut Criterion) {
 }
 
 /// A small classifier at batch 1, 8 and 32 (see `mlp_graph.rs`): two
-/// matrix products around a `Relu`, the work of one inference call. The size
-/// in the id is the batch. `ndarray` runs the same three steps as a control.
+/// matrix products with a bias each, around a `Relu`, the work of one inference
+/// call. The size in the id is the batch. `ndarray` runs the same steps as a control.
 fn mlp(c: &mut Criterion) {
     for batch in [1usize, 8, 32] {
         let graph = mlp_graph(batch);
@@ -180,11 +182,13 @@ fn mlp(c: &mut Criterion) {
         let w1 = Array2::from_shape_vec((INPUT, HIDDEN), data(INPUT * HIDDEN, W1_SEED)).unwrap();
         let w2 =
             Array2::from_shape_vec((HIDDEN, CLASSES), data(HIDDEN * CLASSES, W2_SEED)).unwrap();
+        let b1 = Array1::from_vec(data(HIDDEN, B1_SEED));
+        let b2 = Array1::from_vec(data(CLASSES, B2_SEED));
         let mut group = c.benchmark_group("mlp");
         group.bench_function(format!("ndarray/{batch}"), |bench| {
             bench.iter(|| {
-                let hidden = black_box(&x).dot(black_box(&w1)).mapv(|v| v.max(0.0));
-                black_box(hidden.dot(black_box(&w2)))
+                let hidden = (black_box(&x).dot(black_box(&w1)) + &b1).mapv(|v| v.max(0.0));
+                black_box(hidden.dot(black_box(&w2)) + &b2)
             })
         });
         group.finish();

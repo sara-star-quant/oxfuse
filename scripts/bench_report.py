@@ -45,8 +45,8 @@ adapters it was measured on; the other GPU ops stay inside the bounds in
 `semantics.md`. `matmul-skinny` and `matmul-head` time a small batch (the id is
 the number of rows) against a 1024 x 1024 weight and a 784 x 10 weight; the
 ratio to `ndarray` uses the single-threaded `cpu` column.
-`mlp` times a 784-256-10 classifier (two matrix products around a `Relu`, no bias) at
-batch 1, 8 and 32; the id is the batch, and `ndarray` runs the same three steps.
+`mlp` times a 784-256-10 classifier (two matrix products around a `Relu`, a bias added after each) at
+batch 1, 8 and 32; the id is the batch, and `ndarray` runs the same steps.
 
 ## Optimization log
 
