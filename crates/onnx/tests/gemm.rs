@@ -251,16 +251,19 @@ fn gemm_c_wrong_shape_rejected() {
 }
 
 #[test]
-fn gemm_non_constant_c_broadcast_rejected() {
-    let m = build(&Case {
-        c: Some((vec![N as i64], false)),
-        ..Case::default()
-    });
-    match load(&m) {
-        Err(OnnxError::Shape { reason, .. }) => {
-            assert!(reason.contains("not a constant"), "{reason}")
-        }
-        other => panic!("{other:?}"),
+fn gemm_non_constant_c_broadcasts() {
+    // C is a runtime input: the IR broadcasts it, nothing is expanded at import.
+    for shape in [
+        vec![N as i64],
+        vec![M as i64, 1],
+        vec![1, N as i64],
+        vec![1],
+    ] {
+        let ops = check(Case {
+            c: Some((shape.clone(), false)),
+            ..Case::default()
+        });
+        assert_eq!(ops, vec!["MatMul", "Add"], "{shape:?}");
     }
 }
 
