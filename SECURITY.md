@@ -17,3 +17,5 @@ This is an experimental project and not meant for safety-critical or production 
 ## Reporting
 
 Please use GitHub's private vulnerability reporting on this repository ("Security" tab, "Report a vulnerability") instead of a public issue. Reports are handled on a best-effort basis; there is no service-level agreement. Fixes go into the latest release and `main`; older releases are not patched.
+
+Report at <https://github.com/sara-star-quant/oxfuse/security/advisories/new>. Past advisories and the list of supported versions live at <https://github.com/sara-star-quant/oxfuse/security>. Dependency advisories are checked in CI with `cargo deny` (see [CONTRIBUTING.md](CONTRIBUTING.md)). A first reply usually comes within a week.
