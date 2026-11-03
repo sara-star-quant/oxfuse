@@ -1,0 +1,5 @@
+# Tests use fixed seeds and index constants for float generators; CodeQL's
+# cryptography queries read them as hard-coded keys. The library code stays scanned.
+paths-ignore:
+  - "**/tests/**"
+  - "fuzz/**"
