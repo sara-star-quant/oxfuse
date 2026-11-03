@@ -65,7 +65,7 @@ jobs:
 
   diff-gpu:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     continue-on-error: true
     env:
@@ -107,7 +107,7 @@ jobs:
   # and on a failed baseline; they block nothing.
   full:
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     continue-on-error: true
     strategy:

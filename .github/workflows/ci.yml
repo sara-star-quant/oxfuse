@@ -127,7 +127,9 @@ jobs:
   gpu:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    # Not ubuntu-latest: its image moved to 26.04 (Mesa 26.0), where the lavapipe
+    # device crashes the oxfuse-wgpu test process (SIGSEGV after the tests pass).
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       OXFUSE_REQUIRE_ADAPTER: "1"
