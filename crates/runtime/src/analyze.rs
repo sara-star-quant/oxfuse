@@ -449,9 +449,9 @@ mod tests {
         let mut widest = 0.0f64;
         for seed in 0..300 {
             let (graph, inputs) = random_case(seed);
-            let cert = analyze(&graph, &inputs).unwrap().remove(0);
+            let out = analyze(&graph, &inputs).unwrap().remove(0);
             let want = exact(&graph, &inputs).remove(0);
-            for (i, ((&v, &b), &x)) in cert.values.iter().zip(&cert.bounds).zip(&want).enumerate() {
+            for (i, ((&v, &b), &x)) in out.values.iter().zip(&out.bounds).zip(&want).enumerate() {
                 let off = (x - f64::from(v)).abs();
                 assert!(
                     off <= b * (1.0 + 1e-12) + 1e-300,
@@ -469,14 +469,14 @@ mod tests {
     fn the_values_are_the_reference_backends_bits() {
         for seed in 0..100 {
             let (graph, inputs) = random_case(seed);
-            let cert = analyze(&graph, &inputs).unwrap().remove(0);
+            let out = analyze(&graph, &inputs).unwrap().remove(0);
             let run = ReferenceBackend
                 .compile(&graph)
                 .unwrap()
                 .run(&inputs)
                 .unwrap();
             let bits = |d: &[f32]| d.iter().map(|v| v.to_bits()).collect::<Vec<_>>();
-            assert_eq!(bits(&cert.values), bits(run[0].data()), "seed {seed}");
+            assert_eq!(bits(&out.values), bits(run[0].data()), "seed {seed}");
         }
     }
 
@@ -489,12 +489,12 @@ mod tests {
             let y = g.node("y", Op::MatMul, &[x, w]).unwrap();
             let graph = g.finish(&[y]).unwrap();
             let input = Tensor::new(vec![1, k], values(k, 10, 1.0)).unwrap();
-            let cert = analyze(&graph, std::slice::from_ref(&input))
+            let out = analyze(&graph, std::slice::from_ref(&input))
                 .unwrap()
                 .remove(0);
             let want = exact(&graph, std::slice::from_ref(&input)).remove(0)[0];
-            assert!((want - f64::from(cert.values[0])).abs() <= cert.bounds[0]);
-            cert.bounds[0]
+            assert!((want - f64::from(out.values[0])).abs() <= out.bounds[0]);
+            out.bounds[0]
         };
         assert!(bound_for(1000) > bound_for(10) * 20.0);
     }
@@ -520,9 +520,9 @@ mod tests {
             (0..k * n).map(|i| 10f32.powi(i as i32 % 5 - 2)).collect(),
         )
         .unwrap();
-        let certs = analyze(&graph, &[xs, ws]).unwrap();
-        let (av, ea) = (&certs[0].values, &certs[0].bounds);
-        let (bv, eb) = (&certs[1].values, &certs[1].bounds);
+        let outs = analyze(&graph, &[xs, ws]).unwrap();
+        let (av, ea) = (&outs[0].values, &outs[0].bounds);
+        let (bv, eb) = (&outs[1].values, &outs[1].bounds);
         assert!(ea.windows(2).any(|p| p[0] != p[1]) && eb.windows(2).any(|p| p[0] != p[1]));
         for i in 0..m {
             for j in 0..n {
@@ -534,7 +534,7 @@ mod tests {
                     want +=
                         f64::from(x.abs()) * ey + f64::from(y.abs()) * ex + ex * ey + half_ulp(acc);
                 }
-                let got = certs[2].bounds[i * n + j];
+                let got = outs[2].bounds[i * n + j];
                 assert!(got >= want, "[{i}][{j}] {got} < {want}");
                 assert!(got <= want * (1.0 + 1e-12), "[{i}][{j}] {got} vs {want}");
             }
@@ -552,10 +552,10 @@ mod tests {
             .unwrap();
         let graph = g.finish(&[m, t]).unwrap();
         let input = Tensor::new(vec![2, 3], values(6, 4, 1000.0)).unwrap();
-        let certs = analyze(&graph, &[input]).unwrap();
+        let outs = analyze(&graph, &[input]).unwrap();
         for i in 0..2 {
             for j in 0..3 {
-                assert_eq!(certs[0].bounds[i * 3 + j], certs[1].bounds[j * 2 + i]);
+                assert_eq!(outs[0].bounds[i * 3 + j], outs[1].bounds[j * 2 + i]);
             }
         }
     }
@@ -569,8 +569,8 @@ mod tests {
         let r = g.node("r", Op::Relu, &[a]).unwrap();
         let graph = g.finish(&[a, r]).unwrap();
         let input = Tensor::new(vec![4], vec![-3.0, -0.05, 0.05, 3.0]).unwrap();
-        let certs = analyze(&graph, &[input]).unwrap();
-        assert_eq!(certs[0].bounds, certs[1].bounds);
+        let outs = analyze(&graph, &[input]).unwrap();
+        assert_eq!(outs[0].bounds, outs[1].bounds);
     }
 
     /// The claimed relative error of the own `sigmoid` holds on a dense sample of
@@ -615,9 +615,9 @@ mod tests {
         let below = f32::from_bits((-87.0f32).to_bits() + 1);
         assert!(below < -87.0);
         let input = Tensor::new(vec![2], vec![-87.0, below]).unwrap();
-        let cert = analyze(&graph, &[input]).unwrap().remove(0);
-        assert!(cert.bounds[0] < 1e-40, "{}", cert.bounds[0]);
-        assert!(cert.bounds[1] > 1e-38, "{}", cert.bounds[1]);
+        let out = analyze(&graph, &[input]).unwrap().remove(0);
+        assert!(out.bounds[0] < 1e-40, "{}", out.bounds[0]);
+        assert!(out.bounds[1] > 1e-38, "{}", out.bounds[1]);
     }
 
     #[test]
@@ -627,11 +627,11 @@ mod tests {
         let y = g.node("y", Op::Sigmoid, &[x]).unwrap();
         let graph = g.finish(&[y]).unwrap();
         let input = Tensor::new(vec![3], vec![-100.0, -88.0, -87.5]).unwrap();
-        let cert = analyze(&graph, std::slice::from_ref(&input))
+        let out = analyze(&graph, std::slice::from_ref(&input))
             .unwrap()
             .remove(0);
         let want = exact(&graph, std::slice::from_ref(&input)).remove(0);
-        for (i, ((&w, &v), &b)) in want.iter().zip(&cert.values).zip(&cert.bounds).enumerate() {
+        for (i, ((&w, &v), &b)) in want.iter().zip(&out.values).zip(&out.bounds).enumerate() {
             assert!((w - f64::from(v)).abs() <= b, "x index {i}");
         }
     }
