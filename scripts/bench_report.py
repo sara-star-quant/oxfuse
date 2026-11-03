@@ -306,7 +306,7 @@ are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
 
 ### mlp (Xeon, AVX2)
 
-The same classifier on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
+The same classifier, without the bias terms the table above has (the benchmark graph gained them afterwards), on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
 2026-10-29 at commit 691d07b (the wide blocks; the column split changes only the threaded path) by the flow in the `oxfuse-x86-ab` notes: five
 interleaved rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
 column against `ndarray`; the notebook's timer resolves 1 us.
