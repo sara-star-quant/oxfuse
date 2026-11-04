@@ -5,7 +5,9 @@
 //! buffers belong to the executable and are reused, so runs are serialized by a
 //! mutex; results are copied into fresh buffers before they are returned.
 
-use crate::config::{DeviceCaps, KernelConfig, check_tensor, grid_fold, permute_layout, tile_grid};
+use crate::config::{
+    DeviceCaps, KernelConfig, broadcast_strides, check_tensor, grid_fold, permute_layout, tile_grid,
+};
 use crate::context::{Context, LimitsProfile};
 use crate::shaders::{self, Binary, Unary};
 use oxfuse_core::{Error, Graph, Op};
@@ -95,6 +97,8 @@ impl DeviceTensor {
 enum Kernel {
     Unary(Unary),
     Binary(Binary, bool, bool),
+    /// Rank of the broadcast output.
+    BinaryStrided(Binary, usize),
     Transpose2d,
     Permute(usize),
     Matmul,
@@ -151,16 +155,44 @@ fn caps_of(limits: &wgpu::Limits) -> DeviceCaps {
     }
 }
 
-/// The GPU kernels read two equal shapes, or one scalar against a tensor; the
-/// graph IR also allows NumPy broadcasting, which they do not implement yet.
-fn check_binary_shapes(op: &str, lhs: &[usize], rhs: &[usize]) -> Result<(), String> {
+/// How an Add or Mul reads its operands: two equal shapes or a rank-0 scalar
+/// against a tensor take the plain kernel; anything else that NumPy broadcasts
+/// takes the strided kernel, which needs the output rank to be at most
+/// `MAX_PERMUTE_RANK` (the same eight-entry stride tables as the permute kernel).
+#[derive(Debug, PartialEq, Eq)]
+enum BinaryLayout {
+    Plain {
+        scalar_lhs: bool,
+        scalar_rhs: bool,
+    },
+    Strided {
+        dims: Vec<u32>,
+        sa: Vec<u32>,
+        sb: Vec<u32>,
+    },
+}
+
+fn binary_layout(op: &str, lhs: &[usize], rhs: &[usize]) -> Result<BinaryLayout, String> {
     if lhs == rhs || lhs.is_empty() || rhs.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "{op} of shapes {lhs:?} and {rhs:?} needs broadcasting, which the GPU backend does not support yet (equal shapes or a scalar only)"
-        ))
+        let (scalar_lhs, scalar_rhs) = scalar_flags(lhs, rhs);
+        return Ok(BinaryLayout::Plain {
+            scalar_lhs,
+            scalar_rhs,
+        });
     }
+    let out = oxfuse_core::shape::numpy_broadcast(lhs, rhs)
+        .ok_or_else(|| format!("{op} of shapes {lhs:?} and {rhs:?} cannot be broadcast"))?;
+    if out.len() > MAX_PERMUTE_RANK {
+        return Err(format!(
+            "{op} of shapes {lhs:?} and {rhs:?} broadcasts to rank {}, the kernels handle rank {MAX_PERMUTE_RANK} at most",
+            out.len()
+        ));
+    }
+    Ok(BinaryLayout::Strided {
+        dims: out.iter().map(|&d| d as u32).collect(),
+        sa: broadcast_strides(&out, lhs),
+        sb: broadcast_strides(&out, rhs),
+    })
 }
 
 /// Which operand of an Add or Mul is a rank-0 scalar applied to the other. When
@@ -235,16 +267,36 @@ impl WgpuExecutable {
                     } else {
                         Binary::Mul
                     };
-                    check_binary_shapes(step.op.name(), shape_of(0), shape_of(1))
-                        .map_err(backend_error)?;
-                    let (lhs, rhs) = scalar_flags(shape_of(0), shape_of(1));
-                    let groups = fold(out_elements, &cfg, &caps)?;
-                    Some(Planned {
-                        kernel: Kernel::Binary(kind, lhs, rhs),
-                        source: shaders::binary(kind, lhs, rhs, &cfg),
-                        words: vec![out_elements as u32, groups.0],
-                        groups,
-                    })
+                    match binary_layout(step.op.name(), shape_of(0), shape_of(1))
+                        .map_err(backend_error)?
+                    {
+                        BinaryLayout::Plain {
+                            scalar_lhs,
+                            scalar_rhs,
+                        } => {
+                            let groups = fold(out_elements, &cfg, &caps)?;
+                            Some(Planned {
+                                kernel: Kernel::Binary(kind, scalar_lhs, scalar_rhs),
+                                source: shaders::binary(kind, scalar_lhs, scalar_rhs, &cfg),
+                                words: vec![out_elements as u32, groups.0],
+                                groups,
+                            })
+                        }
+                        BinaryLayout::Strided { dims, sa, sb } => {
+                            let rank = dims.len();
+                            let groups = fold(out_elements, &cfg, &caps)?;
+                            let mut words = vec![out_elements as u32, groups.0, 0, 0];
+                            words.extend(dims.iter().chain(&[1; 8]).take(8));
+                            words.extend(sa.iter().chain(&[0; 8]).take(8));
+                            words.extend(sb.iter().chain(&[0; 8]).take(8));
+                            Some(Planned {
+                                kernel: Kernel::BinaryStrided(kind, rank),
+                                source: shaders::binary_strided(kind, rank, &cfg),
+                                words,
+                                groups,
+                            })
+                        }
+                    }
                 }
                 Op::Transpose { perm } if perm == &[1, 0] => {
                     let (rows, cols) = (shape_of(0)[0] as u64, shape_of(0)[1] as u64);
@@ -762,19 +814,62 @@ impl Executable for WgpuExecutable {
 mod tests {
     use super::*;
 
+    fn plain(scalar_lhs: bool, scalar_rhs: bool) -> BinaryLayout {
+        BinaryLayout::Plain {
+            scalar_lhs,
+            scalar_rhs,
+        }
+    }
+
     #[test]
-    fn only_equal_shapes_and_scalars_are_accepted_by_the_binary_kernels() {
-        assert!(check_binary_shapes("Add", &[2, 3], &[2, 3]).is_ok());
-        assert!(check_binary_shapes("Add", &[], &[2, 3]).is_ok());
-        assert!(check_binary_shapes("Mul", &[2, 3], &[]).is_ok());
-        assert!(check_binary_shapes("Mul", &[], &[]).is_ok());
-        let err = check_binary_shapes("Add", &[2, 3], &[3]).unwrap_err();
-        assert!(
-            err.starts_with("Add of shapes [2, 3] and [3] needs broadcasting"),
-            "{err}"
+    fn equal_shapes_and_scalars_take_the_plain_kernel() {
+        assert_eq!(
+            binary_layout("Add", &[2, 3], &[2, 3]),
+            Ok(plain(false, false))
         );
-        assert!(check_binary_shapes("Mul", &[2, 1], &[1, 3]).is_err());
-        assert!(check_binary_shapes("Mul", &[1], &[3]).is_err());
+        assert_eq!(binary_layout("Add", &[], &[2, 3]), Ok(plain(true, false)));
+        assert_eq!(binary_layout("Mul", &[2, 3], &[]), Ok(plain(false, true)));
+        assert_eq!(binary_layout("Mul", &[], &[]), Ok(plain(false, false)));
+    }
+
+    #[test]
+    fn every_other_broadcast_takes_the_strided_kernel_with_its_stride_tables() {
+        assert_eq!(
+            binary_layout("Add", &[2, 3], &[3]),
+            Ok(BinaryLayout::Strided {
+                dims: vec![2, 3],
+                sa: vec![3, 1],
+                sb: vec![0, 1]
+            })
+        );
+        assert_eq!(
+            binary_layout("Mul", &[2, 1], &[1, 3]),
+            Ok(BinaryLayout::Strided {
+                dims: vec![2, 3],
+                sa: vec![1, 0],
+                sb: vec![0, 1]
+            })
+        );
+        // A one-element vector is not a rank-0 scalar: it stretches by stride.
+        assert_eq!(
+            binary_layout("Mul", &[1], &[3]),
+            Ok(BinaryLayout::Strided {
+                dims: vec![3],
+                sa: vec![0],
+                sb: vec![1]
+            })
+        );
+    }
+
+    #[test]
+    fn shapes_that_do_not_broadcast_or_outrank_the_tables_are_errors() {
+        let err = binary_layout("Add", &[2, 3], &[2]).unwrap_err();
+        assert_eq!(err, "Add of shapes [2, 3] and [2] cannot be broadcast");
+        let big = [1usize; 9];
+        let err = binary_layout("Mul", &big, &[2]).unwrap_err();
+        assert!(err.contains("broadcasts to rank 9"), "{err}");
+        // Rank eight is the last that fits.
+        assert!(binary_layout("Mul", &[1usize; 8], &[2]).is_ok());
     }
 
     #[test]

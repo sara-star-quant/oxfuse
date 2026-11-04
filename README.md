@@ -81,7 +81,7 @@ The precise rules are in [docs/semantics.md](docs/semantics.md).
 | Tests detect real defects | cargo-mutants: all 1161 viable mutants of the CPU-side crates stopped, no survivor, reproduced by parallel CI shards; the GPU crate is mutation-tested locally on a real adapter ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Line coverage | cargo-llvm-cov in CI, library code only; it says what the tests run, mutation testing says how well they check it |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
-| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul bit-identical to the reference on an Apple M1 Pro and a Tesla T4 (inside the float64 bound on any adapter); Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose and permute index arithmetic (bounded sizes, not a proof of the whole backend) |
+| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul bit-identical to the reference on an Apple M1 Pro and a Tesla T4 (inside the float64 bound on any adapter); Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose, permute and broadcast index arithmetic (bounded sizes, not a proof of the whole backend) |
 | ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
 | Builds on Rust 1.89 or newer | MSRV job in CI |
 

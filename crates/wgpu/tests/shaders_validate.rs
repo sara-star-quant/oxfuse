@@ -70,6 +70,13 @@ fn every_shader_validates_for_every_config() {
                 &format!("permute {rank} {cfg:?}"),
                 &shaders::permute(rank, &cfg),
             );
+            for op in [Binary::Add, Binary::Mul] {
+                check(
+                    &format!("{op:?} strided {rank} {cfg:?}"),
+                    &shaders::binary_strided(op, rank, &cfg),
+                );
+                count += 1;
+            }
             count += 1;
         }
         count += 2;
@@ -86,6 +93,7 @@ fn shaders_stay_within_the_storage_buffer_budget() {
         shaders::binary(Binary::Add, false, false, &cfg),
         shaders::transpose2d(&cfg),
         shaders::permute(4, &cfg),
+        shaders::binary_strided(Binary::Mul, 4, &cfg),
         shaders::matmul(&cfg),
     ];
     for source in all {

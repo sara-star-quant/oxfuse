@@ -73,7 +73,8 @@ mod tests {
 #[cfg(kani)]
 mod harnesses {
     use crate::config::{
-        MAX_TENSOR_ELEMENTS, element_index, grid_fold, permute_layout_into, permute_offset,
+        MAX_TENSOR_ELEMENTS, broadcast_strides, element_index, grid_fold, permute_layout_into,
+        permute_offset,
     };
 
     /// Largest matrix side the index lemmas below range over. The lemma is the
@@ -270,5 +271,51 @@ mod harnesses {
         );
         assert!(a < n && b < n);
         assert!(a != b);
+    }
+    /// The broadcast walk (`broadcast_strides` with `permute_offset`, as the
+    /// strided binary kernel and its model do) stays inside each operand and
+    /// reads every element of it: for an output of rank 3 with sides up to 3 and
+    /// an operand that either keeps or stretches each side, every output index
+    /// maps in range, and every operand element is reached.
+    #[kani::proof]
+    #[kani::unwind(28)]
+    #[kani::solver(kissat)]
+    fn broadcast_walk_stays_inside_the_operand_and_reaches_all_of_it() {
+        let out: [u32; 3] = [kani::any(), kani::any(), kani::any()];
+        kani::assume(out.iter().all(|&d| (1..=3).contains(&d)));
+        let keep: [bool; 3] = [kani::any(), kani::any(), kani::any()];
+        let operand = [
+            if keep[0] { out[0] as usize } else { 1 },
+            if keep[1] { out[1] as usize } else { 1 },
+            if keep[2] { out[2] as usize } else { 1 },
+        ];
+        let out_usize = [out[0] as usize, out[1] as usize, out[2] as usize];
+        let strides = broadcast_strides(&out_usize, &operand);
+        let n = u64::from(out[0]) * u64::from(out[1]) * u64::from(out[2]);
+        let len = (operand[0] * operand[1] * operand[2]) as u64;
+        let target: u64 = kani::any();
+        kani::assume(target < len);
+        let i: u64 = kani::any();
+        kani::assume(i < n);
+        assert!(permute_offset(i, &out, &strides) < len);
+        // Some output index reaches `target`: take the operand's own coordinates
+        // (a stretched side contributes coordinate 0) and lay them out over the output.
+        let op_stride = [(operand[1] * operand[2]) as u64, operand[2] as u64, 1u64];
+        let out_weight = [
+            u64::from(out[1]) * u64::from(out[2]),
+            u64::from(out[2]),
+            1u64,
+        ];
+        let mut index = 0u64;
+        for d in 0..3 {
+            let coordinate = if operand[d] == 1 {
+                0
+            } else {
+                (target / op_stride[d]) % operand[d] as u64
+            };
+            index += coordinate * out_weight[d];
+        }
+        assert!(index < n);
+        assert_eq!(permute_offset(index, &out, &strides), target);
     }
 }

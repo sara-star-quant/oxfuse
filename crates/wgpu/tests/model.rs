@@ -116,6 +116,60 @@ fn binary_ops_match_the_reference_including_scalar_operands() {
     }
 }
 
+/// Every pair of shapes of rank up to 3 with sides 1, 2 and 3 that NumPy can
+/// broadcast (940 pairs), both operations, three workgroup sizes, special values
+/// included: the strided model equals the reference bit for bit.
+#[test]
+fn broadcast_binary_ops_match_the_reference_for_every_small_shape_pair() {
+    let mut shapes: Vec<Vec<usize>> = vec![vec![]];
+    let mut level: Vec<Vec<usize>> = vec![vec![]];
+    for _ in 0..3 {
+        level = level
+            .into_iter()
+            .flat_map(|s| {
+                (1..=3).map(move |d| {
+                    let mut t = s.clone();
+                    t.push(d);
+                    t
+                })
+            })
+            .collect();
+        shapes.extend(level.clone());
+    }
+    let mut pairs = 0;
+    for a_shape in &shapes {
+        for b_shape in &shapes {
+            let Some(out) = oxfuse_core::shape::numpy_broadcast(a_shape, b_shape) else {
+                continue;
+            };
+            if a_shape == b_shape || a_shape.is_empty() || b_shape.is_empty() {
+                // The plain kernels take these (equal shapes, a scalar); still count them
+                // so the total is the full 940.
+                pairs += 1;
+                continue;
+            }
+            let a = tensor(a_shape, 5, true);
+            let b = tensor(b_shape, 6, true);
+            for (op, kind) in [(Op::Add, Binary::Add), (Op::Mul, Binary::Mul)] {
+                let want = bits(&reference(op, vec![a.clone(), b.clone()]));
+                for wg in [1, 4, 32] {
+                    let got = model::binary_strided(
+                        kind,
+                        (a.data(), a_shape),
+                        (b.data(), b_shape),
+                        &out,
+                        &cfg(wg, 4),
+                        &CAPS,
+                    );
+                    assert_eq!(bits(&got), want, "{kind:?} {a_shape:?} {b_shape:?} wg {wg}");
+                }
+            }
+            pairs += 1;
+        }
+    }
+    assert_eq!(pairs, 940);
+}
+
 #[test]
 fn transpose2d_matches_the_reference_on_every_small_shape() {
     for tile in [1, 2, 4] {

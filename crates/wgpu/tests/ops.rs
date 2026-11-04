@@ -209,3 +209,83 @@ fn data_helper_is_deterministic_and_finite_when_asked() {
             .all(|v| v.is_finite() && (*v == 0.0 || v.is_normal()))
     );
 }
+
+/// All 940 pairs of shapes of rank up to 3 with sides 1, 2 and 3 that NumPy can
+/// broadcast, both operations: the adapter returns the reference's bits. The
+/// operands are finite and normal, so the adapter's handling of subnormals and
+/// NaN does not enter (`special_values.rs` covers those).
+#[test]
+fn broadcast_add_and_mul_are_bit_exact_for_every_small_shape_pair() {
+    if !available() {
+        return;
+    }
+    let mut shapes: Vec<Vec<usize>> = vec![vec![]];
+    let mut level: Vec<Vec<usize>> = vec![vec![]];
+    for _ in 0..3 {
+        level = level
+            .into_iter()
+            .flat_map(|s| {
+                (1..=3).map(move |d| {
+                    let mut t = s.clone();
+                    t.push(d);
+                    t
+                })
+            })
+            .collect();
+        shapes.extend(level.clone());
+    }
+    let mut pairs = 0;
+    for a_shape in &shapes {
+        for b_shape in &shapes {
+            if oxfuse_core::shape::numpy_broadcast(a_shape, b_shape).is_none() {
+                continue;
+            }
+            let a = tensor(a_shape, 11, true);
+            let b = tensor(b_shape, 12, true);
+            for op in [Op::Add, Op::Mul] {
+                assert_eq!(
+                    bits(&device(op.clone(), &[a.clone(), b.clone()])),
+                    bits(&reference(op.clone(), &[a.clone(), b.clone()])),
+                    "{op:?} {a_shape:?} {b_shape:?}"
+                );
+            }
+            pairs += 1;
+        }
+    }
+    assert_eq!(pairs, 940);
+}
+
+/// A bias row added to a batch, the case the classifier benchmark and every ONNX
+/// `Gemm` with a bias need, at sizes around the workgroup and the dispatch fold.
+#[test]
+fn a_bias_row_and_a_scale_column_broadcast_at_larger_sizes() {
+    if !available() {
+        return;
+    }
+    for (rows, cols) in [(1, 256), (8, 256), (32, 10), (65, 129), (300, 1024)] {
+        let x = tensor(&[rows, cols], 21, true);
+        let bias = tensor(&[cols], 22, true);
+        let scale = tensor(&[rows, 1], 23, true);
+        for (op, a, b) in [
+            (Op::Add, &x, &bias),
+            (Op::Add, &bias, &x),
+            (Op::Mul, &x, &scale),
+            (Op::Mul, &scale, &x),
+        ] {
+            assert_eq!(
+                bits(&device(op.clone(), &[a.clone(), b.clone()])),
+                bits(&reference(op.clone(), &[a.clone(), b.clone()])),
+                "{op:?} {:?} {:?}",
+                a.shape(),
+                b.shape()
+            );
+        }
+    }
+    // Rank eight is the widest the stride tables take.
+    let a = tensor(&[2, 1, 2, 1, 2, 1, 2, 1], 31, true);
+    let b = tensor(&[1, 3, 1, 2, 1, 3, 1, 2], 32, true);
+    assert_eq!(
+        bits(&device(Op::Add, &[a.clone(), b.clone()])),
+        bits(&reference(Op::Add, &[a, b]))
+    );
+}

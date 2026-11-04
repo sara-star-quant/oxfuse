@@ -210,6 +210,32 @@ pub fn permute_layout_into(
     }
 }
 
+/// The stride into a row-major `operand` of each dimension of the broadcast shape
+/// `out` (NumPy rules: shapes align on the right, a size-1 or missing dimension
+/// stretches, so its stride is 0). `out` must be the broadcast of `operand` with
+/// something, so every dimension of `operand` is 1 or equals the one it meets.
+pub fn broadcast_strides(out: &[usize], operand: &[usize]) -> Vec<u32> {
+    assert!(
+        operand.len() <= out.len(),
+        "an operand cannot outrank the output"
+    );
+    let lead = out.len() - operand.len();
+    let mut strides = vec![0u32; out.len()];
+    let mut stride = 1u32;
+    for d in (0..operand.len()).rev() {
+        if operand[d] != 1 {
+            assert_eq!(
+                operand[d],
+                out[lead + d],
+                "{operand:?} does not broadcast to {out:?}"
+            );
+            strides[lead + d] = stride;
+        }
+        stride *= operand[d] as u32;
+    }
+    strides
+}
+
 /// The input element the permute kernel reads for output element `i`: the walk
 /// the shader does, from the last output dimension to the first.
 pub fn permute_offset(i: u64, dims: &[u32], strides: &[u32]) -> u64 {
@@ -502,6 +528,74 @@ mod tests {
         assert_eq!(strides, vec![1, 12, 4]);
         let (dims, strides) = permute_layout(&[5], &[0]);
         assert_eq!((dims, strides), (vec![5], vec![1]));
+    }
+
+    #[test]
+    fn broadcast_strides_stretch_size_one_and_missing_dimensions() {
+        assert_eq!(broadcast_strides(&[2, 3], &[2, 3]), vec![3, 1]);
+        assert_eq!(broadcast_strides(&[2, 3], &[3]), vec![0, 1]);
+        assert_eq!(broadcast_strides(&[2, 3], &[2, 1]), vec![1, 0]);
+        assert_eq!(broadcast_strides(&[2, 3], &[1, 3]), vec![0, 1]);
+        assert_eq!(broadcast_strides(&[2, 3], &[1, 1]), vec![0, 0]);
+        assert_eq!(broadcast_strides(&[2, 3], &[]), vec![0, 0]);
+        assert_eq!(broadcast_strides(&[4, 2, 3], &[2, 3]), vec![0, 3, 1]);
+        assert_eq!(broadcast_strides(&[4, 2, 3], &[4, 1, 3]), vec![3, 0, 1]);
+        assert_eq!(broadcast_strides(&[5], &[5]), vec![1]);
+    }
+
+    #[test]
+    #[should_panic(expected = "does not broadcast")]
+    fn broadcast_strides_refuse_a_dimension_that_cannot_stretch() {
+        broadcast_strides(&[2, 3], &[2, 2]);
+    }
+
+    /// The strided walk must pick, for every output element, the operand element
+    /// the core's own broadcast map picks. All shape pairs of rank up to 3 with
+    /// sides 1, 2 and 3.
+    #[test]
+    fn the_broadcast_walk_matches_the_core_map_for_every_small_shape_pair() {
+        use oxfuse_core::shape::{broadcast_map, numpy_broadcast};
+        let mut shapes: Vec<Vec<usize>> = vec![vec![]];
+        for rank in 1..=3usize {
+            let mut level = vec![vec![]];
+            for _ in 0..rank {
+                level = level
+                    .into_iter()
+                    .flat_map(|s: Vec<usize>| {
+                        (1..=3).map(move |d| {
+                            let mut t = s.clone();
+                            t.push(d);
+                            t
+                        })
+                    })
+                    .collect();
+            }
+            shapes.extend(level);
+        }
+        let mut checked = 0;
+        for a in &shapes {
+            for b in &shapes {
+                let Some(out) = numpy_broadcast(a, b) else {
+                    continue;
+                };
+                let dims: Vec<u32> = out.iter().map(|&d| d as u32).collect();
+                let n: usize = out.iter().product();
+                for operand in [a, b] {
+                    let strides = broadcast_strides(&out, operand);
+                    let want = broadcast_map(&out, operand);
+                    assert_eq!(want.len(), n);
+                    for (i, &expected) in want.iter().enumerate() {
+                        assert_eq!(
+                            permute_offset(i as u64, &dims, &strides),
+                            expected as u64,
+                            "{a:?} + {b:?}, operand {operand:?}, element {i}"
+                        );
+                    }
+                }
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 940);
     }
 
     #[test]
