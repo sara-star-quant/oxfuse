@@ -306,16 +306,16 @@ are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
 
 ### mlp (Xeon, AVX2)
 
-The same classifier, without the bias terms the table above has (the benchmark graph gained them afterwards), on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
-2026-10-29 at commit 691d07b (the wide blocks; the column split changes only the threaded path) by the flow in the `oxfuse-x86-ab` notes: five
-interleaved rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
+The same biased classifier on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
+2026-11-04 at commit bd740e7 by the flow in the `oxfuse-x86-ab` notes: five
+rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
 column against `ndarray`; the notebook's timer resolves 1 us.
 
 | size | reference | cpu | ndarray | best cpu vs reference | cpu vs ndarray |
 |---|---|---|---|---|---|
-| 1 | 342 us | 21 us | 98 us | 16.29x | 4.67x |
-| 8 | 2.74 ms | 114 us | 108 us | 24.06x | 0.95x |
-| 32 | 11.11 ms | 468 us | 286 us | 23.74x | 0.61x |
+| 1 | 341 us | 25 us | 96 us | 13.64x | 3.84x |
+| 8 | 2.78 ms | 135 us | 101 us | 20.56x | 0.75x |
+| 32 | 11.10 ms | 512 us | 280 us | 21.69x | 0.55x |
 
 ### gpu-matmul (Tesla T4)
 
