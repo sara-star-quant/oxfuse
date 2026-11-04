@@ -28,7 +28,15 @@ jobs:
           results_file: scorecard.json
           results_format: json
           publish_results: false
-      - run: python3 -I -c "import json; d = json.load(open('scorecard.json')); print('Scorecard', d['score']); [print(c['score'], c['name']) for c in sorted(d['checks'], key=lambda c: c['score'])]" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: print the score
+        run: |
+          python3 -I - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json
+          d = json.load(open("scorecard.json"))
+          print("Scorecard", d["score"])
+          for c in sorted(d["checks"], key=lambda c: c["score"]):
+              print(c["score"], c["name"])
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scorecard
