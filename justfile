@@ -54,6 +54,7 @@ scripts-test:
     python3 -I scripts/test_release.py
     python3 -I scripts/test_dco_check.py
     python3 -I scripts/test_licence_scan_check.py
+    python3 -I scripts/test_coverage_badge.py
 
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:

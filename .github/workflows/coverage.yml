@@ -1,0 +1,54 @@
+name: coverage
+
+# Line coverage of the library code (tests, benches and examples excluded), measured
+# with cargo-llvm-cov on a software Vulkan device so the GPU crate runs too. Coverage
+# says what the tests execute, not how well they check it: the strength of the tests
+# is measured by mutation testing (docs/mutation-testing.md). On main the percentage
+# goes to the `badges` branch as a shields.io endpoint file.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/coverage.yml"
+      - "scripts/coverage_badge.py"
+  schedule:
+    - cron: "23 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      OXFUSE_REQUIRE_ADAPTER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install --component llvm-tools-preview
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      - run: >
+          cargo llvm-cov --workspace --locked --features oxfuse-runtime/parallel
+          --ignore-filename-regex '/(tests|benches|examples)/|\.cargo/registry'
+          --json --summary-only --output-path cov.json
+      - run: python3 -I scripts/coverage_badge.py cov.json badge.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: publish the badge file
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir out && cp badge.json out/coverage.json && cd out
+          git init -q -b badges
+          git add coverage.json
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "coverage badge"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" badges
