@@ -295,6 +295,14 @@
         {
           "file": "crates/wgpu/tests/model.rs",
           "test": "binary_ops_match_the_reference_including_scalar_operands"
+        },
+        {
+          "file": "crates/wgpu/tests/model.rs",
+          "test": "broadcast_binary_ops_match_the_reference_for_every_small_shape_pair"
+        },
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "broadcast_add_and_mul_are_bit_exact_for_every_small_shape_pair"
         }
       ]
     },
@@ -310,6 +318,14 @@
         {
           "file": "crates/wgpu/tests/model.rs",
           "test": "binary_ops_match_the_reference_including_scalar_operands"
+        },
+        {
+          "file": "crates/wgpu/tests/model.rs",
+          "test": "broadcast_binary_ops_match_the_reference_for_every_small_shape_pair"
+        },
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "broadcast_add_and_mul_are_bit_exact_for_every_small_shape_pair"
         }
       ]
     },

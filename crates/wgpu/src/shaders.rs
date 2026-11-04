@@ -91,6 +91,52 @@ fn main({ENTRY_1D}) {{
     )
 }
 
+/// `Add` or `Mul` of two operands that need NumPy broadcasting, for an output of
+/// rank 1 to 8. `dims` holds the output shape and `sa`, `sb` the stride that each
+/// output dimension walks in `a` and in `b` (0 where that operand stretches),
+/// all padded to eight entries, packed as `vec4<u32>`. Same operation as
+/// `binary`, one rounding per element, so the values are the same.
+pub fn binary_strided(op: Binary, rank: usize, cfg: &KernelConfig) -> String {
+    assert!((1..=8).contains(&rank), "rank {rank} is outside 1..=8");
+    let wg = cfg.elementwise_wg;
+    let index = linear_index(wg);
+    let symbol = match op {
+        Binary::Add => "+",
+        Binary::Mul => "*",
+    };
+    let mut walk = String::new();
+    for d in (0..rank).rev() {
+        let (lane, slot) = (d / 4, d % 4);
+        walk.push_str(&format!(
+            "  {{
+    let dim = p.dims[{lane}][{slot}];
+    let r = rem % dim;
+    oa += r * p.sa[{lane}][{slot}];
+    ob += r * p.sb[{lane}][{slot}];
+    rem = rem / dim;
+  }}
+"
+        ));
+    }
+    format!(
+        "struct Params {{ n: u32, x_count: u32, dims: array<vec4<u32>, 2>, sa: array<vec4<u32>, 2>, sb: array<vec4<u32>, 2> }}
+@group(0) @binding(0) var<storage, read> a: array<f32>;
+@group(0) @binding(1) var<storage, read> b: array<f32>;
+@group(0) @binding(2) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(3) var<uniform> p: Params;
+
+@compute @workgroup_size({wg})
+fn main({ENTRY_1D}) {{
+  {index}
+  var rem = i;
+  var oa = 0u;
+  var ob = 0u;
+{walk}  dst[i] = a[oa] {symbol} b[ob];
+}}
+"
+    )
+}
+
 /// `[rows, cols] -> [cols, rows]` through a workgroup tile whose rows are padded by one.
 pub fn transpose2d(cfg: &KernelConfig) -> String {
     let t = cfg.transpose_tile;

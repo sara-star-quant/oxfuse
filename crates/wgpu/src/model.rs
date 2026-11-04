@@ -7,7 +7,8 @@
 //! text matches; the twin tests compare it with a real adapter for that.
 
 use crate::config::{
-    DeviceCaps, KernelConfig, element_index, grid_fold, permute_layout, permute_offset, tile_grid,
+    DeviceCaps, KernelConfig, broadcast_strides, element_index, grid_fold, permute_layout,
+    permute_offset, tile_grid,
 };
 use crate::shaders::{Binary, Unary};
 
@@ -112,6 +113,35 @@ pub fn binary(
     for_each_thread(len as u64, cfg, caps, |i| {
         let x = read(a, if scalar_lhs { 0 } else { i });
         let y = read(b, if scalar_rhs { 0 } else { i });
+        let value = match op {
+            Binary::Add => x + y,
+            Binary::Mul => x * y,
+        };
+        out.write(i, value.to_bits());
+    });
+    out.finish()
+}
+
+/// `Add` or `Mul` with NumPy broadcasting, walked the way `shaders::binary_strided` does.
+/// Each operand comes with its shape.
+pub fn binary_strided(
+    op: Binary,
+    (a, a_shape): (&[f32], &[usize]),
+    (b, b_shape): (&[f32], &[usize]),
+    out_shape: &[usize],
+    cfg: &KernelConfig,
+    caps: &DeviceCaps,
+) -> Vec<f32> {
+    let dims: Vec<u32> = out_shape.iter().map(|&d| d as u32).collect();
+    let (sa, sb) = (
+        broadcast_strides(out_shape, a_shape),
+        broadcast_strides(out_shape, b_shape),
+    );
+    let len: usize = out_shape.iter().product();
+    let mut out = Out::new(len);
+    for_each_thread(len as u64, cfg, caps, |i| {
+        let x = read(a, permute_offset(i, &dims, &sa));
+        let y = read(b, permute_offset(i, &dims, &sb));
         let value = match op {
             Binary::Add => x + y,
             Binary::Mul => x * y,
