@@ -27,7 +27,7 @@ fn run(backend: &dyn Backend, batch: usize) -> Vec<f32> {
 }
 
 #[test]
-fn the_graph_is_two_matmuls_around_a_relu() {
+fn the_graph_is_two_biased_matmuls_around_a_relu() {
     let graph = mlp_graph(8);
     let ops: Vec<&Op> = graph
         .values()
@@ -37,7 +37,10 @@ fn the_graph_is_two_matmuls_around_a_relu() {
             _ => None,
         })
         .collect();
-    assert_eq!(ops, [&Op::MatMul, &Op::Relu, &Op::MatMul]);
+    assert_eq!(
+        ops,
+        [&Op::MatMul, &Op::Add, &Op::Relu, &Op::MatMul, &Op::Add]
+    );
 }
 
 #[test]
@@ -58,9 +61,9 @@ fn the_output_hashes_are_pinned_and_both_backends_agree() {
     assert_eq!(
         got,
         [
-            10_851_165_696_699_687_133u64,
-            9_452_000_439_711_095_477,
-            3_782_252_911_996_144_250
+            2_735_218_956_568_521_063u64,
+            10_699_258_043_124_040_779,
+            2_353_754_504_853_117_116
         ],
         "{got:?}"
     );
@@ -72,6 +75,8 @@ fn the_output_is_the_float64_network_to_within_rounding() {
     let x = data(batch * INPUT, X_SEED);
     let w1 = data(INPUT * mlp_graph::HIDDEN, mlp_graph::W1_SEED);
     let w2 = data(mlp_graph::HIDDEN * CLASSES, mlp_graph::W2_SEED);
+    let b1 = data(mlp_graph::HIDDEN, mlp_graph::B1_SEED);
+    let b2 = data(CLASSES, mlp_graph::B2_SEED);
     let got = run(&ReferenceBackend, batch);
     for r in 0..batch {
         let hidden: Vec<f64> = (0..mlp_graph::HIDDEN)
@@ -79,13 +84,14 @@ fn the_output_is_the_float64_network_to_within_rounding() {
                 let s: f64 = (0..INPUT)
                     .map(|k| f64::from(x[r * INPUT + k]) * f64::from(w1[k * mlp_graph::HIDDEN + j]))
                     .sum();
-                s.max(0.0)
+                (s + f64::from(b1[j])).max(0.0)
             })
             .collect();
         for c in 0..CLASSES {
             let want: f64 = (0..mlp_graph::HIDDEN)
                 .map(|j| hidden[j] * f64::from(w2[j * CLASSES + c]))
-                .sum();
+                .sum::<f64>()
+                + f64::from(b2[c]);
             let diff = (f64::from(got[r * CLASSES + c]) - want).abs();
             assert!(
                 diff <= 1e-3 * want.abs().max(1.0),

@@ -45,8 +45,8 @@ adapters it was measured on; the other GPU ops stay inside the bounds in
 `semantics.md`. `matmul-skinny` and `matmul-head` time a small batch (the id is
 the number of rows) against a 1024 x 1024 weight and a 784 x 10 weight; the
 ratio to `ndarray` uses the single-threaded `cpu` column.
-`mlp` times a 784-256-10 classifier (two matrix products around a `Relu`, no bias) at
-batch 1, 8 and 32; the id is the batch, and `ndarray` runs the same three steps.
+`mlp` times a 784-256-10 classifier (two matrix products around a `Relu`, a bias added after each) at
+batch 1, 8 and 32; the id is the batch, and `ndarray` runs the same steps.
 
 ## Optimization log
 
@@ -306,7 +306,7 @@ are that notebook's CPU. The T4's `MatMul` matched the reference bit for bit.
 
 ### mlp (Xeon, AVX2)
 
-The same classifier on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
+The same classifier, without the bias terms the table above has (the benchmark graph gained them afterwards), on the free Kaggle notebook's 2.2 GHz Xeon (AVX2), run on
 2026-10-29 at commit 691d07b (the wide blocks; the column split changes only the threaded path) by the flow in the `oxfuse-x86-ab` notes: five
 interleaved rounds, medians. `cpu vs ndarray` is the single-threaded `cpu`
 column against `ndarray`; the notebook's timer resolves 1 us.
