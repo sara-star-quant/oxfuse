@@ -37,13 +37,6 @@ pub enum OnnxError {
     Shape { node: String, reason: String },
     #[error("dimension `{name}` is not fixed; pass --dim {name}=VALUE")]
     DimUnbound { name: String },
-    #[error("node `{node}`: {what} is {found}, maximum is {limit}")]
-    Limit {
-        node: String,
-        what: &'static str,
-        found: usize,
-        limit: usize,
-    },
     #[error(transparent)]
     Core(#[from] Error),
 }
@@ -65,7 +58,6 @@ impl OnnxError {
             OnnxError::Name { .. } => "E310",
             OnnxError::Shape { .. } => "E311",
             OnnxError::DimUnbound { .. } => "E312",
-            OnnxError::Limit { .. } => "E313",
             OnnxError::Core(e) => e.code(),
         }
     }
@@ -107,12 +99,6 @@ mod tests {
                 reason: s(),
             },
             OnnxError::DimUnbound { name: s() },
-            OnnxError::Limit {
-                node: s(),
-                what: "w",
-                found: 2,
-                limit: 1,
-            },
             OnnxError::TooManyMessages { limit: 1 },
         ]
     }
@@ -120,7 +106,11 @@ mod tests {
     #[test]
     fn codes_are_unique_and_stable() {
         let codes: Vec<_> = one_of_each().iter().map(OnnxError::code).collect();
-        let expected: Vec<String> = (300..315).map(|n| format!("E{n}")).collect();
+        // E313 belonged to a variant that no longer exists; its number is not reused.
+        let expected: Vec<String> = (300..315)
+            .filter(|n| *n != 313)
+            .map(|n| format!("E{n}"))
+            .collect();
         assert_eq!(codes, expected);
     }
 

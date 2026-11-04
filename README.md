@@ -123,7 +123,7 @@ The GPU backend runs on wgpu (Vulkan, Metal, DX12). It is measured on an Apple M
 
 ## Documentation
 
-[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [Numeric contract matrix](docs/contract.json) | [Claims and how to reproduce them](docs/claims.md) | [Benchmarks](docs/benchmarks.md) | [Provenance](docs/provenance.md) | [Comparison](docs/comparison.md) | [Run record](docs/manifest.md) | [Golden corpus](docs/golden-corpus.md) | [Error bounds](docs/analysis.md) | [Licensing](docs/licensing.md) | [Use cases](docs/use-cases.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Mutation testing](docs/mutation-testing.md) | [Adding an op](docs/adding-an-op.md) | [Roadmap](ROADMAP.md) | [Changelog](CHANGELOG.md)
+[Architecture](docs/architecture.md) | [IR](docs/ir.md) | [Numerical semantics](docs/semantics.md) | [Numeric contract matrix](docs/contract.json) | [Claims and how to reproduce them](docs/claims.md) | [Benchmarks](docs/benchmarks.md) | [Provenance](docs/provenance.md) | [Comparison](docs/comparison.md) | [Run record](docs/manifest.md) | [Golden corpus](docs/golden-corpus.md) | [Error bounds](docs/analysis.md) | [Licensing](docs/licensing.md) | [Use cases](docs/use-cases.md) | [ONNX import](docs/onnx.md) | [Optimization passes](docs/optimization-passes.md) | [Mutation testing](docs/mutation-testing.md) | [Audit guide](docs/audit.md) | [Adding an op](docs/adding-an-op.md) | [Roadmap](ROADMAP.md) | [Changelog](CHANGELOG.md)
 
 ## Security, contributing, citing
 

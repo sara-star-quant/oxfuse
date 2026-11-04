@@ -289,7 +289,7 @@ fn add_both_constants_with_broadcast() {
 }
 
 #[test]
-fn mul_expands_like_add() {
+fn mul_broadcasts_like_add() {
     let m = single(
         "Mul",
         vec![input("x", &[2, 2])],
