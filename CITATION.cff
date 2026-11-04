@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use Oxfuse in research, please cite it as below."
+title: "Oxfuse: a tensor-graph compiler with bit-defined float32 results"
+type: software
+authors:
+  - name: "SARA STAR QUANT LLC"
+repository-code: "https://github.com/sara-star-quant/oxfuse"
+url: "https://github.com/sara-star-quant/oxfuse"
+license: Apache-2.0
+keywords:
+  - tensor graph compiler
+  - reproducible floating point
+  - numerical reproducibility
+  - ONNX
+  - Rust
