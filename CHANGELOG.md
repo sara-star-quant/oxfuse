@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+## 0.6.0 - 2026-11-05
+
 - `Add` and `Mul` broadcast like NumPy: trailing dimensions are aligned and a dimension of 1 or a missing one stretches, so a bias `[n]` adds to `[m, n]` and a column `[m, 1]` scales it (`examples/bias_add.json`). The rule is `numpy_broadcast`; the reference kernel reads each operand through `broadcast_map`, equal shapes and scalars keep their own loops, and `analyze` bounds broadcast operands. The ONNX importer still expands constants itself (see below).
 - The `mlp` benchmark graph has a bias after each product, so it times the work of a real classifier. Speeds in `docs/benchmarks.md` are re-measured on a quiet M1 Pro: batch 1 is 3.9x `ndarray`, batch 8 0.97x and batch 32 0.70x (0.85x with threads; the bias is a separate pass over the activations). On the Kaggle Xeon the single-thread `cpu` backend is 3.84x `ndarray` at batch 1, 0.75x at batch 8 and 0.55x at batch 32.
 - The ONNX importer passes `Add`, `Mul` and the `Gemm` bias to the IR's broadcasting instead of expanding constants. A bias or scale that is a runtime input now imports; before it was an error. The `OnnxError::Limit` variant (`E313`) is removed, since nothing raised it any more; the core limits apply to the output and E313 is not reused (breaking for code that matched it).
