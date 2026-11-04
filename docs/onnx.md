@@ -54,7 +54,7 @@ A model is untrusted input, like a graph file. The size cap, the tensor element 
 | E310 | a value name defined twice |
 | E311 | a node-level shape or operand error |
 | E312 | a named dimension without `--dim` |
-| E313 | reserved: a limit exceeded at import (now reported by the core limit codes) |
+| E313 | retired: its number is not reused (limits are reported by the core codes) |
 | E314 | more messages than the importer allows (ten per `max_values`, so a file of tiny messages cannot exhaust memory) |
 
 Errors from the IR (`E0xx`) pass through with their own codes. `E107` to `E113` come from the CLI.
