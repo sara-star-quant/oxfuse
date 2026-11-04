@@ -65,7 +65,7 @@ Errors carry a code and a location: ``error[E017]: node `y`: MatMul: inner dimen
 
 - **Same bits on the tested platforms.** `MatMul` is one fused multiply-add per step in ascending `k`, and `Sigmoid` uses an `exp` written for this project. The reference and the fast CPU backend agree bit for bit on x86 and ARM, at any SIMD level and thread count. A NaN's sign and payload are the one thing IEEE 754 leaves to the hardware.
 - **Exact optimizer.** Four passes (constant folding, layout elision, common-subexpression elimination, dead-code elimination) never change an output bit, infinity and signed zero included.
-- **A GPU is measured, not trusted.** `MatMul` matches the reference bit for bit on the two devices that fuse the same way (Apple M1 Pro, Tesla T4); every other op has a documented bound, and `oxfuse gpu-selftest` measures any adapter.
+- **A GPU is measured, not trusted.** `MatMul` matches the reference bit for bit on the devices that fuse the same way and were measured (Apple silicon through Metal, and a Tesla T4; the chips are listed in [docs/adapters.md](docs/adapters.md)); every other op has a documented bound, and `oxfuse gpu-selftest` measures any adapter.
 - **Malformed input is rejected, not guessed.** Every error has a stable code and the JSON path of the offender; sizes and element counts are bounded before anything is allocated.
 
 The precise rules are in [docs/semantics.md](docs/semantics.md).
@@ -81,7 +81,7 @@ The precise rules are in [docs/semantics.md](docs/semantics.md).
 | Tests detect real defects | cargo-mutants: all 1161 viable mutants of the CPU-side crates stopped, no survivor, reproduced by parallel CI shards; the GPU crate is mutation-tested locally on a real adapter ([docs/mutation-testing.md](docs/mutation-testing.md)) |
 | Line coverage | cargo-llvm-cov in CI, library code only; it says what the tests run, mutation testing says how well they check it |
 | Hostile input is handled | Loader fuzzing, bounded allocation, 3.07M generated graphs compared across backends with no divergence |
-| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul bit-identical to the reference on an Apple M1 Pro and a Tesla T4 (inside the float64 bound on any adapter); Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose, permute and broadcast index arithmetic (bounded sizes, not a proof of the whole backend) |
+| GPU backend: exact where IEEE allows, bounded elsewhere | Relu bit-exact on all 2^32 inputs; MatMul bit-identical to the reference on the Apple silicon GPUs and the Tesla T4 measured so far (inside the float64 bound on any adapter); Sigmoid inside a measured ulp bound; a CPU model of every kernel grid; Kani bounded model checking of the dispatch fold and the matmul, transpose, permute and broadcast index arithmetic (bounded sizes, not a proof of the whole backend) |
 | ONNX models run correctly | 14 fixtures checked against onnxruntime and the `onnx` reference evaluator, bit-exact except one `Sigmoid` model; importer fuzzing ([docs/onnx.md](docs/onnx.md)) |
 | Builds on Rust 1.89 or newer | MSRV job in CI |
 
@@ -119,7 +119,7 @@ It needs Rust 1.89 or newer. Not tested: macOS on Intel, 32-bit targets, big-end
 
 ## GPUs
 
-The GPU backend runs on wgpu (Vulkan, Metal, DX12). It is measured on an Apple M1 Pro (Metal), a Tesla T4 (NVIDIA, Vulkan, a free notebook) and on software adapters, see [docs/adapters.md](docs/adapters.md). AMD and Intel Arc cards should work through Vulkan or DX12 but are untested. If you try your card, run `oxfuse gpu-selftest` and share the report in an issue.
+The GPU backend runs on wgpu (Vulkan, Metal, DX12). It is measured on Apple silicon (Metal; the M1 Pro and the macOS CI runner's device, other Apple chips are untested), a Tesla T4 (NVIDIA, Vulkan, a free notebook) and on software adapters, see [docs/adapters.md](docs/adapters.md). AMD and Intel Arc cards should work through Vulkan or DX12 but are untested. If you try your card, run `oxfuse gpu-selftest` and share the report in an issue.
 
 ## Documentation
 
