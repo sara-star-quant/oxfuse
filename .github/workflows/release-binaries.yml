@@ -5,15 +5,14 @@ name: release-binaries
 # Run it by hand (Actions > release-binaries > Run workflow). With upload off it
 # only leaves the files as a workflow artifact, a rehearsal. With upload on it
 # attaches them to the existing release for `tag`, and `ref` must be that tag so
-# the binaries come from the tagged commit.
+# the binaries come from the tagged commit; leave `ref` empty and it is the tag.
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Git ref to build (a branch, tag or commit)"
-        required: true
-        default: main
+        description: "Git ref to build (a branch, tag or commit); empty means the tag, else the run's branch"
+        required: false
       upload:
         description: "Attach the files to the release for `tag`"
         type: boolean
@@ -34,7 +33,7 @@ jobs:
     steps:
       - name: Check the inputs
         env:
-          REF: ${{ inputs.ref }}
+          REF: ${{ inputs.ref || inputs.tag }}
           TAG: ${{ inputs.tag }}
           UPLOAD: ${{ inputs.upload }}
         run: |
@@ -65,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || inputs.tag }}
           persist-credentials: false
       - run: rustup toolchain install
       - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
