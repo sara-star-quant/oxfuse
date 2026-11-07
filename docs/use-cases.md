@@ -35,7 +35,7 @@ Two runtimes can run the same model and disagree in the last bits of a result. A
 
 ## What it is not
 
-Not an inference server, not for training, not for large models, and not for speed-critical CPU work. The operator set is seven float32 ops plus a small ONNX subset, with NumPy broadcasting in `Add` and `Mul` only and no batched `MatMul`. For those jobs use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [comparison.md](comparison.md) quotes what each says about itself.
+Not an inference server, not for training, not for large models, and not for speed-critical CPU work. The operator set is ten float32 ops plus a small ONNX subset, with NumPy broadcasting in `Add`, `Mul`, `Sub` and `Div` only and no batched `MatMul`. For those jobs use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [comparison.md](comparison.md) quotes what each says about itself.
 
 ## What would have to change
 

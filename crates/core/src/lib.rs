@@ -22,7 +22,7 @@
 //! # }
 //! ```
 //!
-//! Not for: general ML work. The op set is seven float32 ops.
+//! Not for: general ML work. The op set is ten float32 ops.
 
 /// Compiles and runs the README examples as doctests.
 #[cfg(doctest)]

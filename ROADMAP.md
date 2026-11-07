@@ -18,8 +18,8 @@ A stage is marked done only when it is implemented and tested.
 
 ## Considered, no commitment
 
-Next, in order: numpy broadcasting and the elementwise operators, then error bounds over a range of inputs, and a transformer-lite set (`Softmax`, `LayerNormalization`, `Gelu`, reductions with a fixed order). Later, if there is demand: convolution and pooling, f16 and int8, a WASM build, Python bindings. Each operator ships only with its evidence: an oracle test, SIMD and reference kernels that agree bit for bit, a GPU bound, mutation testing and a row in the claims ledger.
+Next, in order: the rest of the elementwise operators (`Min`, `Max`, `Clip`, then comparisons and `Where`), batched `MatMul`, then error bounds over a range of inputs, and a transformer-lite set (`Softmax`, `LayerNormalization`, `Gelu`, reductions with a fixed order). Later, if there is demand: convolution and pooling, f16 and int8, a WASM build, Python bindings. Each operator ships only with its evidence: an oracle test, SIMD and reference kernels that agree bit for bit, a GPU bound, mutation testing and a row in the claims ledger.
 
 ## Not planned
 
-Broadcasting outside `Add` and `Mul`, batched `MatMul`, operator fusion, Python bindings, a C interface with a C++ example, a RISC-V vector backend checked under emulation, a formally verified hardware block. Each needs a design and evidence first. No dates.
+Broadcasting outside `Add`, `Mul`, `Sub` and `Div`, batched `MatMul`, operator fusion, Python bindings, a C interface with a C++ example, a RISC-V vector backend checked under emulation, a formally verified hardware block. Each needs a design and evidence first. No dates.

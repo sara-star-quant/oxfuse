@@ -56,6 +56,24 @@ fn up(x: f64) -> f64 {
     x * (1.0 + f64::EPSILON)
 }
 
+/// Round a positive float64 result down by one unit of its relative error.
+fn down(x: f64) -> f64 {
+    x * (1.0 - f64::EPSILON)
+}
+
+/// How far `(x + dx) / (y + dy)` can be from `x / y` for `|dx| <= ex` and
+/// `|dy| <= ey`: the difference is `(dx y - x dy) / (y (y + dy))`, so it is at
+/// most `(ex |y| + |x| ey) / (|y| (|y| - ey))`. Infinite when the divisor's
+/// interval reaches zero, where the quotient is not bounded.
+fn div_bound(x: f64, y: f64, ex: f64, ey: f64) -> f64 {
+    let gap = down(y.abs() - ey);
+    if gap.is_nan() || gap <= 0.0 {
+        return f64::INFINITY;
+    }
+    let top = add(mul(ex, y.abs()), mul(x.abs(), ey));
+    up(top / down(y.abs() * gap))
+}
+
 fn add(x: f64, y: f64) -> f64 {
     up(x + y)
 }
@@ -133,7 +151,7 @@ pub fn analyze(graph: &Graph, inputs: &[Tensor]) -> Result<Vec<Certificate>, Err
         .collect())
 }
 
-/// For each output element of `Add` or `Mul`, the element each operand
+/// For each output element of a binary op, the element each operand
 /// contributes (NumPy broadcasting).
 fn operand_maps(shapes: &[&[usize]], len: usize) -> (Vec<usize>, Vec<usize>) {
     if shapes[0] == shapes[1] {
@@ -157,6 +175,23 @@ fn propagate(op: &Op, v: &[&[f32]], e: &[&[f64]], shapes: &[&[usize]], out: &[f3
                 .map(|i| {
                     let (a, b) = (ia[i], ib[i]);
                     add(add(e[0][a], e[1][b]), half_ulp(out[i]))
+                })
+                .collect()
+        }
+        Op::Neg => e[0].to_vec(),
+        Op::Sub => {
+            let (ia, ib) = operand_maps(shapes, out.len());
+            (0..out.len())
+                .map(|i| add(add(e[0][ia[i]], e[1][ib[i]]), half_ulp(out[i])))
+                .collect()
+        }
+        Op::Div => {
+            let (ia, ib) = operand_maps(shapes, out.len());
+            (0..out.len())
+                .map(|i| {
+                    let (a, b) = (ia[i], ib[i]);
+                    let (x, y) = (f64::from(v[0][a]), f64::from(v[1][b]));
+                    add(div_bound(x, y, e[0][a], e[1][b]), half_ulp(out[i]))
                 })
                 .collect()
         }
@@ -262,6 +297,103 @@ mod tests {
             Tensor::new(b, bv.to_vec()).unwrap(),
         ];
         analyze(&graph, &inputs).unwrap().remove(0)
+    }
+
+    /// Operands that carry different, known bounds (each came from an `Add` of a
+    /// different constant), so a bound read from the wrong operand or element,
+    /// or a sign mix-up, changes the number.
+    fn with_input_errors(op: Op) -> Certificate {
+        let mut g = GraphBuilder::new(Limits::default());
+        let x = g.input("x", vec![2]).unwrap();
+        let y = g.input("y", vec![2]).unwrap();
+        let cx = g.constant("cx", vec![], vec![0.1]).unwrap();
+        let cy = g.constant("cy", vec![], vec![0.3]).unwrap();
+        let a = g.node("a", Op::Add, &[x, cx]).unwrap();
+        let b = g.node("b", Op::Add, &[y, cy]).unwrap();
+        let z = g.node("z", op, &[a, b]).unwrap();
+        let graph = g.finish(&[a, b, z]).unwrap();
+        let inputs = [
+            Tensor::new(vec![2], vec![1.0, 1000.0]).unwrap(),
+            Tensor::new(vec![2], vec![4.0, 0.02]).unwrap(),
+        ];
+        analyze(&graph, &inputs).unwrap().remove(2)
+    }
+
+    fn input_errors() -> (Vec<f64>, Vec<f64>) {
+        let mut g = GraphBuilder::new(Limits::default());
+        let x = g.input("x", vec![2]).unwrap();
+        let y = g.input("y", vec![2]).unwrap();
+        let cx = g.constant("cx", vec![], vec![0.1]).unwrap();
+        let cy = g.constant("cy", vec![], vec![0.3]).unwrap();
+        let a = g.node("a", Op::Add, &[x, cx]).unwrap();
+        let b = g.node("b", Op::Add, &[y, cy]).unwrap();
+        let graph = g.finish(&[a, b]).unwrap();
+        let inputs = [
+            Tensor::new(vec![2], vec![1.0, 1000.0]).unwrap(),
+            Tensor::new(vec![2], vec![4.0, 0.02]).unwrap(),
+        ];
+        let outs = analyze(&graph, &inputs).unwrap();
+        (outs[0].bounds.clone(), outs[1].bounds.clone())
+    }
+
+    #[test]
+    fn a_difference_adds_both_input_bounds_and_a_negation_adds_nothing() {
+        let (ea, eb) = input_errors();
+        let c = with_input_errors(Op::Sub);
+        for i in 0..2 {
+            let want = ea[i] + eb[i] + half_ulp(c.values[i]);
+            assert!(c.bounds[i] >= want && c.bounds[i] <= want * (1.0 + 1e-14));
+        }
+        // Neg: the bound of the operand, exactly.
+        let mut g = GraphBuilder::new(Limits::default());
+        let x = g.input("x", vec![2]).unwrap();
+        let cx = g.constant("cx", vec![], vec![0.1]).unwrap();
+        let a = g.node("a", Op::Add, &[x, cx]).unwrap();
+        let n = g.node("n", Op::Neg, &[a]).unwrap();
+        let graph = g.finish(&[a, n]).unwrap();
+        let input = Tensor::new(vec![2], vec![1.0, 1000.0]).unwrap();
+        let outs = analyze(&graph, &[input]).unwrap();
+        assert_eq!(outs[0].bounds, outs[1].bounds);
+        assert_eq!(outs[1].values[0], -outs[0].values[0]);
+    }
+
+    #[test]
+    fn a_quotient_bound_follows_the_formula_per_element() {
+        let (ea, eb) = input_errors();
+        let c = with_input_errors(Op::Div);
+        // Element 0: 1.1 / 4.3. Element 1: 1000.1 / 0.32 (a small divisor, a wide bound).
+        let xs = [f64::from(1.0f32 + 0.1), f64::from(1000.0f32 + 0.1)];
+        let ys = [f64::from(4.0f32 + 0.3), f64::from(0.02f32 + 0.3)];
+        for i in 0..2 {
+            let top = ea[i] * ys[i] + xs[i] * eb[i];
+            let want = top / (ys[i] * (ys[i] - eb[i])) + half_ulp(c.values[i]);
+            assert!(
+                c.bounds[i] >= want * (1.0 - 1e-6) && c.bounds[i] <= want * (1.0 + 1e-6),
+                "element {i}: {} vs {want}",
+                c.bounds[i]
+            );
+        }
+        assert!(c.bounds[1] > c.bounds[0] * 100.0);
+    }
+
+    #[test]
+    fn down_and_up_move_a_positive_value_one_relative_step_in_opposite_directions() {
+        for x in [1.0, 3.5, 1e-30, 1e30] {
+            assert_eq!(down(x), x * (1.0 - f64::EPSILON));
+            assert!(down(x) < x && x < up(x));
+        }
+        assert_eq!(down(0.0), 0.0);
+    }
+
+    #[test]
+    fn a_divisor_interval_that_reaches_zero_has_no_bound() {
+        // Divisor 0.3 with an error of 0.3 can be zero.
+        assert_eq!(div_bound(1.0, 0.3, 0.0, 0.3), f64::INFINITY);
+        assert_eq!(div_bound(1.0, 0.3, 0.0, 0.5), f64::INFINITY);
+        assert!(div_bound(1.0, 0.3, 0.0, 0.29).is_finite());
+        assert_eq!(div_bound(1.0, f64::NAN, 0.0, 0.0), f64::INFINITY);
+        // Exact inputs: nothing beyond the result's own rounding.
+        assert_eq!(div_bound(5.0, 2.0, 0.0, 0.0), 0.0);
     }
 
     #[test]
@@ -372,7 +504,8 @@ mod tests {
                 Op::Sigmoid => a.iter().map(|&x| 1.0 / (1.0 + (-x).exp())).collect(),
                 Op::Reshape { .. } => a.clone(),
                 Op::Transpose { perm } => kernels::transpose(a, shapes[0], perm),
-                Op::Add | Op::Mul => {
+                Op::Neg => a.iter().map(|&x| -x).collect(),
+                Op::Add | Op::Mul | Op::Sub | Op::Div => {
                     let b = &slots[step.inputs[1]];
                     let n = plan.slot_shapes[step.output].iter().product::<usize>();
                     let out_shape = &plan.slot_shapes[step.output];
@@ -382,10 +515,11 @@ mod tests {
                                 a[naive_operand_index(out_shape, shapes[0], i)],
                                 b[naive_operand_index(out_shape, shapes[1], i)],
                             );
-                            if matches!(step.op, Op::Add) {
-                                x + y
-                            } else {
-                                x * y
+                            match step.op {
+                                Op::Add => x + y,
+                                Op::Sub => x - y,
+                                Op::Div => x / y,
+                                _ => x * y,
                             }
                         })
                         .collect()
@@ -430,6 +564,20 @@ mod tests {
         if pick(7, 2) == 0 {
             let c = g.constant("c2", vec![], vec![-1.7]).unwrap();
             cur = g.node("p", Op::Mul, &[c, cur]).unwrap();
+        }
+        if pick(10, 2) == 0 {
+            // A row constant on the left: the operand order is part of the result.
+            let row = g
+                .constant("row", vec![n], values(n, seed + 3, 1.0))
+                .unwrap();
+            cur = g.node("d", Op::Sub, &[row, cur]).unwrap();
+        }
+        if pick(11, 2) == 0 {
+            let c = g.constant("c3", vec![], vec![2.5]).unwrap();
+            cur = g.node("q", Op::Div, &[cur, c]).unwrap();
+        }
+        if pick(12, 2) == 0 {
+            cur = g.node("n", Op::Neg, &[cur]).unwrap();
         }
         if pick(8, 2) == 0 {
             cur = g.node("r", Op::Relu, &[cur]).unwrap();

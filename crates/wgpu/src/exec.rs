@@ -245,6 +245,12 @@ impl WgpuExecutable {
             let shape_of = |i: usize| plan.slot_shapes[step.inputs[i]].as_slice();
             // (kernel, source, parameter words, dispatch groups)
             let planned: Option<Planned> = match &step.op {
+                Op::Sub | Op::Div | Op::Neg => {
+                    return Err(backend_error(format!(
+                        "{} has no GPU kernel yet; use the cpu or reference backend",
+                        step.op.name()
+                    )));
+                }
                 Op::Reshape { .. } => None,
                 Op::Transpose { perm } if perm.is_empty() => None,
                 Op::Relu | Op::Sigmoid => {

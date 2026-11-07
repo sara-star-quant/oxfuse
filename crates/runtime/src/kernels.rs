@@ -14,6 +14,9 @@ pub(crate) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
         Op::Sigmoid => sigmoid(inputs[0]),
         Op::Add => zip_broadcast(inputs, shapes, |x, y| x + y),
         Op::Mul => zip_broadcast(inputs, shapes, |x, y| x * y),
+        Op::Sub => zip_broadcast(inputs, shapes, |x, y| x - y),
+        Op::Div => zip_broadcast(inputs, shapes, |x, y| x / y),
+        Op::Neg => inputs[0].iter().map(|&x| -x).collect(),
         Op::Reshape { .. } => inputs[0].to_vec(),
         Op::Transpose { perm } => transpose(inputs[0], shapes[0], perm),
         Op::MatMul => matmul(
@@ -189,6 +192,80 @@ mod tests {
             apply2(Op::Add, &[f32::INFINITY], &[], &[1.0], &[])[0],
             f32::INFINITY
         );
+    }
+
+    #[test]
+    fn sub_and_div_keep_the_operand_order_on_every_layout() {
+        let t = [8.0, 6.0, 4.0, 2.0];
+        let s = [2.0];
+        let row = [1.0, 2.0];
+        assert_eq!(apply2(Op::Sub, &t, &[2, 2], &s, &[]), [6.0, 4.0, 2.0, 0.0]);
+        assert_eq!(
+            apply2(Op::Sub, &s, &[], &t, &[2, 2]),
+            [-6.0, -4.0, -2.0, 0.0]
+        );
+        assert_eq!(
+            apply2(Op::Sub, &t, &[2, 2], &row, &[2]),
+            [7.0, 4.0, 3.0, 0.0]
+        );
+        assert_eq!(
+            apply2(Op::Sub, &row, &[2], &t, &[2, 2]),
+            [-7.0, -4.0, -3.0, 0.0]
+        );
+        assert_eq!(apply2(Op::Div, &t, &[2, 2], &s, &[]), [4.0, 3.0, 2.0, 1.0]);
+        assert_eq!(
+            apply2(Op::Div, &s, &[], &t, &[2, 2]),
+            [0.25, 1.0 / 3.0, 0.5, 1.0]
+        );
+        assert_eq!(
+            apply2(Op::Div, &t, &[2, 2], &row, &[2]),
+            [8.0, 3.0, 4.0, 1.0]
+        );
+        assert_eq!(
+            apply2(Op::Div, &row, &[2], &t, &[2, 2]),
+            [0.125, 1.0 / 3.0, 0.25, 1.0]
+        );
+        // Column against row: both operands broadcast.
+        assert_eq!(
+            apply2(Op::Sub, &[10.0, 20.0], &[2, 1], &[1.0, 2.0, 3.0], &[1, 3]),
+            [9.0, 8.0, 7.0, 19.0, 18.0, 17.0]
+        );
+    }
+
+    #[test]
+    fn sub_div_and_neg_follow_ieee_at_the_edges() {
+        let one = |op: Op, x: f32, y: f32| apply2(op, &[x], &[], &[y], &[])[0];
+        assert!(one(Op::Div, 0.0, 0.0).is_nan());
+        assert!(one(Op::Div, f32::INFINITY, f32::INFINITY).is_nan());
+        assert_eq!(one(Op::Div, 1.0, 0.0), f32::INFINITY);
+        assert_eq!(one(Op::Div, -1.0, 0.0), f32::NEG_INFINITY);
+        assert_eq!(one(Op::Div, 1.0, -0.0), f32::NEG_INFINITY);
+        assert_eq!(one(Op::Div, 1.0, f32::INFINITY).to_bits(), 0.0f32.to_bits());
+        assert_eq!(
+            one(Op::Div, -1.0, f32::INFINITY).to_bits(),
+            (-0.0f32).to_bits()
+        );
+        assert!(one(Op::Sub, f32::INFINITY, f32::INFINITY).is_nan());
+        assert!(one(Op::Sub, f32::NAN, 1.0).is_nan());
+        // x - x is +0.0, and 0 - 0 keeps its sign rules: -0 - +0 = -0, +0 - +0 = +0.
+        assert_eq!(one(Op::Sub, 3.5, 3.5).to_bits(), 0.0f32.to_bits());
+        assert_eq!(one(Op::Sub, -0.0, 0.0).to_bits(), (-0.0f32).to_bits());
+        assert_eq!(one(Op::Sub, 0.0, 0.0).to_bits(), 0.0f32.to_bits());
+        // Subnormal result that an add would flush nowhere: exact difference.
+        let tiny = f32::from_bits(3);
+        assert_eq!(one(Op::Sub, f32::from_bits(5), tiny).to_bits(), 2);
+        let neg = apply(
+            &Op::Neg,
+            &[&[0.0, -0.0, 1.5, f32::INFINITY, f32::NAN, tiny]],
+            &[&[6]],
+        );
+        let bits: Vec<u32> = neg.iter().map(|v| v.to_bits()).collect();
+        assert_eq!(bits[0], (-0.0f32).to_bits());
+        assert_eq!(bits[1], 0.0f32.to_bits());
+        assert_eq!(neg[2], -1.5);
+        assert_eq!(neg[3], f32::NEG_INFINITY);
+        assert!(neg[4].is_nan());
+        assert_eq!(bits[5], tiny.to_bits() | 0x8000_0000);
     }
 
     #[test]

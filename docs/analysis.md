@@ -30,6 +30,9 @@ Each element carries its computed value and a bound `e` on its distance from the
 |---|---|
 | `Add` | `e_a + e_b` plus half an ulp of the result: round to nearest is within half an ulp (IEEE 754) |
 | `Mul` | `\|a\| e_b + \|b\| e_a + e_a e_b` plus half an ulp of the result |
+| `Sub` | `e_a + e_b` plus half an ulp of the result, as `Add` |
+| `Div` | `(e_a \|b\| + \|a\| e_b) / (\|b\| (\|b\| - e_b))` plus half an ulp of the result; infinite when `e_b >= \|b\|`, because the true divisor may then be zero |
+| `Neg` | unchanged: a sign flip does not round |
 | `MatMul` | the fixed order of the kernel replayed step by step: one fused multiply-add per `k`, so each step adds `\|a\| e_b + \|b\| e_a + e_a e_b` and half an ulp of the running sum |
 | `Relu` | unchanged: `max(0, x)` never moves a value further than its input moved |
 | `Sigmoid` | `e / 4` (the slope of the sigmoid is at most 1/4) plus a relative `2^-22 (1 + 2^-20)` of the result for the own `exp` (within 1 ulp for every input, checked over all 2^32) and the addition and division that follow |
