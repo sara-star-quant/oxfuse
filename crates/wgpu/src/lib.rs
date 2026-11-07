@@ -5,6 +5,11 @@
 //! elsewhere; `oxfuse gpu-selftest` measures any adapter against the
 //! reference backend. See `examples/matmul.rs` for a complete run.
 
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 mod bounds;
 mod config;
 mod context;

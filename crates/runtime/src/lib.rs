@@ -22,6 +22,11 @@
 //! # }
 //! ```
 
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 mod analyze;
 mod backend;
 mod cpu;
