@@ -116,6 +116,33 @@ jobs:
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest || true
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest --limits downlevel || true
 
+  # Each library crate builds and tests alone, so a path or feature leak between
+  # crates shows up here. `-p` selects one package, so features do not unify
+  # across the workspace. The dependency checks pin the layering: core needs no
+  # other oxfuse crate, onnx needs only core.
+  standalone:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: |
+          for c in oxfuse-core oxfuse-runtime oxfuse-onnx; do
+            cargo test -p "$c" --locked
+          done
+      - run: |
+          deny() { # crate, forbidden dependency pattern
+            if cargo tree -p "$1" -e normal --prefix none | grep -E "^oxfuse-($2) "; then
+              echo "$1 must not depend on the crates above" >&2
+              exit 1
+            fi
+          }
+          deny oxfuse-core 'runtime|onnx|wgpu'
+          deny oxfuse-onnx 'runtime|wgpu'
+          deny oxfuse-runtime 'onnx|wgpu'
+
   msrv:
     needs: changes
     if: needs.changes.outputs.code == 'true'

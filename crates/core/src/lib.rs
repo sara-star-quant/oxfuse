@@ -24,6 +24,11 @@
 //!
 //! Not for: general ML work. The op set is seven float32 ops.
 
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 mod builder;
 mod dump;
 mod error;
