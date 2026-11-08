@@ -91,8 +91,12 @@ pub fn op_agrees(
                     let row: Vec<f32> = (0..k).map(|x| a[i * k + x]).collect();
                     let col: Vec<f32> = (0..k).map(|x| b[x * n + j]).collect();
                     let exact: f64 = row.iter().zip(&col).map(|(x, y)| f64::from(*x) * f64::from(*y)).sum();
-                    if exact.abs() > 1e37 {
-                        return None; // near overflow: not promised
+                    // Not promised near overflow: a partial sum can overflow while the
+                    // exact result is small (terms of 1e38 that cancel), so look at the
+                    // size of the terms, not only of the result.
+                    let terms: f64 = row.iter().zip(&col).map(|(x, y)| (f64::from(*x) * f64::from(*y)).abs()).sum();
+                    if exact.abs() > 1e37 || terms > 1e37 {
+                        return None;
                     }
                     let tolerance = gpu_matmul_bound(&row, &col);
                     let err = (f64::from(got[idx]) - exact).abs();
@@ -238,6 +242,22 @@ mod tests {
             "the case must be a subnormal result"
         );
         assert!(agrees(Op::Mul, &ins, &[0.0], &want));
+    }
+
+    /// Terms of 1e38 that cancel: the exact sum is 0 but a partial sum overflows
+    /// on the device (infinity or NaN). Near overflow is not promised, so any
+    /// device answer is accepted; a small, in-range sum is still checked.
+    #[test]
+    fn matmul_terms_near_overflow_are_not_held_to_the_bound() {
+        let a: &[f32] = &[1e30, 1e30];
+        let b: &[f32] = &[1e8, -1e8];
+        let ins: [(&[usize], &[f32]); 2] = [(&[1, 2], a), (&[2, 1], b)];
+        assert!(agrees(Op::MatMul, &ins, &[f32::NAN], &[0.0]));
+        assert!(agrees(Op::MatMul, &ins, &[f32::INFINITY], &[0.0]));
+        let small: &[f32] = &[1e3, 1e3];
+        let sb: &[f32] = &[1e3, -1e3];
+        let ins: [(&[usize], &[f32]); 2] = [(&[1, 2], small), (&[2, 1], sb)];
+        assert!(!agrees(Op::MatMul, &ins, &[f32::NAN], &[0.0]));
     }
 
     #[test]
