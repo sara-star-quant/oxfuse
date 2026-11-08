@@ -105,12 +105,12 @@ pub fn generate(u: &mut Unstructured) -> ArbResult<Vec<u8>> {
         let out = format!("t{i}");
         let rank2 = shape.len() == 2;
         match u.int_in_range(0..=9u8)? {
-            0 => nodes.push(node("Relu", &[&last], &out)),
+            0 => nodes.push(node(if u.arbitrary()? { "Relu" } else { "Neg" }, &[&last], &out)),
             1 => nodes.push(node("Sigmoid", &[&last], &out)),
             2 => nodes.push(node("Identity", &[&last], &out)),
             3 => nodes.push(node("Dropout", &[&last], &out)),
             4 => {
-                let op = if u.arbitrary()? { "Add" } else { "Mul" };
+                let op = *u.choose(&["Add", "Mul", "Sub", "Div"])?;
                 let k = match u.int_in_range(0..=2u8)? {
                     0 => constant(&mut inits, &[], u)?,
                     1 => constant(&mut inits, &[*shape.last().unwrap()], u)?,
