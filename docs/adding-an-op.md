@@ -13,7 +13,8 @@ An op touches five places. The compiler lists most of them for you: every `match
    - unit tests for the shape rule and the kernel, including rank 0, size-1 dimensions, NaN and infinity where they matter;
    - a row in the README's supported-ops table;
    - an entry for the op in `docs/ir.md` and `docs/semantics.md` (a test fails without it).
-   - three rows in `docs/contract.json` (reference, cpu, gpu) with the level, the evidence and a named test for each (a test fails without them);
+   - three rows in `docs/contract.json` (reference, cpu, gpu) with the level, the evidence and a named test for each (a test fails without them). A backend that has no kernel yet gets an arm in its `match` that returns `Error::Backend` naming the op, a test that pins that error, and the level `unsupported`; replace it when the kernel lands;
+   - a bound rule for `analyze` in `propagate` (`crates/runtime/src/analyze.rs`) and a row in `docs/analysis.md`;
 
 `cargo test --workspace` fails if an op has no example, no README row or no contract rows. Finish with `just ci` and `just oracle-check`.
 
@@ -21,4 +22,4 @@ A new op needs nothing for the optimization passes. Folding calls the same refer
 
 ## Numerical contract
 
-State which class the op is in before writing the kernel. Exact ops (`Add`, `Mul`, `Relu`, `Reshape`, `Transpose`) must match NumPy bit for bit on exactly representable inputs. Ops that sum or approximate (`MatMul`, `Sigmoid`) need a documented error bound and a test that measures it.
+State which class the op is in before writing the kernel. Exact ops (`Add`, `Mul`, `Sub`, `Div`, `Neg`, `Relu`, `Reshape`, `Transpose`) must match NumPy bit for bit on exactly representable inputs. Ops that sum or approximate (`MatMul`, `Sigmoid`) need a documented error bound and a test that measures it.

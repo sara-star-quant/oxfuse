@@ -54,10 +54,11 @@ fn sigmoid_in_place(buf: &mut [f32]) {
 }
 
 /// Computes an elementwise `op` into `buf`, which holds one operand and is
-/// overwritten with the result. `other` is the second operand of Add and Mul
+/// overwritten with the result. `other` is the second operand of a binary op
 /// (one element for a scalar). Add and Mul are commutative, so it does not
 /// matter which operand `buf` held; only the payload of a NaN made from two
 /// NaNs depends on the order, and the contract counts all NaNs as one value.
+/// Sub and Div are not: `buf` must hold their first operand.
 pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>) {
     let zip = |buf: &mut [f32], other: &[f32], f: fn(f32, f32) -> f32| {
         let at = |i: usize| other[if other.len() == 1 { 0 } else { i }];
@@ -72,6 +73,10 @@ pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>) {
         Op::Sigmoid => sigmoid_in_place(buf),
         Op::Add => zip(buf, other.expect("Add has two operands"), |x, y| x + y),
         Op::Mul => zip(buf, other.expect("Mul has two operands"), |x, y| x * y),
+        // `buf` is the first operand: the reuse rule never offers the second.
+        Op::Sub => zip(buf, other.expect("Sub has two operands"), |x, y| x - y),
+        Op::Div => zip(buf, other.expect("Div has two operands"), |x, y| x / y),
+        Op::Neg => buf.iter_mut().for_each(|x| *x = -*x),
         Op::Reshape { .. } | Op::MatMul | Op::Transpose { .. } => {
             unreachable!("not an in-place op")
         }

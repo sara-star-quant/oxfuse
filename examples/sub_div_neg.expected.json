@@ -1,0 +1,10 @@
+{
+  "tolerance": { "abs": 0.0, "rel": 0.0 },
+  "outputs": [
+    { "name": "diff", "shape": [2, 2], "values": [7.0, 4.0, 3.0, 0.0] },
+    { "name": "flipped", "shape": [2, 2], "values": [-7.0, -4.0, -3.0, 0.0] },
+    { "name": "quarter", "shape": [2, 2], "values": [1.75, 1.0, 0.75, 0.0] },
+    { "name": "inverse", "shape": [2], "values": [4.0, 2.0] },
+    { "name": "negated", "shape": [2, 2], "values": [-7.0, -4.0, -3.0, -0.0] }
+  ]
+}

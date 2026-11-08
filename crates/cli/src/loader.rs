@@ -178,6 +178,9 @@ fn parse_op(node: &NodeDecl) -> Result<Op, Error> {
         "Sigmoid" => Op::Sigmoid,
         "Add" => Op::Add,
         "Mul" => Op::Mul,
+        "Sub" => Op::Sub,
+        "Div" => Op::Div,
+        "Neg" => Op::Neg,
         "MatMul" => Op::MatMul,
         "Reshape" => Op::Reshape {
             shape: require(node, "Reshape", "shape", &attrs.shape)?,

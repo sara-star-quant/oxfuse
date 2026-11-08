@@ -82,7 +82,9 @@ fn take_reusable(
     slots: &mut [Slot],
 ) -> Option<(Vec<f32>, Option<usize>)> {
     let candidates: &[usize] = match step.op {
-        Op::Relu | Op::Sigmoid | Op::Reshape { .. } => &[0],
+        // Sub and Div are not commutative: only the first operand's buffer can
+        // hold the result, because `apply_in_place` computes `buf op other`.
+        Op::Relu | Op::Sigmoid | Op::Neg | Op::Reshape { .. } | Op::Sub | Op::Div => &[0],
         Op::Add | Op::Mul => &[0, 1],
         Op::MatMul | Op::Transpose { .. } => return None,
     };
@@ -314,6 +316,26 @@ mod tests {
             vec![a, c]
         });
         assert_eq!(reused, 1);
+    }
+
+    #[test]
+    fn sub_and_div_reuse_only_the_first_operands_buffer() {
+        let reused = |op: Op, computed_first: bool| {
+            reuses_when_running(|b| {
+                let x = b.input("x", vec![3]).unwrap();
+                let c = b.constant("c", vec![3], vec![1.0, 2.0, 4.0]).unwrap();
+                let y = b.node("y", Op::Relu, &[x]).unwrap();
+                let pair = if computed_first { [y, c] } else { [c, y] };
+                vec![b.node("z", op, &pair).unwrap()]
+            })
+        };
+        for op in [Op::Sub, Op::Div] {
+            assert_eq!(reused(op.clone(), true), 1);
+            assert_eq!(reused(op, false), 0);
+        }
+        // The commutative pair may take either side.
+        assert_eq!(reused(Op::Add, false), 1);
+        assert_eq!(reused(Op::Mul, false), 1);
     }
 
     #[test]

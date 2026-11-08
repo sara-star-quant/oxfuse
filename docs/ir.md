@@ -17,11 +17,14 @@ A `Graph` is a list of values in definition order. A value is an input, a consta
 | `Sigmoid` | 1 | none | same as the input |
 | `Add` | 2 | none | NumPy broadcasting of the two shapes: align the trailing dimensions; each pair of sizes must be equal or one of them 1 (a rank 0 operand is a scalar); the result takes the larger size in each position |
 | `Mul` | 2 | none | as `Add` |
+| `Sub` | 2 | none | as `Add`; the first operand minus the second |
+| `Div` | 2 | none | as `Add`; the first operand divided by the second |
+| `Neg` | 1 | none | same as the input |
 | `MatMul` | 2 | none | `[M, N]` from `[M, K]` and `[K, N]`; rank 2 only |
 | `Reshape` | 1 | `shape` | the `shape` attribute; the element count must match |
 | `Transpose` | 1 | `perm` | `[input[perm[0]], input[perm[1]], ...]`; `perm` must be a permutation of `0..rank` |
 
-The shape rules live in one function per op in `crates/core/src/shape.rs`. `Add` and `Mul` use the NumPy broadcasting rule (`numpy_broadcast`); `MatMul` is written for the general case and restricted to rank 2 in its function, so widening it later is a one-function change.
+The shape rules live in one function per op in `crates/core/src/shape.rs`. `Add`, `Mul`, `Sub` and `Div` use the NumPy broadcasting rule (`numpy_broadcast`); `MatMul` is written for the general case and restricted to rank 2 in its function, so widening it later is a one-function change.
 
 ## Invariants the verifier re-checks
 

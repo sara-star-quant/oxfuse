@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "inputs": [
+    { "name": "a", "dtype": "f32", "shape": [2, 2] },
+    { "name": "row", "dtype": "f32", "shape": [2] }
+  ],
+  "constants": [{ "name": "four", "dtype": "f32", "shape": [], "values": [4.0] }],
+  "nodes": [
+    { "name": "diff", "op": "Sub", "inputs": ["a", "row"] },
+    { "name": "flipped", "op": "Sub", "inputs": ["row", "a"] },
+    { "name": "quarter", "op": "Div", "inputs": ["diff", "four"] },
+    { "name": "inverse", "op": "Div", "inputs": ["four", "row"] },
+    { "name": "negated", "op": "Neg", "inputs": ["diff"] }
+  ],
+  "outputs": ["diff", "flipped", "quarter", "inverse", "negated"]
+}

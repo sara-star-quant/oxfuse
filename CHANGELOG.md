@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- New operators `Sub`, `Div` and `Neg`, all exact (one IEEE operation per element, no rounding for `Neg`). `Sub` and `Div` broadcast like `Add`, and operand order is part of their meaning, so the fast CPU backend overwrites only the first operand's buffer for them. `analyze` bounds them (`Div` is infinite when the divisor's interval reaches zero), the ONNX importer lowers `Sub`, `Div` and `Neg`, and the NumPy oracle corpus covers all three. The GPU backend has no kernel for them yet and returns `Error::Backend` naming the operator. Adding a variant to `Op` is breaking for code that matches it exhaustively, so this ships as a minor release.
+
 ## 0.6.0 - 2026-11-05
 
 - `Add` and `Mul` broadcast like NumPy: trailing dimensions are aligned and a dimension of 1 or a missing one stretches, so a bias `[n]` adds to `[m, n]` and a column `[m, 1]` scales it (`examples/bias_add.json`). The rule is `numpy_broadcast`; the reference kernel reads each operand through `broadcast_map`, equal shapes and scalars keep their own loops, and `analyze` bounds broadcast operands. The ONNX importer still expands constants itself (see below).

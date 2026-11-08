@@ -115,6 +115,41 @@ mod reuse {
         });
     }
 
+    /// `Sub` and `Div` are not commutative: a result written into the buffer of
+    /// the second operand would be `y - x` instead of `x - y`.
+    #[test]
+    fn a_computed_second_operand_of_sub_and_div_keeps_the_order() {
+        check(|b, x, s, c| {
+            let y = b.node("y", Op::Sigmoid, &[x]).unwrap();
+            let d = b.node("d", Op::Sub, &[c, y]).unwrap();
+            let q = b.node("q", Op::Div, &[c, d]).unwrap();
+            let r = b.node("r", Op::Sub, &[s, q]).unwrap();
+            vec![b.node("o", Op::Div, &[s, r]).unwrap()]
+        });
+    }
+
+    #[test]
+    fn a_computed_first_operand_of_sub_and_div_may_be_reused() {
+        check(|b, x, s, c| {
+            let y = b.node("y", Op::Sigmoid, &[x]).unwrap();
+            let d = b.node("d", Op::Sub, &[y, c]).unwrap();
+            let q = b.node("q", Op::Div, &[d, c]).unwrap();
+            let n = b.node("n", Op::Neg, &[q]).unwrap();
+            let r = b.node("r", Op::Sub, &[n, s]).unwrap();
+            vec![b.node("o", Op::Div, &[r, s]).unwrap()]
+        });
+    }
+
+    #[test]
+    fn neg_of_a_computed_value_and_of_an_input() {
+        check(|b, x, _, c| {
+            let y = b.node("y", Op::Relu, &[x]).unwrap();
+            let n = b.node("n", Op::Neg, &[y]).unwrap();
+            let m = b.node("m", Op::Neg, &[n]).unwrap();
+            vec![b.node("o", Op::Neg, &[c]).unwrap(), n, m, x]
+        });
+    }
+
     #[test]
     fn a_chain_reuses_one_buffer() {
         check(|b, x, _, _| {

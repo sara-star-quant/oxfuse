@@ -1,1 +1,1 @@
-{"tolerance":{"abs":0.0,"rel":0.0},"outputs":[{"name":"n0","shape":[4],"values":[3.0625,0.25,1.5625,0.5625]},{"name":"n1","shape":[4],"values":[3.0625,0.25,1.5625,0.5625]}]}
+{"tolerance":{"abs":0.0,"rel":0.0},"outputs":[{"name":"n0","shape":[4],"values":[0.0,0.0,0.0,0.0]},{"name":"n1","shape":[4],"values":[7.0,1.0,-5.0,0.09375]},{"name":"c0","shape":[4],"values":[-0.25,0.5,-0.25,8.0]}]}

@@ -6,7 +6,8 @@
     "fused-defined": "Defined as one fused multiply-add per step in ascending k from +0.0; bit-identical to the reference on the tested platforms.",
     "own-math": "Computed with the project's own exp; bit-identical to the reference on the tested platforms and pinned by a hash over all 2^32 inputs.",
     "bounded": "When every input is zero or a normal number: within a stated rounding bound of the float64 result; bit-identical to the reference on adapters that fuse the same way (Apple M1 Pro, Tesla T4 measured). Subnormal, NaN and infinite inputs are not promised.",
-    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`."
+    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`.",
+    "unsupported": "The backend returns `Error::Backend` at compile time for this operator, naming it. Nothing is computed and nothing is promised."
   },
   "backends": [
     "reference",
@@ -80,6 +81,56 @@
         {
           "file": "crates/runtime/tests/broadcast.rs",
           "test": "both_backends_broadcast_every_small_pair_like_a_direct_loop"
+        }
+      ]
+    },
+    {
+      "op": "Sub",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "sub_and_div_keep_the_operand_order_on_every_layout"
+        },
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "sub_div_and_neg_follow_ieee_at_the_edges"
+        }
+      ]
+    },
+    {
+      "op": "Div",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "sub_and_div_keep_the_operand_order_on_every_layout"
+        },
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "sub_div_and_neg_follow_ieee_at_the_edges"
+        }
+      ]
+    },
+    {
+      "op": "Neg",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "sub_div_and_neg_follow_ieee_at_the_edges"
         }
       ]
     },
@@ -195,6 +246,56 @@
         {
           "file": "crates/runtime/tests/broadcast.rs",
           "test": "both_backends_broadcast_every_small_pair_like_a_direct_loop"
+        }
+      ]
+    },
+    {
+      "op": "Sub",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "a_computed_second_operand_of_sub_and_div_keeps_the_order"
+        },
+        {
+          "file": "crates/runtime/src/cpu/mod.rs",
+          "test": "sub_and_div_reuse_only_the_first_operands_buffer"
+        }
+      ]
+    },
+    {
+      "op": "Div",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "a_computed_second_operand_of_sub_and_div_keeps_the_order"
+        },
+        {
+          "file": "crates/runtime/src/cpu/mod.rs",
+          "test": "sub_and_div_reuse_only_the_first_operands_buffer"
+        }
+      ]
+    },
+    {
+      "op": "Neg",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "neg_of_a_computed_value_and_of_an_input"
         }
       ]
     },
@@ -326,6 +427,48 @@
         {
           "file": "crates/wgpu/tests/ops.rs",
           "test": "broadcast_add_and_mul_are_bit_exact_for_every_small_shape_pair"
+        }
+      ]
+    },
+    {
+      "op": "Sub",
+      "backend": "gpu",
+      "level": "unsupported",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "sub_div_and_neg_say_they_have_no_gpu_kernel_instead_of_guessing"
+        }
+      ]
+    },
+    {
+      "op": "Div",
+      "backend": "gpu",
+      "level": "unsupported",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "sub_div_and_neg_say_they_have_no_gpu_kernel_instead_of_guessing"
+        }
+      ]
+    },
+    {
+      "op": "Neg",
+      "backend": "gpu",
+      "level": "unsupported",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "sub_div_and_neg_say_they_have_no_gpu_kernel_instead_of_guessing"
         }
       ]
     },

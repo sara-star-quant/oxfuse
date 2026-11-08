@@ -95,6 +95,9 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 | `Sigmoid` | 1 | none | `1 / (1 + exp(-x))` in `f32` |
 | `Add` | 2 | none | NumPy broadcasting: trailing dimensions are aligned, and a dimension of 1 (or a missing one) stretches |
 | `Mul` | 2 | none | as `Add` |
+| `Sub` | 2 | none | as `Add`; first minus second |
+| `Div` | 2 | none | as `Add`; first divided by second |
+| `Neg` | 1 | none | same shape; flips the sign |
 | `MatMul` | 2 | none | rank 2: `[M, K] x [K, N]` |
 | `Reshape` | 1 | `shape` | element count must match |
 | `Transpose` | 1 | `perm` | output dim `i` is input dim `perm[i]` |

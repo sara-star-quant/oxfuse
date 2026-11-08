@@ -1,6 +1,7 @@
 //! Lowering: a checked `Model` into an oxfuse `Graph`. Every op maps onto
-//! the existing IR ops; `Add` and `Mul` broadcast in the IR, so an operand of
-//! any kind (an initializer, an input or a computed value) is passed as is.
+//! the existing IR ops; `Add`, `Mul`, `Sub` and `Div` broadcast in the IR, so
+//! an operand of any kind (an initializer, an input or a computed value) is
+//! passed as is.
 
 use crate::{
     ImportOptions, OnnxError,
@@ -139,6 +140,9 @@ impl Cx<'_> {
             "MatMul" => self.matmul(n)?,
             "Add" => self.binary(n, Op::Add)?,
             "Mul" => self.binary(n, Op::Mul)?,
+            "Sub" => self.binary(n, Op::Sub)?,
+            "Div" => self.binary(n, Op::Div)?,
+            "Neg" => self.unary(n, Op::Neg)?,
             "Gemm" => self.gemm(n, &mut attrs)?,
             "Reshape" => self.reshape(n, &mut attrs)?,
             "Flatten" => self.flatten(n, &mut attrs)?,

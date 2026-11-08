@@ -65,7 +65,7 @@ pub fn numpy_broadcast(a: &[usize], b: &[usize]) -> Option<Vec<usize>> {
         .collect()
 }
 
-/// The shape of `Add` and `Mul`: NumPy broadcasting of the two operand shapes
+/// The shape of `Add`, `Mul`, `Sub` and `Div`: NumPy broadcasting of the two operand shapes
 /// (a scalar has rank 0 and broadcasts to anything).
 pub fn elementwise_shape(
     node: &str,
@@ -184,7 +184,7 @@ pub fn infer(node: &str, op: &Op, inputs: &[&TensorType]) -> Result<TensorType, 
         });
     }
     match op {
-        Op::Relu | Op::Sigmoid => Ok(inputs[0].clone()),
+        Op::Relu | Op::Sigmoid | Op::Neg => Ok(inputs[0].clone()),
         Op::Transpose { perm } => Ok(TensorType::f32(transpose_shape(
             node,
             &inputs[0].shape,
@@ -200,7 +200,7 @@ pub fn infer(node: &str, op: &Op, inputs: &[&TensorType]) -> Result<TensorType, 
             &inputs[0].shape,
             &inputs[1].shape,
         )?)),
-        Op::Add | Op::Mul => Ok(TensorType::f32(elementwise_shape(
+        Op::Add | Op::Mul | Op::Sub | Op::Div => Ok(TensorType::f32(elementwise_shape(
             node,
             op.name(),
             &inputs[0].shape,
@@ -432,6 +432,49 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn sub_and_div_broadcast_like_add_and_neg_keeps_the_shape() {
+        let m = TensorType::f32(vec![2, 3]);
+        let row = TensorType::f32(vec![3]);
+        let col = TensorType::f32(vec![2, 1]);
+        let scalar = TensorType::f32(vec![]);
+        for op in [Op::Sub, Op::Div] {
+            assert_eq!(infer("y", &op, &[&m, &row]).unwrap().shape, [2, 3]);
+            assert_eq!(infer("y", &op, &[&row, &col]).unwrap().shape, [2, 3]);
+            assert_eq!(infer("y", &op, &[&scalar, &m]).unwrap().shape, [2, 3]);
+            let bad = TensorType::f32(vec![2]);
+            let err = infer("y", &op, &[&m, &bad]).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "node `y`: {}: operand shapes [2, 3] and [2] cannot be broadcast",
+                    op.name()
+                )
+            );
+            assert!(matches!(
+                infer("y", &op, &[&m]).unwrap_err(),
+                Error::Arity {
+                    expected: 2,
+                    found: 1,
+                    ..
+                }
+            ));
+        }
+        assert_eq!(infer("y", &Op::Neg, &[&m]).unwrap().shape, [2, 3]);
+        assert_eq!(
+            infer("y", &Op::Neg, &[&scalar]).unwrap().shape,
+            Vec::<usize>::new()
+        );
+        assert!(matches!(
+            infer("y", &Op::Neg, &[&m, &m]).unwrap_err(),
+            Error::Arity {
+                expected: 1,
+                found: 2,
+                ..
+            }
+        ));
     }
 
     #[test]

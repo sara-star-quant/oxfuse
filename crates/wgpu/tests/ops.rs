@@ -289,3 +289,25 @@ fn a_bias_row_and_a_scale_column_broadcast_at_larger_sizes() {
         bits(&reference(Op::Add, &[a, b]))
     );
 }
+
+#[test]
+fn sub_div_and_neg_say_they_have_no_gpu_kernel_instead_of_guessing() {
+    if !available() {
+        return;
+    }
+    for (op, arity) in [(Op::Sub, 2), (Op::Div, 2), (Op::Neg, 1)] {
+        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
+        let x = b.input("x", vec![2]).unwrap();
+        let inputs = vec![x; arity];
+        let y = b.node("y", op.clone(), &inputs).unwrap();
+        let graph = b.finish(&[y]).unwrap();
+        let error = match oxfuse_runtime::Backend::compile(gpu(), &graph) {
+            Ok(_) => panic!("{} compiled", op.name()),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(&error, oxfuse_core::Error::Backend(m) if m.contains(op.name()) && m.contains("no GPU kernel")),
+            "{error:?}"
+        );
+    }
+}

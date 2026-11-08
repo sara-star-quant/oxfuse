@@ -7,6 +7,9 @@ pub enum Op {
     Sigmoid,
     Add,
     Mul,
+    Sub,
+    Div,
+    Neg,
     MatMul,
     Reshape { shape: Vec<usize> },
     Transpose { perm: Vec<usize> },
@@ -15,11 +18,14 @@ pub enum Op {
 impl Op {
     /// Every op name the loader accepts, in declaration order. The unit test
     /// below fails when a variant is added without updating this list.
-    pub const ALL_NAMES: [&'static str; 7] = [
+    pub const ALL_NAMES: [&'static str; 10] = [
         "Relu",
         "Sigmoid",
         "Add",
         "Mul",
+        "Sub",
+        "Div",
+        "Neg",
         "MatMul",
         "Reshape",
         "Transpose",
@@ -31,6 +37,9 @@ impl Op {
             Op::Sigmoid => "Sigmoid",
             Op::Add => "Add",
             Op::Mul => "Mul",
+            Op::Sub => "Sub",
+            Op::Div => "Div",
+            Op::Neg => "Neg",
             Op::MatMul => "MatMul",
             Op::Reshape { .. } => "Reshape",
             Op::Transpose { .. } => "Transpose",
@@ -39,8 +48,8 @@ impl Op {
 
     pub fn arity(&self) -> usize {
         match self {
-            Op::Relu | Op::Sigmoid | Op::Reshape { .. } | Op::Transpose { .. } => 1,
-            Op::Add | Op::Mul | Op::MatMul => 2,
+            Op::Relu | Op::Sigmoid | Op::Neg | Op::Reshape { .. } | Op::Transpose { .. } => 1,
+            Op::Add | Op::Mul | Op::Sub | Op::Div | Op::MatMul => 2,
         }
     }
 }
@@ -55,6 +64,9 @@ mod tests {
             Op::Sigmoid,
             Op::Add,
             Op::Mul,
+            Op::Sub,
+            Op::Div,
+            Op::Neg,
             Op::MatMul,
             Op::Reshape { shape: vec![1] },
             Op::Transpose { perm: vec![0] },
@@ -69,6 +81,9 @@ mod tests {
             | Op::Sigmoid
             | Op::Add
             | Op::Mul
+            | Op::Sub
+            | Op::Div
+            | Op::Neg
             | Op::MatMul
             | Op::Reshape { .. }
             | Op::Transpose { .. } => {}

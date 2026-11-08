@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOOSE = {"abs": 1e-6, "rel": 1e-6}
 EXACT = {"abs": 0.0, "rel": 0.0}
 DYADIC = [i / 4 for i in range(-8, 9)] + [-0.0]  # -2.0 .. 2.0 by 0.25, plus a signed zero
+NONZERO = [0.5, -2.0, 4.0, 8.0, -0.25, 3.0]  # divisors: never zero
 INEXACT_COUNT = 10  # MatMul graphs whose sums round, checked against a bound
 
 
@@ -44,6 +45,12 @@ def apply(node, args):
         return args[0] + args[1]
     if op == "Mul":
         return args[0] * args[1]
+    if op == "Sub":
+        return args[0] - args[1]
+    if op == "Div":
+        return args[0] / args[1]
+    if op == "Neg":
+        return -args[0]
     if op == "MatMul":
         return args[0] @ args[1]
     if op == "Reshape":
@@ -205,16 +212,31 @@ def random_graph(rng, allow_sigmoid):
         else:
             src = pick(rng, sorted(values))
         shape = values[src]
-        ops = ["Relu", "Add", "Mul", "Reshape", "Transpose"]
+        ops = ["Relu", "Add", "Mul", "Sub", "Div", "Neg", "Reshape", "Transpose"]
         if allow_sigmoid:
             ops.append("Sigmoid")
         if len(shape) == 2:
             ops += ["MatMul"] * 3
         op = pick(rng, ops)
         node = {"name": f"n{k}", "op": op}
-        if op in ("Relu", "Sigmoid"):
+        if op in ("Relu", "Sigmoid", "Neg"):
             node["inputs"], out = [src], shape
-        elif op in ("Add", "Mul"):
+        elif op == "Div":
+            # A divisor from a fixed nonzero set: the JSON format cannot carry the
+            # infinity or NaN a zero divisor would make. The numerator is any value.
+            divisor = f"c{len(constants)}"
+            dshape = shape if int(rng.integers(0, 2)) else []
+            constants.append(
+                {
+                    "name": divisor,
+                    "dtype": "f32",
+                    "shape": dshape,
+                    "values": [float(pick(rng, NONZERO)) for _ in range(int(np.prod(dshape, dtype=np.int64)))],
+                }
+            )
+            values[divisor] = dshape
+            node["inputs"], out = [src, divisor], shape
+        elif op in ("Add", "Mul", "Sub"):
             mode = int(rng.integers(0, 3 if shape else 4))
             out = shape
             if mode == 0:

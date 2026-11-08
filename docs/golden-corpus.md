@@ -13,7 +13,7 @@ Each case is a folder under `cases/`:
 
 `index.json` lists the cases. Hex bit patterns are the reference; decimals are for people.
 
-How to read a result: the level of an operator in `expected.json` says what to expect. For `exact` operators (`Relu`, `Add`, `Mul`, `Reshape`, `Transpose`) any runtime should return the same bits. `MatMul` (`fused-defined`) and `Sigmoid` (`own-math`) are defined by Oxfuse: one fused multiply-add per step in ascending k, and our own `exp`. A runtime that sums in another order or uses its library `exp` will differ by a few ulp; that is not a bug in either, and [semantics.md](semantics.md) says how much to expect.
+How to read a result: the level of an operator in `expected.json` says what to expect. For `exact` operators (`Relu`, `Add`, `Mul`, `Sub`, `Div`, `Neg`, `Reshape`, `Transpose`) any runtime should return the same bits. `MatMul` (`fused-defined`) and `Sigmoid` (`own-math`) are defined by Oxfuse: one fused multiply-add per step in ascending k, and our own `exp`. A runtime that sums in another order or uses its library `exp` will differ by a few ulp; that is not a bug in either, and [semantics.md](semantics.md) says how much to expect.
 
 Check the corpus against Oxfuse itself:
 

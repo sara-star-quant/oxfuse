@@ -1,5 +1,5 @@
-//! Lowering of the exact ops: Relu, Sigmoid, MatMul, Add, Mul, Identity,
-//! Dropout and Constant.
+//! Lowering of the exact ops: Relu, Sigmoid, MatMul, Add, Mul, Sub, Div, Neg,
+//! Identity, Dropout and Constant.
 
 mod common;
 
@@ -70,6 +70,48 @@ fn matmul_rank2() {
         ],
     );
     assert_eq!(out, vec![vec![4.0, 5.0, 10.0, 11.0]]);
+}
+
+#[test]
+fn sub_and_div_keep_the_operand_order_and_broadcast() {
+    // a is a column [1, 3], b a row [10, 20]: both operands stretch.
+    let expect = [
+        ("Sub", vec![-9.0, -19.0, -7.0, -17.0]),
+        ("Div", vec![1.0 / 10.0, 1.0 / 20.0, 3.0 / 10.0, 3.0 / 20.0]),
+    ];
+    for (op, want) in expect {
+        let m = single(
+            op,
+            vec![input("a", &[2, 1]), input("b", &[2])],
+            vec![],
+            &["a", "b"],
+        );
+        let g = load_ok(&m);
+        assert_eq!(ops(&g), vec![op]);
+        assert_eq!(shape_of_output(&g, 0), vec![2, 2]);
+        let out = run(&g, &[(&[2, 1], &[1.0, 3.0]), (&[2], &[10.0, 20.0])]);
+        assert_eq!(out, vec![want], "{op}");
+    }
+}
+
+#[test]
+fn neg_flips_every_sign_and_takes_one_input() {
+    let m = single("Neg", vec![input("a", &[3])], vec![], &["a"]);
+    let g = load_ok(&m);
+    assert_eq!(ops(&g), vec!["Neg"]);
+    let out = run(&g, &[(&[3], &[1.5, -2.0, 0.0])]);
+    assert_eq!(out[0][..2], [-1.5, 2.0]);
+    assert!(out[0][2].is_sign_negative() && out[0][2] == 0.0);
+    let two = single(
+        "Neg",
+        vec![input("a", &[3]), input("b", &[3])],
+        vec![],
+        &["a", "b"],
+    );
+    assert!(matches!(
+        load(&two),
+        Err(OnnxError::Structure { .. }) | Err(OnnxError::Shape { .. })
+    ));
 }
 
 #[test]
