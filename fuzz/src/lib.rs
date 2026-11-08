@@ -165,10 +165,10 @@ pub fn generate(u: &mut Unstructured) -> ArbResult<String> {
             Ok(cname)
         };
         let n = match u.int_in_range(0..=7u8)? {
-            0 => node("Relu", &[&last], ""),
+            0 => node(if u.arbitrary()? { "Relu" } else { "Neg" }, &[&last], ""),
             1 => node("Sigmoid", &[&last], ""),
             2 | 3 => {
-                let op = if u.arbitrary()? { "Add" } else { "Mul" };
+                let op = *u.choose(&["Add", "Mul", "Sub", "Div"])?;
                 let other = if u.arbitrary()? {
                     constant(&[], u)?
                 } else {
