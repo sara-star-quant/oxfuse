@@ -5,6 +5,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 ## Unreleased
 
 - New operators `Sub`, `Div` and `Neg`, all exact (one IEEE operation per element, no rounding for `Neg`). `Sub` and `Div` broadcast like `Add`, and operand order is part of their meaning, so the fast CPU backend overwrites only the first operand's buffer for them. `analyze` bounds them (`Div` is infinite when the divisor's interval reaches zero), the ONNX importer lowers `Sub`, `Div` and `Neg`, and the NumPy oracle corpus covers all three. The GPU backend has no kernel for them yet and returns `Error::Backend` naming the operator. Adding a variant to `Op` is breaking for code that matches it exhaustively, so this ships as a minor release.
+- Each library crate is tested on its own: a `standalone` CI job runs `cargo test -p` for `oxfuse-core`, `oxfuse-runtime` and `oxfuse-onnx` and fails if core depends on another oxfuse crate, onnx on a backend, or runtime on onnx or wgpu. The crate README examples run as doctests, and the `oxfuse-onnx` example now builds a model in memory and imports it with no runtime.
 
 ## 0.6.0 - 2026-11-05
 

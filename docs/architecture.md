@@ -1,6 +1,6 @@
 # Architecture
 
-Oxfuse is three crates, an optional fourth for GPUs, and a one-way pipeline.
+Oxfuse is three crates, two optional ones (GPU and ONNX import), and a one-way pipeline.
 
 ```
 JSON file
@@ -21,9 +21,10 @@ Plan --- Backend::compile ---> Executable::run(&[Tensor]) -> Vec<Tensor>
 | `oxfuse-core` | the IR (`Graph`, `Op`, `TensorType`), shape inference, the builder, the verifier, `Limits`, the error type, the optimization passes | nothing in the workspace |
 | `oxfuse-runtime` | `Tensor`, `Plan`, the `Backend` and `Executable` traits, `ReferenceBackend`, `CpuBackend`, `ReferenceEvaluator` | `oxfuse-core` |
 | `oxfuse-wgpu` (directory `crates/wgpu`) | the wgpu backend: generated WGSL kernels, a CPU model of their grids, device tensors, the self-test report. The CLI builds it only with `--features wgpu` | `oxfuse-core`, `oxfuse-runtime` |
-| `oxfuse` (directory `crates/cli`, library `oxfuse_cli`) | the JSON format, the loader, the commands and the `oxfuse` binary | both |
+| `oxfuse-onnx` (directory `crates/onnx`) | ONNX import: decodes a float32 model and lowers its operator subset into the IR. The CLI builds it only with `--features onnx` | `oxfuse-core` |
+| `oxfuse` (directory `crates/cli`, library `oxfuse_cli`) | the JSON format, the loader, the commands and the `oxfuse` binary | core and runtime, plus `oxfuse-wgpu` and `oxfuse-onnx` behind features |
 
-Dependencies point one way: core knows nothing about files or backends. That is why constant folding takes a `ConstEvaluator` trait object from the caller. The CLI hands it `ReferenceEvaluator`, so folding runs the same reference kernels the reference backend runs, without core depending on runtime.
+Dependencies point one way: core knows nothing about files or backends. Each library crate is usable alone: `oxfuse-core` builds and checks graphs with no other oxfuse crate, `oxfuse-onnx` imports a model into a `Graph` with only core (add a backend to run it), and `oxfuse-runtime` needs only core. The `standalone` CI job tests each of them with `cargo test -p` on its own and fails if a dependency points the wrong way; the README example of each crate runs as a doctest. That is why constant folding takes a `ConstEvaluator` trait object from the caller. The CLI hands it `ReferenceEvaluator`, so folding runs the same reference kernels the reference backend runs, without core depending on runtime.
 
 ## What happens to a graph
 
