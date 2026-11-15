@@ -1,0 +1,21 @@
+{
+  "format_version": 1,
+  "inputs": [
+    { "name": "a", "dtype": "f32", "shape": [2, 2] },
+    { "name": "row", "dtype": "f32", "shape": [2] }
+  ],
+  "constants": [
+    { "name": "zero", "dtype": "f32", "shape": [], "values": [0.0] },
+    { "name": "negzero", "dtype": "f32", "shape": [], "values": [-0.0] },
+    { "name": "two", "dtype": "f32", "shape": [], "values": [2.0] }
+  ],
+  "nodes": [
+    { "name": "smaller", "op": "Min", "inputs": ["a", "row"] },
+    { "name": "larger", "op": "Max", "inputs": ["row", "a"] },
+    { "name": "floored", "op": "Max", "inputs": ["a", "zero"] },
+    { "name": "clamped", "op": "Min", "inputs": ["floored", "two"] },
+    { "name": "zero_pair_max", "op": "Max", "inputs": ["negzero", "zero"] },
+    { "name": "zero_pair_min", "op": "Min", "inputs": ["zero", "negzero"] }
+  ],
+  "outputs": ["smaller", "larger", "clamped", "zero_pair_max", "zero_pair_min"]
+}

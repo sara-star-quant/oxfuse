@@ -95,6 +95,193 @@ fn sub_and_div_keep_the_operand_order_and_broadcast() {
 }
 
 #[test]
+fn min_and_max_broadcast_and_take_any_number_of_operands() {
+    // Two operands, both stretching: a column [1, 3] against a row [2, 2].
+    for (op, want) in [
+        ("Min", vec![1.0, 1.0, 2.0, 2.0]),
+        ("Max", vec![2.0, 2.0, 3.0, 3.0]),
+    ] {
+        let m = single(
+            op,
+            vec![input("a", &[2, 1]), input("b", &[2])],
+            vec![],
+            &["a", "b"],
+        );
+        let g = load_ok(&m);
+        assert_eq!(ops(&g), vec![op]);
+        assert_eq!(g.output_names(), &["y".to_owned()]);
+        assert_eq!(shape_of_output(&g, 0), vec![2, 2]);
+        let out = run(&g, &[(&[2, 1], &[1.0, 3.0]), (&[2], &[2.0, 2.0])]);
+        assert_eq!(out, vec![want], "{op}");
+    }
+    // Three operands fold pairwise, in order, with a shape of the joint broadcast.
+    let m = single(
+        "Max",
+        vec![input("a", &[2, 1]), input("b", &[3]), input("c", &[])],
+        vec![],
+        &["a", "b", "c"],
+    );
+    let g = load_ok(&m);
+    assert_eq!(ops(&g), vec!["Max", "Max"]);
+    assert_eq!(g.output_names(), &["y".to_owned()]);
+    assert_eq!(shape_of_output(&g, 0), vec![2, 3]);
+    let out = run(
+        &g,
+        &[
+            (&[2, 1], &[1.0, 9.0]),
+            (&[3], &[4.0, 0.0, 7.0]),
+            (&[], &[5.0]),
+        ],
+    );
+    assert_eq!(out, vec![vec![5.0, 5.0, 7.0, 9.0, 9.0, 9.0]]);
+    // One operand is not a comparison: refused with the node named.
+    let one = single("Min", vec![input("a", &[2])], vec![], &["a"]);
+    match load(&one) {
+        Err(OnnxError::Shape { node, reason }) => {
+            assert!(node.contains("Min"));
+            assert!(reason.contains("at least 2"), "{reason}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn min_and_max_propagate_nan_and_order_the_two_zeros() {
+    let m = single(
+        "Max",
+        vec![input("a", &[4]), input("b", &[4])],
+        vec![],
+        &["a", "b"],
+    );
+    let g = load_ok(&m);
+    let a = [f32::NAN, 1.0, -0.0, 0.0];
+    let b = [1.0, f32::NAN, 0.0, -0.0];
+    let hi = &run(&g, &[(&[4], &a), (&[4], &b)])[0];
+    assert!(hi[0].is_nan() && hi[1].is_nan());
+    assert!(hi[2] == 0.0 && hi[2].is_sign_positive());
+    assert!(hi[3] == 0.0 && hi[3].is_sign_positive());
+    let m = single(
+        "Min",
+        vec![input("a", &[2]), input("b", &[2])],
+        vec![],
+        &["a", "b"],
+    );
+    let g = load_ok(&m);
+    let lo = &run(&g, &[(&[2], &[-0.0, 0.0]), (&[2], &[0.0, -0.0])])[0];
+    assert!(lo.iter().all(|v| *v == 0.0 && v.is_sign_negative()));
+}
+
+#[test]
+fn clip_lowers_to_max_with_the_lower_bound_then_min_with_the_upper() {
+    let clip = |inputs: &[&str], inits: Vec<TensorProto>| {
+        single("Clip", vec![input("x", &[5])], inits, inputs)
+    };
+    let x = [-3.0, 0.5, 2.0, f32::NAN, -0.0];
+    // Both bounds.
+    let m = clip(
+        &["x", "lo", "hi"],
+        vec![init("lo", &[], &[0.0]), init("hi", &[], &[1.0])],
+    );
+    let g = load_ok(&m);
+    assert_eq!(ops(&g), vec!["Max", "Min"]);
+    assert_eq!(g.output_names(), &["y".to_owned()]);
+    let out = &run(&g, &[(&[5], &x)])[0];
+    assert_eq!(out[..3], [0.0, 0.5, 1.0]);
+    assert!(out[3].is_nan());
+    // -0.0 against a lower bound of +0.0 is +0.0, as onnxruntime has it.
+    assert!(out[4] == 0.0 && out[4].is_sign_positive());
+    // A lower bound above the upper one gives the upper bound everywhere.
+    let m = clip(
+        &["x", "lo", "hi"],
+        vec![init("lo", &[], &[2.0]), init("hi", &[], &[1.0])],
+    );
+    let g = load_ok(&m);
+    let out = &run(&g, &[(&[5], &x)])[0];
+    assert_eq!(out[..3], [1.0, 1.0, 1.0]);
+    assert!(out[3].is_nan());
+    // Only a lower bound, only an upper bound (an empty name skips the input).
+    let g = load_ok(&clip(&["x", "lo"], vec![init("lo", &[], &[0.0])]));
+    assert_eq!(ops(&g), vec!["Max"]);
+    assert_eq!(g.output_names(), &["y".to_owned()]);
+    let g = load_ok(&clip(&["x", "", "hi"], vec![init("hi", &[], &[1.0])]));
+    assert_eq!(ops(&g), vec!["Min"]);
+    assert_eq!(g.output_names(), &["y".to_owned()]);
+    // A missing bound leaves infinity alone: that is what NumPy and the ONNX
+    // reference evaluator do (onnxruntime clamps it to the largest float).
+    let out = &run(
+        &g,
+        &[(&[5], &[f32::INFINITY, f32::NEG_INFINITY, 0.0, 5.0, 1.0])],
+    )[0];
+    assert_eq!(out, &[1.0, f32::NEG_INFINITY, 0.0, 1.0, 1.0]);
+    // No bounds at all is the identity.
+    let g = load_ok(&clip(&["x"], vec![]));
+    assert!(ops(&g).is_empty());
+    assert_eq!(
+        run(&g, &[(&[5], &[1.0, 2.0, 3.0, 4.0, 5.0])])[0],
+        [1.0, 2.0, 3.0, 4.0, 5.0]
+    );
+}
+
+#[test]
+fn clip_takes_one_to_three_inputs_and_the_first_one_is_required() {
+    // An empty name for the data input, with a bound present.
+    let m = single(
+        "Clip",
+        vec![input("x", &[3])],
+        vec![init("lo", &[], &[0.0])],
+        &["", "lo"],
+    );
+    match load(&m) {
+        Err(OnnxError::Shape { node, reason }) => {
+            assert!(node.contains("Clip"));
+            assert!(reason.contains("1 to 3 inputs"), "{reason}");
+        }
+        other => panic!("{other:?}"),
+    }
+    // Four inputs.
+    let m = single(
+        "Clip",
+        vec![input("x", &[3])],
+        vec![init("lo", &[], &[0.0]), init("hi", &[], &[1.0])],
+        &["x", "lo", "hi", "hi"],
+    );
+    match load(&m) {
+        Err(OnnxError::Shape { reason, .. }) => {
+            assert!(reason.contains("1 to 3 inputs"), "{reason}")
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn clip_bounds_must_be_scalars_and_attributes_are_refused() {
+    let m = single(
+        "Clip",
+        vec![input("x", &[3])],
+        vec![init("lo", &[3], &[0.0, 0.0, 0.0])],
+        &["x", "lo"],
+    );
+    match load(&m) {
+        Err(OnnxError::Shape { node, reason }) => {
+            assert!(node.contains("Clip"));
+            assert!(reason.contains("min must be a scalar"), "{reason}");
+        }
+        other => panic!("{other:?}"),
+    }
+    // The opset 6 form (min and max as attributes) is not an opset 13 input.
+    let old = model(
+        13,
+        graph(
+            vec![input("x", &[3])],
+            vec![],
+            vec![with_float(node("Clip", &["x"], &["y"]), "min", 0.0)],
+            &["y"],
+        ),
+    );
+    assert!(matches!(load(&old), Err(OnnxError::UnsupportedAttr { .. })));
+}
+
+#[test]
 fn neg_flips_every_sign_and_takes_one_input() {
     let m = single("Neg", vec![input("a", &[3])], vec![], &["a"]);
     let g = load_ok(&m);

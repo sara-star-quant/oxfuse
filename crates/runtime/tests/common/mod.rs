@@ -41,7 +41,7 @@ pub fn special() -> impl Strategy<Value = f32> {
 pub fn case() -> impl Strategy<Value = Case> {
     (
         prop::collection::vec(
-            (0u8..7, any::<u16>(), any::<u16>(), any::<u8>()).prop_map(|(kind, a, b, seed)| Step {
+            (0u8..9, any::<u16>(), any::<u16>(), any::<u8>()).prop_map(|(kind, a, b, seed)| Step {
                 kind,
                 a,
                 b,
@@ -91,12 +91,14 @@ pub fn build(case: &Case) -> (Graph, Vec<Tensor>) {
     for (k, step) in case.steps.iter().enumerate() {
         let ia = step.a as usize % ids.len();
         let ib = step.b as usize % ids.len();
-        let fresh: (Op, Vec<usize>) = match step.kind % 7 {
+        let fresh: (Op, Vec<usize>) = match step.kind % 9 {
             0 => (Op::Relu, vec![ia]),
             1 => (Op::Sigmoid, vec![ia]),
             2 => (Op::Add, vec![ia, ib]),
             3 => (Op::Mul, vec![ia, ib]),
             4 => (Op::MatMul, vec![ia, ib]),
+            7 => (Op::Min, vec![ia, ib]),
+            8 => (Op::Max, vec![ia, ib]),
             5 => {
                 let n = count(&types[ia].shape);
                 let target = match step.seed % 3 {

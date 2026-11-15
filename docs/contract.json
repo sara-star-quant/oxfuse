@@ -6,7 +6,8 @@
     "fused-defined": "Defined as one fused multiply-add per step in ascending k from +0.0; bit-identical to the reference on the tested platforms.",
     "own-math": "Computed with the project's own exp; bit-identical to the reference on the tested platforms and pinned by a hash over all 2^32 inputs.",
     "bounded": "When every input is zero or a normal number: within a stated rounding bound of the float64 result; bit-identical to the reference on adapters that fuse the same way (Apple M1 Pro, Tesla T4 measured). Subnormal, NaN and infinite inputs are not promised.",
-    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`."
+    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`.",
+    "unsupported": "The backend returns `Error::Backend` at compile time for this operator, naming it. Nothing is computed and nothing is promised."
   },
   "backends": [
     "reference",
@@ -518,6 +519,106 @@
         {
           "file": "crates/wgpu/tests/ops.rs",
           "test": "transpose_is_bit_exact_against_the_reference"
+        }
+      ]
+    },
+    {
+      "op": "Min",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "maximum_and_minimum_follow_ieee_754_2019_for_every_pair_in_both_orders"
+        },
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "min_and_max_broadcast_like_add_and_do_not_care_about_the_order"
+        }
+      ]
+    },
+    {
+      "op": "Min",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "min_and_max_of_computed_values_in_either_slot"
+        },
+        {
+          "file": "crates/runtime/src/cpu/mod.rs",
+          "test": "sub_and_div_reuse_only_the_first_operands_buffer"
+        }
+      ]
+    },
+    {
+      "op": "Min",
+      "backend": "gpu",
+      "level": "unsupported",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "min_and_max_say_they_have_no_gpu_kernel_instead_of_guessing"
+        }
+      ]
+    },
+    {
+      "op": "Max",
+      "backend": "reference",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "maximum_and_minimum_follow_ieee_754_2019_for_every_pair_in_both_orders"
+        },
+        {
+          "file": "crates/runtime/src/kernels.rs",
+          "test": "min_and_max_broadcast_like_add_and_do_not_care_about_the_order"
+        }
+      ]
+    },
+    {
+      "op": "Max",
+      "backend": "cpu",
+      "level": "exact",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/runtime/tests/cpu_equivalence.rs",
+          "test": "min_and_max_of_computed_values_in_either_slot"
+        },
+        {
+          "file": "crates/runtime/src/cpu/mod.rs",
+          "test": "sub_and_div_reuse_only_the_first_operands_buffer"
+        }
+      ]
+    },
+    {
+      "op": "Max",
+      "backend": "gpu",
+      "level": "unsupported",
+      "evidence": [
+        "docs/semantics.md"
+      ],
+      "tests": [
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "min_and_max_say_they_have_no_gpu_kernel_instead_of_guessing"
         }
       ]
     }

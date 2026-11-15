@@ -140,6 +140,19 @@ mod reuse {
         });
     }
 
+    /// `Min` and `Max` give the same bits whichever slot a computed value takes,
+    /// so the result may be written into either operand's buffer.
+    #[test]
+    fn min_and_max_of_computed_values_in_either_slot() {
+        check(|b, x, s, c| {
+            let y = b.node("y", Op::Sigmoid, &[x]).unwrap();
+            let lo = b.node("lo", Op::Max, &[c, y]).unwrap();
+            let hi = b.node("hi", Op::Min, &[lo, s]).unwrap();
+            let back = b.node("back", Op::Max, &[s, hi]).unwrap();
+            vec![b.node("o", Op::Min, &[back, c]).unwrap(), lo]
+        });
+    }
+
     #[test]
     fn neg_of_a_computed_value_and_of_an_input() {
         check(|b, x, _, c| {

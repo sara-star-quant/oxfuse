@@ -166,12 +166,15 @@ fn fixture_set_covers_every_supported_op() {
     }
     let want = [
         "Add",
+        "Clip",
         "Constant",
         "Dropout",
         "Flatten",
         "Gemm",
         "Identity",
         "MatMul",
+        "Max",
+        "Min",
         "Mul",
         "Relu",
         "Reshape",

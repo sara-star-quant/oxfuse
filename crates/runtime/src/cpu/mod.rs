@@ -85,7 +85,7 @@ fn take_reusable(
         // Sub and Div are not commutative: only the first operand's buffer can
         // hold the result, because `apply_in_place` computes `buf op other`.
         Op::Relu | Op::Sigmoid | Op::Neg | Op::Reshape { .. } | Op::Sub | Op::Div => &[0],
-        Op::Add | Op::Mul => &[0, 1],
+        Op::Add | Op::Mul | Op::Min | Op::Max => &[0, 1],
         Op::MatMul | Op::Transpose { .. } => return None,
     };
     let size = plan.slot_shapes[step.output].iter().product::<usize>();
@@ -336,6 +336,11 @@ mod tests {
         // The commutative pair may take either side.
         assert_eq!(reused(Op::Add, false), 1);
         assert_eq!(reused(Op::Mul, false), 1);
+        // So may Min and Max: their bits do not depend on the operand order.
+        for op in [Op::Min, Op::Max] {
+            assert_eq!(reused(op.clone(), true), 1);
+            assert_eq!(reused(op, false), 1);
+        }
     }
 
     #[test]

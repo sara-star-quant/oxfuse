@@ -98,6 +98,8 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 | `Sub` | 2 | none | as `Add`; first minus second |
 | `Div` | 2 | none | as `Add`; first divided by second |
 | `Neg` | 1 | none | same shape; flips the sign |
+| `Min` | 2 | none | as `Add`; NaN if either is NaN, `-0.0` below `+0.0` |
+| `Max` | 2 | none | as `Add`; NaN if either is NaN, `+0.0` above `-0.0` |
 | `MatMul` | 2 | none | rank 2: `[M, K] x [K, N]` |
 | `Reshape` | 1 | `shape` | element count must match |
 | `Transpose` | 1 | `perm` | output dim `i` is input dim `perm[i]` |

@@ -17,6 +17,8 @@ pub(crate) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
         Op::Sub => zip_broadcast(inputs, shapes, |x, y| x - y),
         Op::Div => zip_broadcast(inputs, shapes, |x, y| x / y),
         Op::Neg => inputs[0].iter().map(|&x| -x).collect(),
+        Op::Min => zip_broadcast(inputs, shapes, minimum),
+        Op::Max => zip_broadcast(inputs, shapes, maximum),
         Op::Reshape { .. } => inputs[0].to_vec(),
         Op::Transpose { perm } => transpose(inputs[0], shapes[0], perm),
         Op::MatMul => matmul(
@@ -47,6 +49,32 @@ fn zip_broadcast(inputs: &[&[f32]], shapes: &[&[usize]], f: impl Fn(f32, f32) ->
             broadcast_map(&out, shapes[1]),
         );
         ia.iter().zip(&ib).map(|(&i, &j)| f(a[i], b[j])).collect()
+    }
+}
+
+/// IEEE 754-2019 `maximum`: NaN when either operand is NaN, and `+0.0` over
+/// `-0.0`. The answer does not depend on the order of the operands (apart from
+/// which NaN payload comes out, and the contract counts all NaNs as one value).
+pub(crate) fn maximum(x: f32, y: f32) -> f32 {
+    if x.is_nan() || y.is_nan() {
+        f32::NAN
+    } else if x > y || (x == y && x.is_sign_positive()) {
+        // Equal numbers, or the two zeros: the one without a sign bit.
+        x
+    } else {
+        y
+    }
+}
+
+/// IEEE 754-2019 `minimum`: NaN when either operand is NaN, and `-0.0` under
+/// `+0.0`.
+pub(crate) fn minimum(x: f32, y: f32) -> f32 {
+    if x.is_nan() || y.is_nan() {
+        f32::NAN
+    } else if x < y || (x == y && x.is_sign_negative()) {
+        x
+    } else {
+        y
     }
 }
 
@@ -145,6 +173,92 @@ mod tests {
 
     fn apply2(op: Op, a: &[f32], a_shape: &[usize], b: &[f32], b_shape: &[usize]) -> Vec<f32> {
         apply(&op, &[a, b], &[a_shape, b_shape])
+    }
+
+    /// Every class of value: both infinities, the extremes, a subnormal, both
+    /// zeros, small and ordinary numbers, and NaN.
+    fn classes() -> Vec<f32> {
+        let tiny = f32::from_bits(1);
+        vec![
+            f32::NAN,
+            f32::NEG_INFINITY,
+            f32::MIN,
+            -1.5,
+            -f32::MIN_POSITIVE,
+            -tiny,
+            -0.0,
+            0.0,
+            tiny,
+            f32::MIN_POSITIVE,
+            1.5,
+            f32::MAX,
+            f32::INFINITY,
+        ]
+    }
+
+    #[test]
+    fn maximum_and_minimum_follow_ieee_754_2019_for_every_pair_in_both_orders() {
+        for &x in &classes() {
+            for &y in &classes() {
+                // The model: NaN wins, otherwise the total order, which puts -0.0 below +0.0.
+                let (want_max, want_min) = if x.is_nan() || y.is_nan() {
+                    (f32::NAN, f32::NAN)
+                } else if x.total_cmp(&y).is_ge() {
+                    (x, y)
+                } else {
+                    (y, x)
+                };
+                for (a, b) in [(x, y), (y, x)] {
+                    let (got_max, got_min) = (maximum(a, b), minimum(a, b));
+                    assert!(
+                        got_max.to_bits() == want_max.to_bits()
+                            || (got_max.is_nan() && want_max.is_nan()),
+                        "maximum({a:e}, {b:e}) = {got_max:e}, want {want_max:e}"
+                    );
+                    assert!(
+                        got_min.to_bits() == want_min.to_bits()
+                            || (got_min.is_nan() && want_min.is_nan()),
+                        "minimum({a:e}, {b:e}) = {got_min:e}, want {want_min:e}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn min_and_max_broadcast_like_add_and_do_not_care_about_the_order() {
+        let t = [8.0, 1.0, 4.0, 9.0];
+        let s = [5.0];
+        let row = [2.0, 6.0];
+        assert_eq!(apply2(Op::Max, &t, &[2, 2], &s, &[]), [8.0, 5.0, 5.0, 9.0]);
+        assert_eq!(apply2(Op::Max, &s, &[], &t, &[2, 2]), [8.0, 5.0, 5.0, 9.0]);
+        assert_eq!(apply2(Op::Min, &t, &[2, 2], &s, &[]), [5.0, 1.0, 4.0, 5.0]);
+        assert_eq!(apply2(Op::Min, &s, &[], &t, &[2, 2]), [5.0, 1.0, 4.0, 5.0]);
+        assert_eq!(
+            apply2(Op::Max, &t, &[2, 2], &row, &[2]),
+            [8.0, 6.0, 4.0, 9.0]
+        );
+        assert_eq!(
+            apply2(Op::Max, &row, &[2], &t, &[2, 2]),
+            [8.0, 6.0, 4.0, 9.0]
+        );
+        assert_eq!(
+            apply2(Op::Min, &t, &[2, 2], &row, &[2]),
+            [2.0, 1.0, 2.0, 6.0]
+        );
+        assert_eq!(
+            apply2(Op::Min, &row, &[2], &t, &[2, 2]),
+            [2.0, 1.0, 2.0, 6.0]
+        );
+        // Column against row: both operands stretch.
+        assert_eq!(
+            apply2(Op::Max, &[10.0, 2.0], &[2, 1], &[1.0, 5.0, 3.0], &[1, 3]),
+            [10.0, 10.0, 10.0, 2.0, 5.0, 3.0]
+        );
+        assert_eq!(
+            apply2(Op::Min, &[10.0, 2.0], &[2, 1], &[1.0, 5.0, 3.0], &[1, 3]),
+            [1.0, 5.0, 3.0, 1.0, 2.0, 2.0]
+        );
     }
 
     #[test]

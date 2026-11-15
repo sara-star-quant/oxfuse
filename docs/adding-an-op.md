@@ -22,4 +22,4 @@ A new op needs nothing for the optimization passes. Folding calls the same refer
 
 ## Numerical contract
 
-State which class the op is in before writing the kernel. Exact ops (`Add`, `Mul`, `Sub`, `Div`, `Neg`, `Relu`, `Reshape`, `Transpose`) must match NumPy bit for bit on exactly representable inputs. Ops that sum or approximate (`MatMul`, `Sigmoid`) need a documented error bound and a test that measures it.
+State which class the op is in before writing the kernel. Exact ops (`Add`, `Mul`, `Sub`, `Div`, `Neg`, `Min`, `Max`, `Relu`, `Reshape`, `Transpose`) must match NumPy bit for bit on exactly representable inputs. Ops that sum or approximate (`MatMul`, `Sigmoid`) need a documented error bound and a test that measures it.

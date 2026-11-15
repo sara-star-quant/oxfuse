@@ -34,6 +34,16 @@ def f32(values):
     return np.asarray(values, dtype=np.float64).astype(np.float32).astype(np.float64)
 
 
+def ieee_extreme(a, b, pick, negative_wins):
+    """IEEE 754-2019 minimum or maximum. NumPy's own ufuncs already propagate
+    NaN, but they return whichever zero came first; the standard orders -0.0
+    below +0.0, so the zero pair is settled here from the sign bits."""
+    r = pick(a, b)
+    both_zero = (a == 0) & (b == 0)
+    signs = np.signbit(a) & np.signbit(b) if not negative_wins else np.signbit(a) | np.signbit(b)
+    return np.where(both_zero, np.where(signs, -0.0, 0.0), r)
+
+
 def apply(node, args):
     op = node["op"]
     attrs = node.get("attrs", {})
@@ -51,6 +61,10 @@ def apply(node, args):
         return args[0] / args[1]
     if op == "Neg":
         return -args[0]
+    if op == "Min":
+        return ieee_extreme(args[0], args[1], np.minimum, True)
+    if op == "Max":
+        return ieee_extreme(args[0], args[1], np.maximum, False)
     if op == "MatMul":
         return args[0] @ args[1]
     if op == "Reshape":
@@ -212,7 +226,7 @@ def random_graph(rng, allow_sigmoid):
         else:
             src = pick(rng, sorted(values))
         shape = values[src]
-        ops = ["Relu", "Add", "Mul", "Sub", "Div", "Neg", "Reshape", "Transpose"]
+        ops = ["Relu", "Add", "Mul", "Sub", "Div", "Neg", "Min", "Max", "Reshape", "Transpose"]
         if allow_sigmoid:
             ops.append("Sigmoid")
         if len(shape) == 2:
@@ -236,7 +250,7 @@ def random_graph(rng, allow_sigmoid):
             )
             values[divisor] = dshape
             node["inputs"], out = [src, divisor], shape
-        elif op in ("Add", "Mul", "Sub"):
+        elif op in ("Add", "Mul", "Sub", "Min", "Max"):
             mode = int(rng.integers(0, 3 if shape else 4))
             out = shape
             if mode == 0:

@@ -406,3 +406,24 @@ fn div_stays_within_the_language_bound_for_plain_scalar_and_broadcast_operands()
         }
     }
 }
+
+#[test]
+fn min_and_max_say_they_have_no_gpu_kernel_instead_of_guessing() {
+    if !available() {
+        return;
+    }
+    for op in [Op::Min, Op::Max] {
+        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
+        let x = b.input("x", vec![2]).unwrap();
+        let y = b.node("y", op.clone(), &[x, x]).unwrap();
+        let graph = b.finish(&[y]).unwrap();
+        let error = match oxfuse_runtime::Backend::compile(gpu(), &graph) {
+            Ok(_) => panic!("{} compiled", op.name()),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(&error, oxfuse_core::Error::Backend(m) if m.contains(op.name()) && m.contains("no GPU kernel")),
+            "{error:?}"
+        );
+    }
+}
