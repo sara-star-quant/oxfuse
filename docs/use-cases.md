@@ -33,13 +33,26 @@ Two runtimes can run the same model and disagree in the last bits of a result. A
 - **A check on other stacks.** Run the same ONNX model on Oxfuse and on another runtime, then `compare` the outputs. Oxfuse reads float32 models built from a small operator subset ([onnx.md](onnx.md), 14 fixtures checked against onnxruntime and the `onnx` reference evaluator).
 - **Small exact models where the bits matter more than the speed.** On the recorded machine the fast backend is about as fast as `ndarray` for small products and ahead of it at batch 1 ([benchmarks.md](benchmarks.md)). That is not a claim about your hardware, and large models need a real inference engine.
 
+## What the fixed order costs
+
+Each output element of a product is one chain of fused multiply-adds in ascending `k`. That is what gives the same bits on every tested platform, and it rules out splitting a sum across lanes or threads, tree sums and matrix units, which fast BLAS libraries use. The single-threaded `cpu` backend against `ndarray` on the 784-256-10 classifier, where above 1 means Oxfuse is faster:
+
+| Machine | batch 1 | batch 8 | batch 32 |
+|---|---|---|---|
+| Apple M1 Pro (quiet laptop, [benchmarks.md](benchmarks.md)) | 3.90x | 0.97x | 0.70x |
+| Xeon 2.2 GHz, AVX2 (Kaggle, five-round medians, [benchmarks.md](benchmarks.md)) | 3.84x | 0.75x | 0.55x |
+| GitHub-hosted `ubuntu-latest` (x86_64, one weekly run) | 5.45x | 1.39x | 0.85x |
+| GitHub-hosted `macos-latest` (arm64, one weekly run) | 3.70x | 0.60x | 0.73x |
+
+The hosted rows are one run of the weekly `bench-trend` workflow on 2026-11-11 at the 0.7.0 head, on shared runners whose exact CPU is not pinned, so read them as a rough check on the others, not as a measurement of a named chip. This is the gap to `ndarray`, not the isolated price of determinism: `ndarray` also differs in blocking and packing, and no unordered variant of our own kernel has been timed. Batch 1 is ahead on every machine; from batch 8 up the result depends on the machine.
+
 ## What it is not
 
 Not an inference server, not for training, not for large models, and not for speed-critical CPU work. The operator set is ten float32 ops plus a small ONNX subset, with NumPy broadcasting in `Add`, `Mul`, `Sub` and `Div` only and no batched `MatMul`. For those jobs use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [comparison.md](comparison.md) quotes what each says about itself.
 
 ## What would have to change
 
-Batched `MatMul`, more operators, and a stable API (the crates are at 0.5, and a minor version can break). The order and the evidence for each step are in the [roadmap](../ROADMAP.md); there are no dates.
+Batched `MatMul`, more operators, and a stable API (the crates are at 0.7, and a minor version can break). The order and the evidence for each step are in the [roadmap](../ROADMAP.md); there are no dates.
 
 ## Try it
 
