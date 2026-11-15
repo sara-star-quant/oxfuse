@@ -64,6 +64,10 @@ The claims ledger records how long each target has actually run. A short run pro
 
 The floor is now set by `fearless_simd` 1.1, which declares 1.89, and `just msrv` builds and tests everything on 1.89. The number only goes up, and each stage re-measures it. A raise is a deliberate change: say why in the commit message.
 
+## Reporting bugs
+
+Open an issue at <https://github.com/sara-star-quant/oxfuse/issues> with the `oxfuse --version`, your platform, the graph (or the smallest one that shows it) and, when a run is involved, the `--manifest` file. Wrong bits or a wrong result are bugs; a missing operator is a feature request and is judged against the [roadmap](ROADMAP.md). Issues are public and stay as the archive. Expect a first reply within a week; vulnerabilities go through [SECURITY.md](SECURITY.md) instead.
+
 ## Sign-off (Developer Certificate of Origin)
 
 By contributing you certify the [Developer Certificate of Origin](https://developercertificate.org): the work is yours, or you have the right to submit it under Apache-2.0. Say so on each commit with `git commit -s`, which adds a `Signed-off-by: Your Name <your@email>` line using the address of the commit's author. CI fails a pull request with an unsigned commit from anyone not listed in `.github/dco-exempt.txt` (the maintainer and Dependabot are). Do not copy code from another project; if a pull request must carry some, say where from and under which licence, and it will be checked against [docs/provenance.md](docs/provenance.md) and [docs/licensing.md](docs/licensing.md).

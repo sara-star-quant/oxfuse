@@ -34,6 +34,7 @@ Skip the tests on a first pass; read them to see what a claim is checked against
 | The tests catch real defects | `just mutants` ([mutation-testing.md](mutation-testing.md)) | hours |
 | The index arithmetic is right at the bounds tested | `just kani` | minutes |
 | A release is what CI built | `gh attestation verify FILE --repo sara-star-quant/oxfuse` and `SHA256SUMS` on the release page | seconds |
+| A release file was signed by the release workflow | `cosign verify-blob --bundle FILE.sigstore.json --certificate-identity-regexp '^https://github.com/sara-star-quant/oxfuse/\.github/workflows/release-binaries\.yml@' --certificate-oidc-issuer https://token.actions.githubusercontent.com FILE` | seconds |
 | Provenance of every function | [provenance.md](provenance.md): each function names the source it follows | reading |
 
 Every claim has a row with its test and command in [claims.md](claims.md).

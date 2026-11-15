@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- Release binaries and `SHA256SUMS` carry a keyless cosign bundle (`<file>.sigstore.json`) next to the build attestation; verify with `cosign verify-blob` (see `docs/audit.md`). `release.py check` also compares `fuzz/Cargo.lock` with the workspace version, and CI has one `required` job for the branch ruleset.
+
 ## 0.7.0 - 2026-11-08
 
 - New operators `Sub`, `Div` and `Neg`, all exact (one IEEE operation per element, no rounding for `Neg`). `Sub` and `Div` broadcast like `Add`, and operand order is part of their meaning, so the fast CPU backend overwrites only the first operand's buffer for them. `analyze` bounds them (`Div` is infinite when the divisor's interval reaches zero), the ONNX importer lowers `Sub`, `Div` and `Neg`, and the NumPy oracle corpus covers all three. The GPU backend has no kernel for them yet and returns `Error::Backend` naming the operator. Adding a variant to `Op` is breaking for code that matches it exhaustively, so this ships as a minor release.
