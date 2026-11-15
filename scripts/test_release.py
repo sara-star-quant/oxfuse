@@ -174,6 +174,15 @@ class Whole(unittest.TestCase):
         _, problems = r.check(self.tree(cargo=cargo), False)
         self.assertIn("expected the four path dependencies of the root Cargo.toml", problems)
 
+    def test_a_drifted_fuzz_lock_is_reported_and_a_missing_one_is_fine(self):
+        root = self.tree()
+        _, problems = r.check(root, False)
+        self.assertEqual(problems, [])
+        (root / "fuzz").mkdir()
+        (root / "fuzz" / "Cargo.lock").write_text(LOCK.replace('name = "oxfuse-core"\nversion = "0.5.1"', 'name = "oxfuse-core"\nversion = "0.5.0"'))
+        _, problems = r.check(root, False)
+        self.assertIn("fuzz/Cargo.lock has oxfuse-core 0.5.0, expected 0.5.1 (run `cargo update --workspace` in fuzz)", problems)
+
 
 if __name__ == "__main__":
     unittest.main()

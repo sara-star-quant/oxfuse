@@ -193,3 +193,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+
+  # One stable name for the branch ruleset to require. Skipped jobs (a docs-only
+  # change skips the build matrix) count as success; a failure or a cancel does not.
+  required:
+    if: always()
+    needs: [changes, docs, scripts, dco, test, standalone, msrv, gpu, deny]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) exit 1 ;;
+          esac

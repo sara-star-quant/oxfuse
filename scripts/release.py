@@ -138,6 +138,12 @@ def check(root, release):
     for crate in WORKSPACE_CRATES:
         if locked.get(crate) != version:
             problems.append(f"Cargo.lock has {crate} {locked.get(crate)}, expected {version} (run `cargo update --workspace`)")
+    fuzz_lock = root / "fuzz" / "Cargo.lock"
+    if fuzz_lock.exists():
+        fuzz_locked = lock_versions(fuzz_lock.read_text())
+        for crate in WORKSPACE_CRATES:
+            if fuzz_locked.get(crate) not in (None, version):
+                problems.append(f"fuzz/Cargo.lock has {crate} {fuzz_locked[crate]}, expected {version} (run `cargo update --workspace` in fuzz)")
     problems += changelog_problems((root / "CHANGELOG.md").read_text(), version, release)
     problems += pin_problems(workflow_texts(root))
     return version, problems
@@ -163,6 +169,8 @@ def bump(root, version, date):
     log = root / "CHANGELOG.md"
     log.write_text(roll_changelog(log.read_text(), version, date))
     subprocess.run(["cargo", "update", "--workspace"], cwd=root, check=True)
+    if (root / "fuzz" / "Cargo.lock").exists():
+        subprocess.run(["cargo", "update", "--workspace"], cwd=root / "fuzz", check=True)
     print(f"bumped to {version}; now run `python3 -I scripts/release.py check --release`")
 
 
