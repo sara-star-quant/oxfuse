@@ -158,6 +158,27 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   5 rows went from 545 us to 327 us and 8 rows from 856 us to 468 us. A lower
   threshold made two rows 10 percent slower on both machines, because waking a
   thread costs more than the product, so it starts at four.
+- MatMul, packing A, loop order and tile sizes (tried and dropped, 2026-11-15):
+  measured on the four GitHub-hosted runners (Linux x86_64, Linux arm64, macOS
+  arm64, Windows x86_64) and the Kaggle Xeon, in interleaved rounds against the
+  same base. Reading A from a block packed once per k-tile, with and without
+  windows over B, and running full row blocks strip by strip all lost: the
+  narrow head (n = 10) was 44 to 327 percent slower and the 64 x 64 product 11
+  to 50 percent slower on all five machines, and the 512 product improved 8 to
+  12 percent on three of them and got 28 percent slower on the macOS runner. A
+  sweep of the cache tiles (KC 32 to 512, NC 64 to 512, six shapes, five
+  machines) found no setting that is at least 0.97 of the current 256 and 512
+  everywhere; the Xeon stays within 1 percent of its best except for a 1024
+  wide output. Shape sweeps (n from 240 to 512, m from 12 to 64, k from 511 to
+  1025) show no stride or row-tail effect on any machine. A micro-kernel probe
+  with a compile-time k promised 1.3 to 1.8x for packed A and was misleading:
+  the compiler unrolls a constant trip count. With a run-time k, as in the
+  repo, the current kernel runs at about 32 GFLOP/s on the Xeon (the full matmul
+  gets 27 to 32), packed A reaches 44 there, and nothing moves on NEON or on
+  AVX-512 machines, where it already runs at 110 GFLOP/s or more. Unrolling the
+  k loop by four by hand made the Xeon slower (20 against 32). What stays open
+  is the gap to `ndarray` on that AVX2 Xeon (0.55x at batch 32), which tiles,
+  strides and the loop body do not explain.
 """
 
 
