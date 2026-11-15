@@ -12,9 +12,11 @@ A stage is marked done only when it is implemented and tested.
 | 6 | Optional wgpu GPU backend, checked against the CPU reference and the oracle, with a two-tier numerical contract and a self-test for other devices | done |
 | 7 | ONNX import for a small operator subset, validated against an independent runtime | done |
 | 8 | Speed and trust: buffer reuse, SIMD matmul with run time dispatch, GPU host path and device-loss handling, fused-multiply-add `MatMul` and an `exp` of our own so the result no longer depends on the platform's math library, mutation testing in CI, Kani proofs | done, shipped in 0.4.0 |
-| 9 | Distribution and observability: a golden corpus for other runtimes, `oxfuse run --manifest` and `oxfuse compare`, work and message limits for hostile input, an `mlp` benchmark with a weekly trend, prebuilt binaries with checksums and attestations for the five tested platforms | done on `main`, ships in 0.5.0 |
+| 9 | Distribution and observability: a golden corpus for other runtimes, `oxfuse run --manifest` and `oxfuse compare`, work and message limits for hostile input, an `mlp` benchmark with a weekly trend, prebuilt binaries with checksums and attestations for the five tested platforms | done, shipped in 0.5.0 |
 | 10 | Small-batch speed: one and two rows as wide blocks, a few rows split by columns over threads (a profile ruled out a memory plan and fusion), same bits | done, shipped in 0.5.1 |
-| 11 | Certified error bounds: `oxfuse analyze` gives each output element an interval that contains the exact real result, for the inputs given | done on `main` |
+| 11 | Certified error bounds: `oxfuse analyze` gives each output element an interval that contains the exact real result, for the inputs given | done, shipped in 0.6.0 |
+| 12 | NumPy broadcasting for `Add` and `Mul` on the reference, CPU and GPU backends and in the ONNX importer, a work limit in `Limits` (`max_macs`), a licence review and a sign-off rule | done, shipped in 0.6.0 |
+| 13 | `Sub`, `Div` and `Neg` (exact, broadcasting like `Add`) through the IR, both CPU backends, `analyze`, the ONNX importer and the oracle corpus; each library crate tested and checked for layering on its own | done, shipped in 0.7.0 |
 
 ## Considered, no commitment
 
