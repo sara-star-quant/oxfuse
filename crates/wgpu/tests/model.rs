@@ -78,7 +78,11 @@ fn unary_ops_match_the_reference_for_every_size_and_workgroup() {
     for wg in [1, 2, 4, 32] {
         for n in 1..=70usize {
             let t = tensor(&[n], n as u64, true);
-            for (op, kind) in [(Op::Relu, Unary::Relu), (Op::Sigmoid, Unary::Sigmoid)] {
+            for (op, kind) in [
+                (Op::Relu, Unary::Relu),
+                (Op::Sigmoid, Unary::Sigmoid),
+                (Op::Neg, Unary::Neg),
+            ] {
                 let got = model::unary(kind, t.data(), &cfg(wg, 4), &CAPS);
                 assert_eq!(
                     bits(&got),
@@ -97,7 +101,12 @@ fn binary_ops_match_the_reference_including_scalar_operands() {
             let a = tensor(&[n], 1, true);
             let b = tensor(&[n], 2, true);
             let s = tensor(&[], 3, false);
-            for (op, kind) in [(Op::Add, Binary::Add), (Op::Mul, Binary::Mul)] {
+            for (op, kind) in [
+                (Op::Add, Binary::Add),
+                (Op::Mul, Binary::Mul),
+                (Op::Sub, Binary::Sub),
+                (Op::Div, Binary::Div),
+            ] {
                 let c = cfg(wg, 4);
                 let full = model::binary(kind, a.data(), b.data(), false, false, &c, &CAPS);
                 assert_eq!(
@@ -150,7 +159,12 @@ fn broadcast_binary_ops_match_the_reference_for_every_small_shape_pair() {
             }
             let a = tensor(a_shape, 5, true);
             let b = tensor(b_shape, 6, true);
-            for (op, kind) in [(Op::Add, Binary::Add), (Op::Mul, Binary::Mul)] {
+            for (op, kind) in [
+                (Op::Add, Binary::Add),
+                (Op::Mul, Binary::Mul),
+                (Op::Sub, Binary::Sub),
+                (Op::Div, Binary::Div),
+            ] {
                 let want = bits(&reference(op, vec![a.clone(), b.clone()]));
                 for wg in [1, 4, 32] {
                     let got = model::binary_strided(

@@ -19,12 +19,26 @@ use crate::config::KernelConfig;
 pub enum Unary {
     Relu,
     Sigmoid,
+    Neg,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Binary {
     Add,
     Mul,
+    Sub,
+    Div,
+}
+
+impl Binary {
+    fn symbol(self) -> &'static str {
+        match self {
+            Binary::Add => "+",
+            Binary::Mul => "*",
+            Binary::Sub => "-",
+            Binary::Div => "/",
+        }
+    }
 }
 
 const ENTRY_1D: &str =
@@ -48,6 +62,9 @@ pub fn unary(op: Unary, cfg: &KernelConfig) -> String {
   dst[i] = select(bits, 0u, negative && !is_nan);",
         ),
         Unary::Sigmoid => ("f32", "dst[i] = 1.0 / (1.0 + exp(-src[i]));"),
+        // Neg flips the sign bit on the bit pattern, as Relu does: NaN, infinity
+        // and subnormals pass through with only that bit changed.
+        Unary::Neg => ("u32", "dst[i] = src[i] ^ 0x80000000u;"),
     };
     format!(
         "struct Params {{ n: u32, x_count: u32 }}
@@ -71,10 +88,7 @@ pub fn binary(op: Binary, scalar_lhs: bool, scalar_rhs: bool, cfg: &KernelConfig
     let index = linear_index(wg);
     let a = if scalar_lhs { "a[0]" } else { "a[i]" };
     let b = if scalar_rhs { "b[0]" } else { "b[i]" };
-    let symbol = match op {
-        Binary::Add => "+",
-        Binary::Mul => "*",
-    };
+    let symbol = op.symbol();
     format!(
         "struct Params {{ n: u32, x_count: u32 }}
 @group(0) @binding(0) var<storage, read> a: array<f32>;
@@ -91,7 +105,7 @@ fn main({ENTRY_1D}) {{
     )
 }
 
-/// `Add` or `Mul` of two operands that need NumPy broadcasting, for an output of
+/// A binary operator on two operands that need NumPy broadcasting, for an output of
 /// rank 1 to 8. `dims` holds the output shape and `sa`, `sb` the stride that each
 /// output dimension walks in `a` and in `b` (0 where that operand stretches),
 /// all padded to eight entries, packed as `vec4<u32>`. Same operation as
@@ -100,10 +114,7 @@ pub fn binary_strided(op: Binary, rank: usize, cfg: &KernelConfig) -> String {
     assert!((1..=8).contains(&rank), "rank {rank} is outside 1..=8");
     let wg = cfg.elementwise_wg;
     let index = linear_index(wg);
-    let symbol = match op {
-        Binary::Add => "+",
-        Binary::Mul => "*",
-    };
+    let symbol = op.symbol();
     let mut walk = String::new();
     for d in (0..rank).rev() {
         let (lane, slot) = (d / 4, d % 4);

@@ -37,6 +37,8 @@ fn downlevel_limits_run_every_op() {
         (Op::Relu, vec![tensor(&[100], 4, false)]),
         (Op::Add, vec![a.clone(), a.clone()]),
         (Op::Mul, vec![a.clone(), s.clone()]),
+        (Op::Sub, vec![a.clone(), s.clone()]),
+        (Op::Neg, vec![tensor(&[100], 6, false)]),
         (Op::Transpose { perm: vec![1, 0] }, vec![a.clone()]),
         (
             Op::Transpose {

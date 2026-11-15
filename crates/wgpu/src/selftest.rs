@@ -206,7 +206,7 @@ pub fn run_selftest(ctx: Arc<Context>) -> Result<SelfTestReport, Error> {
     let a = tensor(&[33, 17], 1);
     let b = tensor(&[33, 17], 2);
     let mut pairs = Vec::new();
-    for op in [Op::Add, Op::Mul] {
+    for op in [Op::Add, Op::Mul, Op::Sub] {
         let ins = [a.clone(), b.clone()];
         pairs.push((
             run_op(&device, op.clone(), &ins)?,

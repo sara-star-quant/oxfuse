@@ -35,7 +35,7 @@ proptest! {
         }
         let a = tensor(&[n], seed, true);
         let b = tensor(&[n], seed + 1, true);
-        for (op, kind) in [(Op::Add, Binary::Add), (Op::Mul, Binary::Mul)] {
+        for (op, kind) in [(Op::Add, Binary::Add), (Op::Mul, Binary::Mul), (Op::Sub, Binary::Sub)] {
             let m = model::binary(kind, a.data(), b.data(), false, false, &CFG, &CAPS);
             let d = device(op.clone(), &[a.clone(), b.clone()]);
             // Finite tier: the product or sum can still land in the subnormal
