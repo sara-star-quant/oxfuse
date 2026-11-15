@@ -48,7 +48,7 @@ The hosted rows are one run of the weekly `bench-trend` workflow on 2026-11-11 a
 
 ## What it is not
 
-Not an inference server, not for training, not for large models, and not for speed-critical CPU work. The operator set is ten float32 ops plus a small ONNX subset, with NumPy broadcasting in `Add`, `Mul`, `Sub` and `Div` only and no batched `MatMul`. For those jobs use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [comparison.md](comparison.md) quotes what each says about itself.
+Not an inference server, not for training, not for large models, and not for speed-critical CPU work. The operator set is twelve float32 ops plus a small ONNX subset, with NumPy broadcasting in `Add`, `Mul`, `Sub`, `Div`, `Min` and `Max` only and no batched `MatMul`. For those jobs use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [comparison.md](comparison.md) quotes what each says about itself.
 
 ## What would have to change
 

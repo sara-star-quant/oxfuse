@@ -82,6 +82,16 @@ fn mul(x: f64, y: f64) -> f64 {
     up(x * y)
 }
 
+/// The larger of two error bounds. A NaN bound has no meaning, so it makes the
+/// answer infinite instead of being skipped the way `f64::max` skips it.
+fn larger_bound(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::INFINITY
+    } else {
+        a.max(b)
+    }
+}
+
 /// Half an ulp of `v`: the most that rounding to nearest can move a result of
 /// this size. Below the normal range the spacing is fixed at 2^-149.
 pub(crate) fn half_ulp(v: f32) -> f64 {
@@ -179,6 +189,14 @@ fn propagate(op: &Op, v: &[&[f32]], e: &[&[f64]], shapes: &[&[usize]], out: &[f3
                 .collect()
         }
         Op::Neg => e[0].to_vec(),
+        // The result is one of the two operands, so nothing rounds, and `max` and
+        // `min` move by no more than the larger input error.
+        Op::Min | Op::Max => {
+            let (ia, ib) = operand_maps(shapes, out.len());
+            (0..out.len())
+                .map(|i| larger_bound(e[0][ia[i]], e[1][ib[i]]))
+                .collect()
+        }
         Op::Sub => {
             let (ia, ib) = operand_maps(shapes, out.len());
             (0..out.len())
@@ -358,6 +376,48 @@ mod tests {
     }
 
     #[test]
+    fn min_and_max_carry_the_larger_input_bound_and_round_nothing() {
+        let (ea, eb) = input_errors();
+        // Element 0: the second operand has the larger bound; element 1: the first.
+        assert!(eb[0] > ea[0] && ea[1] > eb[1]);
+        let hi = with_input_errors(Op::Max);
+        let lo = with_input_errors(Op::Min);
+        for i in 0..2 {
+            assert_eq!(hi.bounds[i], ea[i].max(eb[i]), "Max element {i}");
+            assert_eq!(lo.bounds[i], ea[i].max(eb[i]), "Min element {i}");
+        }
+        // The values: 1.1 against 4.3, then 1000.1 against 0.32.
+        assert_eq!(hi.values, [4.0f32 + 0.3, 1000.0 + 0.1]);
+        assert_eq!(lo.values, [1.0f32 + 0.1, 0.02 + 0.3]);
+        // Broadcast operands read their own bound: a scalar against a vector.
+        let mut g = GraphBuilder::new(Limits::default());
+        let x = g.input("x", vec![2]).unwrap();
+        let s = g.input("s", vec![]).unwrap();
+        let c = g.constant("c", vec![], vec![0.1]).unwrap();
+        let a = g.node("a", Op::Add, &[x, c]).unwrap();
+        let b = g.node("b", Op::Add, &[s, c]).unwrap();
+        let m = g.node("m", Op::Max, &[b, a]).unwrap();
+        let graph = g.finish(&[a, b, m]).unwrap();
+        let inputs = [
+            Tensor::new(vec![2], vec![1.0, 1000.0]).unwrap(),
+            Tensor::new(vec![], vec![50.0]).unwrap(),
+        ];
+        let outs = analyze(&graph, &inputs).unwrap();
+        for i in 0..2 {
+            assert_eq!(outs[2].bounds[i], outs[0].bounds[i].max(outs[1].bounds[0]));
+        }
+    }
+
+    #[test]
+    fn a_nan_bound_makes_the_larger_bound_infinite() {
+        assert_eq!(larger_bound(f64::NAN, 1.0), f64::INFINITY);
+        assert_eq!(larger_bound(1.0, f64::NAN), f64::INFINITY);
+        assert_eq!(larger_bound(0.5, 2.0), 2.0);
+        assert_eq!(larger_bound(2.0, 0.5), 2.0);
+        assert_eq!(larger_bound(f64::INFINITY, 0.5), f64::INFINITY);
+    }
+
+    #[test]
     fn a_quotient_bound_follows_the_formula_per_element() {
         let (ea, eb) = input_errors();
         let c = with_input_errors(Op::Div);
@@ -505,7 +565,7 @@ mod tests {
                 Op::Reshape { .. } => a.clone(),
                 Op::Transpose { perm } => kernels::transpose(a, shapes[0], perm),
                 Op::Neg => a.iter().map(|&x| -x).collect(),
-                Op::Add | Op::Mul | Op::Sub | Op::Div => {
+                Op::Add | Op::Mul | Op::Sub | Op::Div | Op::Min | Op::Max => {
                     let b = &slots[step.inputs[1]];
                     let n = plan.slot_shapes[step.output].iter().product::<usize>();
                     let out_shape = &plan.slot_shapes[step.output];
@@ -519,6 +579,8 @@ mod tests {
                                 Op::Add => x + y,
                                 Op::Sub => x - y,
                                 Op::Div => x / y,
+                                Op::Min => x.min(y),
+                                Op::Max => x.max(y),
                                 _ => x * y,
                             }
                         })
@@ -578,6 +640,15 @@ mod tests {
         }
         if pick(12, 2) == 0 {
             cur = g.node("n", Op::Neg, &[cur]).unwrap();
+        }
+        if pick(13, 2) == 0 {
+            // Clamp from below by a row, then from above by a scalar (a Clip).
+            let row = g.constant("lo", vec![n], values(n, seed + 5, 1.0)).unwrap();
+            cur = g.node("hi", Op::Max, &[cur, row]).unwrap();
+        }
+        if pick(14, 2) == 0 {
+            let c = g.constant("cap", vec![], vec![0.9]).unwrap();
+            cur = g.node("lo2", Op::Min, &[c, cur]).unwrap();
         }
         if pick(8, 2) == 0 {
             cur = g.node("r", Op::Relu, &[cur]).unwrap();

@@ -143,6 +143,9 @@ impl Cx<'_> {
             "Sub" => self.binary(n, Op::Sub)?,
             "Div" => self.binary(n, Op::Div)?,
             "Neg" => self.unary(n, Op::Neg)?,
+            "Min" => self.fold(n, Op::Min)?,
+            "Max" => self.fold(n, Op::Max)?,
+            "Clip" => self.clip(n)?,
             "Gemm" => self.gemm(n, &mut attrs)?,
             "Reshape" => self.reshape(n, &mut attrs)?,
             "Flatten" => self.flatten(n, &mut attrs)?,
@@ -216,6 +219,67 @@ impl Cx<'_> {
         let shape = self.broadcast_shape(n, &a, &b)?;
         let y = self.emit(&n.outputs[0], op, &[&a, &b], shape)?;
         self.define(&n.outputs[0], Val::Tensor(y));
+        Ok(())
+    }
+
+    /// `Min` and `Max` take two or more operands that ONNX broadcasts together.
+    /// Both are associative and commutative bit for bit, so folding the operands
+    /// pairwise from the left gives the joint result (and the joint shape).
+    fn fold(&mut self, n: &Node, op: Op) -> Result<(), OnnxError> {
+        let given = n.inputs.iter().filter(|s| !s.is_empty()).count();
+        if given != n.inputs.len() || given < 2 {
+            return Err(shape_err(
+                n,
+                format!("{} takes at least 2 inputs, got {given}", n.op),
+            ));
+        }
+        if n.outputs.len() != 1 {
+            return Err(shape_err(
+                n,
+                format!("{} produces 1 output, got {}", n.op, n.outputs.len()),
+            ));
+        }
+        let out = n.outputs[0].clone();
+        let mut acc = self.tensor(&n.inputs[0], &n.inputs[0])?;
+        for (i, name) in n.inputs.iter().enumerate().skip(1) {
+            let next = self.tensor(name, name)?;
+            let shape = self.broadcast_shape(n, &acc, &next)?;
+            // Node names only keep the steps apart; the output keeps its ONNX name.
+            acc = self.emit(&format!("{out}.fold{i}"), op.clone(), &[&acc, &next], shape)?;
+        }
+        self.define(&out, Val::Tensor(acc));
+        Ok(())
+    }
+
+    /// `Clip(x, min, max)` is `Min(Max(x, min), max)`; an omitted bound skips its
+    /// step, so with neither the result is `x` itself. Both bounds are scalars.
+    /// With `min` above `max` every element becomes `max`, as in ONNX.
+    fn clip(&mut self, n: &Node) -> Result<(), OnnxError> {
+        if !(1..=3).contains(&n.inputs.len()) || n.inputs[0].is_empty() {
+            return Err(shape_err(n, "Clip takes 1 to 3 inputs"));
+        }
+        if n.outputs.len() != 1 {
+            return Err(shape_err(n, "Clip produces 1 output"));
+        }
+        let out = n.outputs[0].clone();
+        let mut y = self.tensor(&n.inputs[0], &n.inputs[0])?;
+        let steps = [(1, Op::Max, "min"), (2, Op::Min, "max")];
+        let present: Vec<_> = steps
+            .into_iter()
+            .filter(|(i, _, _)| n.inputs.get(*i).is_some_and(|s| !s.is_empty()))
+            .collect();
+        for (i, op, what) in &present {
+            let bound = self.tensor(&n.inputs[*i], &n.inputs[*i])?;
+            if !bound.shape.is_empty() {
+                return Err(shape_err(
+                    n,
+                    format!("Clip: {what} must be a scalar, got shape {:?}", bound.shape),
+                ));
+            }
+            let shape = y.shape.clone();
+            y = self.emit(&format!("{out}.{what}"), op.clone(), &[&y, &bound], shape)?;
+        }
+        self.define(&out, Val::Tensor(y));
         Ok(())
     }
 

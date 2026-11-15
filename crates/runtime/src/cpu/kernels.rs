@@ -22,9 +22,15 @@ pub(super) fn apply(op: &Op, inputs: &[&[f32]], shapes: &[&[usize]]) -> Vec<f32>
         ),
         Op::Transpose { perm } => transpose(inputs[0], shapes[0], perm),
         Op::Sigmoid => super::elementwise::sigmoid(inputs[0]),
-        Op::Relu | Op::Add | Op::Mul | Op::Sub | Op::Div | Op::Neg | Op::Reshape { .. } => {
-            crate::kernels::apply(op, inputs, shapes)
-        }
+        Op::Relu
+        | Op::Add
+        | Op::Mul
+        | Op::Sub
+        | Op::Div
+        | Op::Neg
+        | Op::Min
+        | Op::Max
+        | Op::Reshape { .. } => crate::kernels::apply(op, inputs, shapes),
     }
 }
 

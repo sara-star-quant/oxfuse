@@ -1,0 +1,10 @@
+{
+  "tolerance": { "abs": 0.0, "rel": 0.0 },
+  "outputs": [
+    { "name": "smaller", "shape": [2, 2], "values": [1.0, -1.0, 0.5, 2.0] },
+    { "name": "larger", "shape": [2, 2], "values": [3.0, 2.0, 1.0, 4.0] },
+    { "name": "clamped", "shape": [2, 2], "values": [2.0, 0.0, 0.5, 2.0] },
+    { "name": "zero_pair_max", "shape": [], "values": [0.0] },
+    { "name": "zero_pair_min", "shape": [], "values": [-0.0] }
+  ]
+}

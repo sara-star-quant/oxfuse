@@ -65,7 +65,7 @@ pub fn numpy_broadcast(a: &[usize], b: &[usize]) -> Option<Vec<usize>> {
         .collect()
 }
 
-/// The shape of `Add`, `Mul`, `Sub` and `Div`: NumPy broadcasting of the two operand shapes
+/// The shape of `Add`, `Mul`, `Sub`, `Div`, `Min` and `Max`: NumPy broadcasting of the two operand shapes
 /// (a scalar has rank 0 and broadcasts to anything).
 pub fn elementwise_shape(
     node: &str,
@@ -200,12 +200,9 @@ pub fn infer(node: &str, op: &Op, inputs: &[&TensorType]) -> Result<TensorType, 
             &inputs[0].shape,
             &inputs[1].shape,
         )?)),
-        Op::Add | Op::Mul | Op::Sub | Op::Div => Ok(TensorType::f32(elementwise_shape(
-            node,
-            op.name(),
-            &inputs[0].shape,
-            &inputs[1].shape,
-        )?)),
+        Op::Add | Op::Mul | Op::Sub | Op::Div | Op::Min | Op::Max => Ok(TensorType::f32(
+            elementwise_shape(node, op.name(), &inputs[0].shape, &inputs[1].shape)?,
+        )),
     }
 }
 
@@ -435,12 +432,12 @@ mod tests {
     }
 
     #[test]
-    fn sub_and_div_broadcast_like_add_and_neg_keeps_the_shape() {
+    fn sub_div_min_and_max_broadcast_like_add_and_neg_keeps_the_shape() {
         let m = TensorType::f32(vec![2, 3]);
         let row = TensorType::f32(vec![3]);
         let col = TensorType::f32(vec![2, 1]);
         let scalar = TensorType::f32(vec![]);
-        for op in [Op::Sub, Op::Div] {
+        for op in [Op::Sub, Op::Div, Op::Min, Op::Max] {
             assert_eq!(infer("y", &op, &[&m, &row]).unwrap().shape, [2, 3]);
             assert_eq!(infer("y", &op, &[&row, &col]).unwrap().shape, [2, 3]);
             assert_eq!(infer("y", &op, &[&scalar, &m]).unwrap().shape, [2, 3]);

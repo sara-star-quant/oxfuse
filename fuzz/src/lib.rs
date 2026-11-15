@@ -168,7 +168,7 @@ pub fn generate(u: &mut Unstructured) -> ArbResult<String> {
             0 => node(if u.arbitrary()? { "Relu" } else { "Neg" }, &[&last], ""),
             1 => node("Sigmoid", &[&last], ""),
             2 | 3 => {
-                let op = *u.choose(&["Add", "Mul", "Sub", "Div"])?;
+                let op = *u.choose(&["Add", "Mul", "Sub", "Div", "Min", "Max"])?;
                 let other = if u.arbitrary()? {
                     constant(&[], u)?
                 } else {

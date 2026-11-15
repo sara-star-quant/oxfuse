@@ -181,6 +181,8 @@ fn parse_op(node: &NodeDecl) -> Result<Op, Error> {
         "Sub" => Op::Sub,
         "Div" => Op::Div,
         "Neg" => Op::Neg,
+        "Min" => Op::Min,
+        "Max" => Op::Max,
         "MatMul" => Op::MatMul,
         "Reshape" => Op::Reshape {
             shape: require(node, "Reshape", "shape", &attrs.shape)?,

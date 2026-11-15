@@ -77,6 +77,17 @@ pub(super) fn apply_in_place(op: &Op, buf: &mut [f32], other: Option<&[f32]>) {
         Op::Sub => zip(buf, other.expect("Sub has two operands"), |x, y| x - y),
         Op::Div => zip(buf, other.expect("Div has two operands"), |x, y| x / y),
         Op::Neg => buf.iter_mut().for_each(|x| *x = -*x),
+        // Both are commutative in their bits, so `buf` may hold either operand.
+        Op::Min => zip(
+            buf,
+            other.expect("Min has two operands"),
+            crate::kernels::minimum,
+        ),
+        Op::Max => zip(
+            buf,
+            other.expect("Max has two operands"),
+            crate::kernels::maximum,
+        ),
         Op::Reshape { .. } | Op::MatMul | Op::Transpose { .. } => {
             unreachable!("not an in-place op")
         }

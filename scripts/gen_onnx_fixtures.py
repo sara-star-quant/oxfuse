@@ -145,6 +145,33 @@ def fixtures():
         {"x": dyadic(rs, (3, 4))},
     ))
 
+    rs = np.random.RandomState(40)
+    out.append(Fixture(
+        "min_max_broadcast",
+        [
+            helper.make_node("Min", ["x", "row", "col"], ["lo"]),
+            helper.make_node("Max", ["lo", "x", "s"], ["y"]),
+        ],
+        [info("x", [3, 4])], ["y"],
+        [const("row", dyadic(rs, (4,))), const("col", dyadic(rs, (3, 1))),
+         const("s", dyadic(rs, ()))],
+        {"x": dyadic(rs, (3, 4))},
+    ))
+
+    rs = np.random.RandomState(41)
+    out.append(Fixture(
+        "clip_bounds",
+        [
+            helper.make_node("Clip", ["x", "lo", "hi"], ["a"]),
+            helper.make_node("Clip", ["a", "lo2"], ["b"]),
+            helper.make_node("Clip", ["b", "", "hi2"], ["y"]),
+        ],
+        [info("x", [3, 4])], ["y"],
+        [const("lo", np.float32(-1.0)), const("hi", np.float32(1.5)),
+         const("lo2", np.float32(-0.5)), const("hi2", np.float32(1.0))],
+        {"x": dyadic(rs, (3, 4)) * 2},
+    ))
+
     rs = np.random.RandomState(21)
     out.append(Fixture(
         "reshape_flatten_transpose",

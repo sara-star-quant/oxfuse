@@ -1,1 +1,1 @@
-{"tolerance":{"abs":0.0,"rel":0.0},"outputs":[{"name":"n0","shape":[1,3],"values":[0.5,0.5,0.0]},{"name":"n2","shape":[1,2],"values":[0.0,0.75]},{"name":"n3","shape":[3,1],"values":[-1.25,-2.5,-1.5]},{"name":"n4","shape":[],"values":[0.0]},{"name":"n5","shape":[1],"values":[-0.375]},{"name":"c1","shape":[1,2],"values":[0.0,-2.0]}]}
+{"tolerance":{"abs":0.0,"rel":0.0},"outputs":[{"name":"n3","shape":[],"values":[1.75]},{"name":"n4","shape":[1,3],"values":[0.0,0.0,0.0]},{"name":"n5","shape":[1,3],"values":[-0.125,-0.125,0.3125]},{"name":"c1","shape":[],"values":[-1.75]}]}
