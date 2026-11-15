@@ -91,6 +91,7 @@ pub fn unary(op: Unary, src: &[f32], cfg: &KernelConfig, caps: &DeviceCaps) -> V
                 if negative && !is_nan { 0 } else { bits }
             }
             Unary::Sigmoid => oxfuse_runtime::sigmoid(x).to_bits(),
+            Unary::Neg => x.to_bits() ^ 0x8000_0000,
         };
         out.write(i, value);
     });
@@ -116,13 +117,15 @@ pub fn binary(
         let value = match op {
             Binary::Add => x + y,
             Binary::Mul => x * y,
+            Binary::Sub => x - y,
+            Binary::Div => x / y,
         };
         out.write(i, value.to_bits());
     });
     out.finish()
 }
 
-/// `Add` or `Mul` with NumPy broadcasting, walked the way `shaders::binary_strided` does.
+/// A binary operator with NumPy broadcasting, walked the way `shaders::binary_strided` does.
 /// Each operand comes with its shape.
 pub fn binary_strided(
     op: Binary,
@@ -145,6 +148,8 @@ pub fn binary_strided(
         let value = match op {
             Binary::Add => x + y,
             Binary::Mul => x * y,
+            Binary::Sub => x - y,
+            Binary::Div => x / y,
         };
         out.write(i, value.to_bits());
     });

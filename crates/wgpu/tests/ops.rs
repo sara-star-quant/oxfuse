@@ -290,24 +290,119 @@ fn a_bias_row_and_a_scale_column_broadcast_at_larger_sizes() {
     );
 }
 
+/// A divisor with no zero in it: the device's result for x / 0 is not promised.
+fn divisor(shape: &[usize], seed: u64) -> oxfuse_runtime::Tensor {
+    let t = tensor(shape, seed, true);
+    let data = t
+        .data()
+        .iter()
+        .map(|&v| if v == 0.0 { 1.0 } else { v })
+        .collect();
+    oxfuse_runtime::Tensor::new(shape.to_vec(), data).unwrap()
+}
+
 #[test]
-fn sub_div_and_neg_say_they_have_no_gpu_kernel_instead_of_guessing() {
+fn sub_is_bit_exact_for_every_small_shape_pair() {
     if !available() {
         return;
     }
-    for (op, arity) in [(Op::Sub, 2), (Op::Div, 2), (Op::Neg, 1)] {
-        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
-        let x = b.input("x", vec![2]).unwrap();
-        let inputs = vec![x; arity];
-        let y = b.node("y", op.clone(), &inputs).unwrap();
-        let graph = b.finish(&[y]).unwrap();
-        let error = match oxfuse_runtime::Backend::compile(gpu(), &graph) {
-            Ok(_) => panic!("{} compiled", op.name()),
-            Err(e) => e,
-        };
-        assert!(
-            matches!(&error, oxfuse_core::Error::Backend(m) if m.contains(op.name()) && m.contains("no GPU kernel")),
-            "{error:?}"
+    let mut shapes: Vec<Vec<usize>> = vec![vec![]];
+    let mut level = shapes.clone();
+    for _ in 0..3 {
+        level = level
+            .into_iter()
+            .flat_map(|s| {
+                (1..=3).map(move |d| {
+                    let mut t = s.clone();
+                    t.push(d);
+                    t
+                })
+            })
+            .collect();
+        shapes.extend(level.clone());
+    }
+    let mut pairs = 0;
+    for a_shape in &shapes {
+        for b_shape in &shapes {
+            if oxfuse_core::shape::numpy_broadcast(a_shape, b_shape).is_none() {
+                continue;
+            }
+            let a = tensor(a_shape, 41, true);
+            let b = tensor(b_shape, 42, true);
+            assert_eq!(
+                bits(&device(Op::Sub, &[a.clone(), b.clone()])),
+                bits(&reference(Op::Sub, &[a, b])),
+                "Sub {a_shape:?} {b_shape:?}"
+            );
+            pairs += 1;
+        }
+    }
+    assert_eq!(pairs, 940);
+}
+
+/// `Neg` runs on the bit pattern, so it is exact for every input: NaN, infinity,
+/// both zeros and subnormals included.
+#[test]
+fn neg_is_bit_exact_for_every_value_class() {
+    if !available() {
+        return;
+    }
+    for n in [1usize, 2, 31, 32, 33, 257, 1000] {
+        let t = tensor(&[n], n as u64, false);
+        assert_eq!(
+            bits(&device(Op::Neg, std::slice::from_ref(&t))),
+            bits(&reference(Op::Neg, std::slice::from_ref(&t))),
+            "n {n}"
         );
+    }
+    let special = oxfuse_runtime::Tensor::new(
+        vec![8],
+        vec![
+            0.0,
+            -0.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::from_bits(1),
+            f32::MAX,
+            f32::MIN_POSITIVE,
+            1.5,
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        bits(&device(Op::Neg, std::slice::from_ref(&special))),
+        bits(&reference(Op::Neg, std::slice::from_ref(&special)))
+    );
+}
+
+/// The shading language allows division an error of 2.5 ulp, so `Div` is held to
+/// `DIV_ULP_SPEC` from the reference, not to bit equality, in the plain,
+/// scalar and strided kernels alike.
+#[test]
+fn div_stays_within_the_language_bound_for_plain_scalar_and_broadcast_operands() {
+    if !available() {
+        return;
+    }
+    let max = oxfuse_wgpu::DIV_ULP_SPEC;
+    let cases: [(&[usize], &[usize]); 7] = [
+        (&[100], &[100]),
+        (&[100], &[]),
+        (&[], &[100]),
+        (&[32, 10], &[10]),
+        (&[32, 1], &[32, 10]),
+        (&[3, 1, 4], &[2, 1]),
+        (&[2, 1, 2, 1, 2, 1, 2, 1], &[1, 3, 1, 2, 1, 3, 1, 2]),
+    ];
+    for (a_shape, b_shape) in cases {
+        let a = tensor(a_shape, 51, true);
+        let b = divisor(b_shape, 52);
+        let got = device(Op::Div, &[a.clone(), b.clone()]);
+        let want = reference(Op::Div, &[a, b]);
+        for (i, (g, w)) in got.iter().zip(&want).enumerate() {
+            assert!(
+                *w == 0.0 && *g == 0.0 || oxfuse_wgpu::within_ulp(*g, *w, max),
+                "Div {a_shape:?} {b_shape:?} at {i}: device {g:e} reference {w:e}"
+            );
+        }
     }
 }

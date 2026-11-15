@@ -50,11 +50,11 @@ fn the_checker_can_fail() {
 fn every_shader_validates_for_every_config() {
     let mut count = 0;
     for cfg in configs() {
-        for op in [Unary::Relu, Unary::Sigmoid] {
+        for op in [Unary::Relu, Unary::Sigmoid, Unary::Neg] {
             check(&format!("{op:?} {cfg:?}"), &shaders::unary(op, &cfg));
             count += 1;
         }
-        for op in [Binary::Add, Binary::Mul] {
+        for op in [Binary::Add, Binary::Mul, Binary::Sub, Binary::Div] {
             for (lhs, rhs) in [(false, false), (true, false), (false, true)] {
                 check(
                     &format!("{op:?} {lhs} {rhs} {cfg:?}"),
@@ -70,7 +70,7 @@ fn every_shader_validates_for_every_config() {
                 &format!("permute {rank} {cfg:?}"),
                 &shaders::permute(rank, &cfg),
             );
-            for op in [Binary::Add, Binary::Mul] {
+            for op in [Binary::Add, Binary::Mul, Binary::Sub, Binary::Div] {
                 check(
                     &format!("{op:?} strided {rank} {cfg:?}"),
                     &shaders::binary_strided(op, rank, &cfg),

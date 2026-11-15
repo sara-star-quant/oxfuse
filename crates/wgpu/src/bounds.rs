@@ -83,6 +83,17 @@ pub fn sigmoid_ulp_bound_for(adapter: &str) -> u32 {
 /// only an absolute difference of that size is required there; everywhere else
 /// the ulp distance must be within `max_ulp`.
 pub fn sigmoid_matches(got: f32, want: f32, max_ulp: u32) -> bool {
+    within_ulp(got, want, max_ulp)
+}
+
+/// How far a device `Div` may be from the reference: the shading language allows
+/// 2.5 ulp for divisors between 2^-126 and 2^126, so a distance of 3 in ulps.
+pub const DIV_ULP_SPEC: u32 = 3;
+
+/// The rule of `sigmoid_matches` for any operator whose device result is only
+/// bounded: both values finite, and below the smallest normal number only an
+/// absolute difference of that size is required.
+pub fn within_ulp(got: f32, want: f32, max_ulp: u32) -> bool {
     if !got.is_finite() || !want.is_finite() {
         return false;
     }
@@ -110,6 +121,17 @@ mod tests {
         let tiny = f32::from_bits(1);
         assert_eq!(ulp_distance(tiny, -tiny), Some(2));
         assert_eq!(ulp_distance(0.0, tiny), Some(1));
+    }
+
+    #[test]
+    fn within_ulp_rejects_non_finite_and_allows_a_flushed_subnormal() {
+        assert!(within_ulp(1.0, 1.0f32.next_up(), 1));
+        assert!(!within_ulp(1.0, 1.0f32.next_up().next_up(), 1));
+        assert!(!within_ulp(f32::INFINITY, f32::INFINITY, 9));
+        assert!(!within_ulp(1.0, f32::NAN, 9));
+        let tiny = f32::from_bits(5);
+        assert!(within_ulp(0.0, tiny, 0));
+        assert!(!within_ulp(2.0 * f32::MIN_POSITIVE, tiny, 0));
     }
 
     #[test]

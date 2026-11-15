@@ -5,6 +5,7 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 ## Unreleased
 
 - Release binaries and `SHA256SUMS` carry a keyless cosign bundle (`<file>.sigstore.json`) next to the build attestation; verify with `cosign verify-blob` (see `docs/audit.md`). `release.py check` also compares `fuzz/Cargo.lock` with the workspace version, and CI has one `required` job for the branch ruleset.
+- The GPU backend runs `Sub`, `Div` and `Neg`, with the same broadcasting as `Add`. `Sub` is bit-exact on normal values like `Add`, `Neg` flips the sign bit on the bit pattern and is exact for every input, and `Div` is bounded: the shading language allows 2.5 ulp, the tests enforce 3 on every adapter and an Apple M1 Pro measured 2. Before, `compile` returned `Error::Backend` for these three.
 
 ## 0.7.0 - 2026-11-08
 

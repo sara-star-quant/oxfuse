@@ -20,8 +20,8 @@ mod selftest;
 pub mod shaders;
 
 pub use bounds::{
-    SIGMOID_ULP_BOUND, gpu_matmul_bound, matmul_bound, matmul_exact_on, sigmoid_matches,
-    sigmoid_ulp_bound_for, ulp_distance,
+    DIV_ULP_SPEC, SIGMOID_ULP_BOUND, gpu_matmul_bound, matmul_bound, matmul_exact_on,
+    sigmoid_matches, sigmoid_ulp_bound_for, ulp_distance, within_ulp,
 };
 pub use config::{
     DeviceCaps, KERNEL_STORAGE_BUFFERS, KernelConfig, MAX_TENSOR_ELEMENTS, check_tensor,

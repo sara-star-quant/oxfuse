@@ -245,19 +245,13 @@ impl WgpuExecutable {
             let shape_of = |i: usize| plan.slot_shapes[step.inputs[i]].as_slice();
             // (kernel, source, parameter words, dispatch groups)
             let planned: Option<Planned> = match &step.op {
-                Op::Sub | Op::Div | Op::Neg => {
-                    return Err(backend_error(format!(
-                        "{} has no GPU kernel yet; use the cpu or reference backend",
-                        step.op.name()
-                    )));
-                }
                 Op::Reshape { .. } => None,
                 Op::Transpose { perm } if perm.is_empty() => None,
-                Op::Relu | Op::Sigmoid => {
-                    let kind = if step.op == Op::Relu {
-                        Unary::Relu
-                    } else {
-                        Unary::Sigmoid
+                Op::Relu | Op::Sigmoid | Op::Neg => {
+                    let kind = match step.op {
+                        Op::Relu => Unary::Relu,
+                        Op::Sigmoid => Unary::Sigmoid,
+                        _ => Unary::Neg,
                     };
                     let groups = fold(out_elements, &cfg, &caps)?;
                     Some(Planned {
@@ -267,11 +261,12 @@ impl WgpuExecutable {
                         groups,
                     })
                 }
-                Op::Add | Op::Mul => {
-                    let kind = if step.op == Op::Add {
-                        Binary::Add
-                    } else {
-                        Binary::Mul
+                Op::Add | Op::Mul | Op::Sub | Op::Div => {
+                    let kind = match step.op {
+                        Op::Add => Binary::Add,
+                        Op::Mul => Binary::Mul,
+                        Op::Sub => Binary::Sub,
+                        _ => Binary::Div,
                     };
                     match binary_layout(step.op.name(), shape_of(0), shape_of(1))
                         .map_err(backend_error)?
