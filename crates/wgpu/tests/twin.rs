@@ -52,6 +52,21 @@ proptest! {
     }
 
     #[test]
+    fn min_and_max_are_exact_for_every_value_including_nan_and_infinity(n in 1usize..600, seed in 0u64..1000) {
+        if !available() {
+            return Ok(());
+        }
+        let a = tensor(&[n], seed, false);
+        let b = tensor(&[n], seed + 1, false);
+        for (op, kind) in [(Op::Min, Binary::Min), (Op::Max, Binary::Max)] {
+            let m = model::binary(kind, a.data(), b.data(), false, false, &CFG, &CAPS);
+            let d = device(op.clone(), &[a.clone(), b.clone()]);
+            prop_assert_eq!(bits(&m), bits(&d), "{:?} model against device", kind);
+            prop_assert_eq!(bits(&d), bits(&reference(op, &[a.clone(), b.clone()])), "{:?} device against reference", kind);
+        }
+    }
+
+    #[test]
     fn transpose_and_permute_agree(rows in 1usize..40, cols in 1usize..40, seed in 0u64..1000) {
         if !available() {
             return Ok(());

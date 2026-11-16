@@ -407,23 +407,104 @@ fn div_stays_within_the_language_bound_for_plain_scalar_and_broadcast_operands()
     }
 }
 
+/// Every shape of rank 0 to 3 with sizes 1 to 3.
+fn small_shapes() -> Vec<Vec<usize>> {
+    let mut shapes: Vec<Vec<usize>> = vec![vec![]];
+    let mut level = shapes.clone();
+    for _ in 0..3 {
+        level = level
+            .into_iter()
+            .flat_map(|s| {
+                (1..=3).map(move |d| {
+                    let mut t = s.clone();
+                    t.push(d);
+                    t
+                })
+            })
+            .collect();
+        shapes.extend(level.clone());
+    }
+    shapes
+}
+
+/// `Min` and `Max` run on the bit pattern (an ordering of the integers, NaN by its
+/// bits), so they are exact for every input: NaN, both infinities, both zeros and
+/// subnormals included, on the plain, scalar and broadcast kernels alike.
 #[test]
-fn min_and_max_say_they_have_no_gpu_kernel_instead_of_guessing() {
+fn min_and_max_are_bit_exact_for_every_value_class_and_size() {
     if !available() {
         return;
     }
     for op in [Op::Min, Op::Max] {
-        let mut b = oxfuse_core::GraphBuilder::new(oxfuse_core::Limits::default());
-        let x = b.input("x", vec![2]).unwrap();
-        let y = b.node("y", op.clone(), &[x, x]).unwrap();
-        let graph = b.finish(&[y]).unwrap();
-        let error = match oxfuse_runtime::Backend::compile(gpu(), &graph) {
-            Ok(_) => panic!("{} compiled", op.name()),
-            Err(e) => e,
-        };
-        assert!(
-            matches!(&error, oxfuse_core::Error::Backend(m) if m.contains(op.name()) && m.contains("no GPU kernel")),
-            "{error:?}"
+        for n in [1usize, 2, 31, 32, 33, 257, 1000] {
+            let a = tensor(&[n], n as u64, false);
+            let b = tensor(&[n], n as u64 + 7, false);
+            let s = tensor(&[], 3, false);
+            for (x, y) in [(&a, &b), (&a, &s), (&s, &a)] {
+                assert_eq!(
+                    bits(&device(op.clone(), &[x.clone(), y.clone()])),
+                    bits(&reference(op.clone(), &[x.clone(), y.clone()])),
+                    "{op:?} n {n} shapes {:?} {:?}",
+                    x.shape(),
+                    y.shape()
+                );
+            }
+        }
+        // The two zeros and a NaN in every position pair, both orders.
+        let special = [
+            0.0f32,
+            -0.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::from_bits(1),
+            -f32::from_bits(1),
+            1.5,
+        ];
+        let a: Vec<f32> = special
+            .iter()
+            .flat_map(|&x| special.iter().map(move |_| x))
+            .collect();
+        let b: Vec<f32> = special
+            .iter()
+            .flat_map(|_| special.iter().copied())
+            .collect();
+        let shape = [a.len()];
+        let (ta, tb) = (
+            oxfuse_runtime::Tensor::new(shape.to_vec(), a).unwrap(),
+            oxfuse_runtime::Tensor::new(shape.to_vec(), b).unwrap(),
+        );
+        assert_eq!(
+            bits(&device(op.clone(), &[ta.clone(), tb.clone()])),
+            bits(&reference(op.clone(), &[ta, tb])),
+            "{op:?} on every pair of special values"
         );
     }
+}
+
+#[test]
+fn broadcast_min_and_max_are_bit_exact_for_every_small_shape_pair() {
+    if !available() {
+        return;
+    }
+    let shapes = small_shapes();
+    let mut pairs = 0;
+    for a_shape in &shapes {
+        for b_shape in &shapes {
+            if oxfuse_core::shape::numpy_broadcast(a_shape, b_shape).is_none() {
+                continue;
+            }
+            let a = tensor(a_shape, 61, false);
+            let b = tensor(b_shape, 62, false);
+            for op in [Op::Min, Op::Max] {
+                assert_eq!(
+                    bits(&device(op.clone(), &[a.clone(), b.clone()])),
+                    bits(&reference(op.clone(), &[a.clone(), b.clone()])),
+                    "{op:?} {a_shape:?} {b_shape:?}"
+                );
+            }
+            pairs += 1;
+        }
+    }
+    assert_eq!(pairs, 940);
 }

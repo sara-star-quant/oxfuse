@@ -98,6 +98,44 @@ pub fn unary(op: Unary, src: &[f32], cfg: &KernelConfig, caps: &DeviceCaps) -> V
     out.finish()
 }
 
+/// The bits of one element of a binary op, computed the way the shader does:
+/// the float operations on the floats, `Min` and `Max` on an integer key that
+/// sorts like the total order of the floats (`-0.0` just below `+0.0`), and the
+/// canonical NaN when either operand is NaN.
+fn binary_bits(op: Binary, x: f32, y: f32) -> u32 {
+    let (xb, yb) = (x.to_bits(), y.to_bits());
+    // Bit 31 is clear in the second branch, so adding 2^31 sets it.
+    let key = |b: u32| {
+        if b & 0x8000_0000 != 0 {
+            !b
+        } else {
+            b + 0x8000_0000
+        }
+    };
+    let nan = |b: u32| b & 0x7fff_ffff > 0x7f80_0000;
+    match op {
+        Binary::Add => (x + y).to_bits(),
+        Binary::Mul => (x * y).to_bits(),
+        Binary::Sub => (x - y).to_bits(),
+        Binary::Div => (x / y).to_bits(),
+        Binary::Min | Binary::Max if nan(xb) || nan(yb) => 0x7fc0_0000,
+        Binary::Max => {
+            if key(xb) >= key(yb) {
+                xb
+            } else {
+                yb
+            }
+        }
+        Binary::Min => {
+            if key(xb) <= key(yb) {
+                xb
+            } else {
+                yb
+            }
+        }
+    }
+}
+
 pub fn binary(
     op: Binary,
     a: &[f32],
@@ -114,13 +152,7 @@ pub fn binary(
     for_each_thread(len as u64, cfg, caps, |i| {
         let x = read(a, if scalar_lhs { 0 } else { i });
         let y = read(b, if scalar_rhs { 0 } else { i });
-        let value = match op {
-            Binary::Add => x + y,
-            Binary::Mul => x * y,
-            Binary::Sub => x - y,
-            Binary::Div => x / y,
-        };
-        out.write(i, value.to_bits());
+        out.write(i, binary_bits(op, x, y));
     });
     out.finish()
 }
@@ -145,13 +177,7 @@ pub fn binary_strided(
     for_each_thread(len as u64, cfg, caps, |i| {
         let x = read(a, permute_offset(i, &dims, &sa));
         let y = read(b, permute_offset(i, &dims, &sb));
-        let value = match op {
-            Binary::Add => x + y,
-            Binary::Mul => x * y,
-            Binary::Sub => x - y,
-            Binary::Div => x / y,
-        };
-        out.write(i, value.to_bits());
+        out.write(i, binary_bits(op, x, y));
     });
     out.finish()
 }
