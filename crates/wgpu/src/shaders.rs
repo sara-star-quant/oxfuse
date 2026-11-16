@@ -28,15 +28,57 @@ pub enum Binary {
     Mul,
     Sub,
     Div,
+    Min,
+    Max,
 }
 
+/// IEEE 754-2019 `minimum` and `maximum` on the bit pattern of the two values, so
+/// no float rule (flushing, NaN assumptions) can touch them. `order_key` maps the
+/// bits of a float to an unsigned integer that sorts like the total order of the
+/// floats, with `-0.0` just below `+0.0`; a NaN in either operand gives the
+/// canonical NaN (`0x7fc00000`), which is the bits the reference returns.
+const ORDER_FUNCTIONS: &str = "fn order_key(b: u32) -> u32 {
+  return select(b ^ 0x80000000u, ~b, (b & 0x80000000u) != 0u);
+}
+fn is_nan_bits(b: u32) -> bool {
+  return (b & 0x7fffffffu) > 0x7f800000u;
+}
+fn pick_max(x: u32, y: u32) -> u32 {
+  if (is_nan_bits(x) || is_nan_bits(y)) { return 0x7fc00000u; }
+  return select(y, x, order_key(x) >= order_key(y));
+}
+fn pick_min(x: u32, y: u32) -> u32 {
+  if (is_nan_bits(x) || is_nan_bits(y)) { return 0x7fc00000u; }
+  return select(y, x, order_key(x) <= order_key(y));
+}
+";
+
 impl Binary {
-    fn symbol(self) -> &'static str {
+    /// The WGSL for one element of the result from the operands `a` and `b`.
+    fn element(self, a: &str, b: &str) -> String {
         match self {
-            Binary::Add => "+",
-            Binary::Mul => "*",
-            Binary::Sub => "-",
-            Binary::Div => "/",
+            Binary::Add => format!("{a} + {b}"),
+            Binary::Mul => format!("{a} * {b}"),
+            Binary::Sub => format!("{a} - {b}"),
+            Binary::Div => format!("{a} / {b}"),
+            Binary::Min => format!("pick_min({a}, {b})"),
+            Binary::Max => format!("pick_max({a}, {b})"),
+        }
+    }
+
+    /// The element type of the buffers: `Min` and `Max` read and write bits.
+    fn ty(self) -> &'static str {
+        match self {
+            Binary::Min | Binary::Max => "u32",
+            _ => "f32",
+        }
+    }
+
+    /// Helper functions the expression of `element` calls.
+    fn prelude(self) -> &'static str {
+        match self {
+            Binary::Min | Binary::Max => ORDER_FUNCTIONS,
+            _ => "",
         }
     }
 }
@@ -88,18 +130,18 @@ pub fn binary(op: Binary, scalar_lhs: bool, scalar_rhs: bool, cfg: &KernelConfig
     let index = linear_index(wg);
     let a = if scalar_lhs { "a[0]" } else { "a[i]" };
     let b = if scalar_rhs { "b[0]" } else { "b[i]" };
-    let symbol = op.symbol();
+    let (ty, prelude, value) = (op.ty(), op.prelude(), op.element(a, b));
     format!(
         "struct Params {{ n: u32, x_count: u32 }}
-@group(0) @binding(0) var<storage, read> a: array<f32>;
-@group(0) @binding(1) var<storage, read> b: array<f32>;
-@group(0) @binding(2) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(0) var<storage, read> a: array<{ty}>;
+@group(0) @binding(1) var<storage, read> b: array<{ty}>;
+@group(0) @binding(2) var<storage, read_write> dst: array<{ty}>;
 @group(0) @binding(3) var<uniform> p: Params;
-
+{prelude}
 @compute @workgroup_size({wg})
 fn main({ENTRY_1D}) {{
   {index}
-  dst[i] = {a} {symbol} {b};
+  dst[i] = {value};
 }}
 "
     )
@@ -114,7 +156,7 @@ pub fn binary_strided(op: Binary, rank: usize, cfg: &KernelConfig) -> String {
     assert!((1..=8).contains(&rank), "rank {rank} is outside 1..=8");
     let wg = cfg.elementwise_wg;
     let index = linear_index(wg);
-    let symbol = op.symbol();
+    let (ty, prelude, value) = (op.ty(), op.prelude(), op.element("a[oa]", "b[ob]"));
     let mut walk = String::new();
     for d in (0..rank).rev() {
         let (lane, slot) = (d / 4, d % 4);
@@ -131,18 +173,18 @@ pub fn binary_strided(op: Binary, rank: usize, cfg: &KernelConfig) -> String {
     }
     format!(
         "struct Params {{ n: u32, x_count: u32, dims: array<vec4<u32>, 2>, sa: array<vec4<u32>, 2>, sb: array<vec4<u32>, 2> }}
-@group(0) @binding(0) var<storage, read> a: array<f32>;
-@group(0) @binding(1) var<storage, read> b: array<f32>;
-@group(0) @binding(2) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(0) var<storage, read> a: array<{ty}>;
+@group(0) @binding(1) var<storage, read> b: array<{ty}>;
+@group(0) @binding(2) var<storage, read_write> dst: array<{ty}>;
 @group(0) @binding(3) var<uniform> p: Params;
-
+{prelude}
 @compute @workgroup_size({wg})
 fn main({ENTRY_1D}) {{
   {index}
   var rem = i;
   var oa = 0u;
   var ob = 0u;
-{walk}  dst[i] = a[oa] {symbol} b[ob];
+{walk}  dst[i] = {value};
 }}
 "
     )

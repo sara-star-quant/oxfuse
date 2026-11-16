@@ -6,8 +6,7 @@
     "fused-defined": "Defined as one fused multiply-add per step in ascending k from +0.0; bit-identical to the reference on the tested platforms.",
     "own-math": "Computed with the project's own exp; bit-identical to the reference on the tested platforms and pinned by a hash over all 2^32 inputs.",
     "bounded": "When every input is zero or a normal number: within a stated rounding bound of the float64 result; bit-identical to the reference on adapters that fuse the same way (Apple M1 Pro, Tesla T4 measured). Subnormal, NaN and infinite inputs are not promised.",
-    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`.",
-    "unsupported": "The backend returns `Error::Backend` at compile time for this operator, naming it. Nothing is computed and nothing is promised."
+    "measured": "Not promised: the maximum distance from the reference is measured per adapter by `oxfuse gpu-selftest`."
   },
   "backends": [
     "reference",
@@ -561,14 +560,18 @@
     {
       "op": "Min",
       "backend": "gpu",
-      "level": "unsupported",
+      "level": "exact",
       "evidence": [
         "docs/semantics.md"
       ],
       "tests": [
         {
           "file": "crates/wgpu/tests/ops.rs",
-          "test": "min_and_max_say_they_have_no_gpu_kernel_instead_of_guessing"
+          "test": "min_and_max_are_bit_exact_for_every_value_class_and_size"
+        },
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "broadcast_min_and_max_are_bit_exact_for_every_small_shape_pair"
         }
       ]
     },
@@ -611,14 +614,18 @@
     {
       "op": "Max",
       "backend": "gpu",
-      "level": "unsupported",
+      "level": "exact",
       "evidence": [
         "docs/semantics.md"
       ],
       "tests": [
         {
           "file": "crates/wgpu/tests/ops.rs",
-          "test": "min_and_max_say_they_have_no_gpu_kernel_instead_of_guessing"
+          "test": "min_and_max_are_bit_exact_for_every_value_class_and_size"
+        },
+        {
+          "file": "crates/wgpu/tests/ops.rs",
+          "test": "broadcast_min_and_max_are_bit_exact_for_every_small_shape_pair"
         }
       ]
     }

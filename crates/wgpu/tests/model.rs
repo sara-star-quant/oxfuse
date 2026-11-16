@@ -106,6 +106,8 @@ fn binary_ops_match_the_reference_including_scalar_operands() {
                 (Op::Mul, Binary::Mul),
                 (Op::Sub, Binary::Sub),
                 (Op::Div, Binary::Div),
+                (Op::Min, Binary::Min),
+                (Op::Max, Binary::Max),
             ] {
                 let c = cfg(wg, 4);
                 let full = model::binary(kind, a.data(), b.data(), false, false, &c, &CAPS);
@@ -164,6 +166,8 @@ fn broadcast_binary_ops_match_the_reference_for_every_small_shape_pair() {
                 (Op::Mul, Binary::Mul),
                 (Op::Sub, Binary::Sub),
                 (Op::Div, Binary::Div),
+                (Op::Min, Binary::Min),
+                (Op::Max, Binary::Max),
             ] {
                 let want = bits(&reference(op, vec![a.clone(), b.clone()]));
                 for wg in [1, 4, 32] {

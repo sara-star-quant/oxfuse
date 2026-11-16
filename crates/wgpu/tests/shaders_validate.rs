@@ -54,7 +54,14 @@ fn every_shader_validates_for_every_config() {
             check(&format!("{op:?} {cfg:?}"), &shaders::unary(op, &cfg));
             count += 1;
         }
-        for op in [Binary::Add, Binary::Mul, Binary::Sub, Binary::Div] {
+        for op in [
+            Binary::Add,
+            Binary::Mul,
+            Binary::Sub,
+            Binary::Div,
+            Binary::Min,
+            Binary::Max,
+        ] {
             for (lhs, rhs) in [(false, false), (true, false), (false, true)] {
                 check(
                     &format!("{op:?} {lhs} {rhs} {cfg:?}"),
@@ -70,7 +77,14 @@ fn every_shader_validates_for_every_config() {
                 &format!("permute {rank} {cfg:?}"),
                 &shaders::permute(rank, &cfg),
             );
-            for op in [Binary::Add, Binary::Mul, Binary::Sub, Binary::Div] {
+            for op in [
+                Binary::Add,
+                Binary::Mul,
+                Binary::Sub,
+                Binary::Div,
+                Binary::Min,
+                Binary::Max,
+            ] {
                 check(
                     &format!("{op:?} strided {rank} {cfg:?}"),
                     &shaders::binary_strided(op, rank, &cfg),
