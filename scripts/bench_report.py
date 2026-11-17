@@ -179,6 +179,15 @@ benchmark shows a gain; anything that does not is recorded here and dropped.
   k loop by four by hand made the Xeon slower (20 against 32). What stays open
   is the gap to `ndarray` on that AVX2 Xeon (0.55x at batch 32), which tiles,
   strides and the loop body do not explain.
+- Integer matmul (int8 inputs, int32 sums; tried and dropped, 2026-11-17): an
+  integer sum is exact in any order, so a blocked, threaded or split-k kernel
+  returns the same bits, and every run confirmed it on all four hosted runners.
+  Speed did not follow. A vectorised i8 to i32 loop, with no dot-product
+  instruction (`fearless_simd` has none and `unsafe` is forbidden), took 0.4 to
+  0.8 of the f32 chain's speed at 8 and 32 rows of the 784 x 256 weight on
+  every runner: 170 us against 75 us at 8 rows on the macOS runner, 71 us
+  against 45 us on Windows. One row was even. Revisit when the SIMD layer
+  exposes `sdot` or VNNI.
 """
 
 
