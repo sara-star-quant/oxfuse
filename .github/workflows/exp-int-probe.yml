@@ -1,0 +1,36 @@
+name: exp-int-probe
+
+# Throwaway experiment branch only: int8 matmul against the f32 chain on hosted runners.
+on:
+  push:
+    branches: [exp-int-probe]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: Machine
+        run: |
+          (lscpu | grep -E 'Model name|L1d|L2|L3|Flags' | cut -c1-200) 2>/dev/null || true
+          (sysctl -n machdep.cpu.brand_string hw.l1dcachesize hw.l2cachesize) 2>/dev/null || true
+          nproc 2>/dev/null || sysctl -n hw.ncpu
+      - name: Probe
+        run: cargo run --release -q -p oxfuse-runtime --example int_probe | tee probe-${{ matrix.os }}.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: probe-${{ matrix.os }}
+          path: probe-${{ matrix.os }}.txt
