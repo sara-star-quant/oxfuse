@@ -13,7 +13,7 @@
 
 Define a small float32 graph once (JSON, or an ONNX model), type-check it, optimize it without changing a result bit, and run it on a reference CPU backend, a fast SIMD CPU backend or, optionally, a GPU through wgpu. The CPU results are the same bits on every platform it is tested on (Linux and Windows on arm64 and x86_64, macOS on arm64). Every claim has a test and a row in [docs/claims.md](docs/claims.md).
 
-> **Status: experimental.** Seven float32 operators plus a small ONNX subset. Not for production inference, large models or training. [Who it is for, and who it is not](docs/use-cases.md).
+> **Status: experimental.** Twelve float32 operators plus a small ONNX subset. Not for production inference, large models or training. [Who it is for, and who it is not](docs/use-cases.md).
 
 ## A first run
 
