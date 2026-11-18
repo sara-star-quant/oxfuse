@@ -1,0 +1,35 @@
+name: retry-runner-capacity
+
+# A hosted macOS arm64 runner is sometimes never assigned (GitHub capacity), and
+# the job fails without running a step. Rerun the failed jobs of such a run at
+# most twice, after 5 and then 15 minutes. A run with any real failure is left
+# alone, and this workflow never fails itself, so it adds no notification mail.
+
+on:
+  workflow_run:
+    workflows: [ci, release-binaries]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Rerun when only runner-less jobs failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | if .runner_id == 0 and (.steps | length) == 0 then "stuck" else "real" end')
+          echo "failed jobs: $jobs"
+          case "$jobs" in *real*|"") echo "not a capacity failure"; exit 0 ;; esac
+          wait=$((300 * 3 ** (ATTEMPT - 1)))
+          echo "rerunning in $wait s"
+          sleep "$wait"
+          gh run rerun "$RUN" --failed || echo "rerun refused, leaving it"
