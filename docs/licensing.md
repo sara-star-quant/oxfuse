@@ -41,7 +41,7 @@ None of these is a reason to stop. Each says what we do and what is open.
 | Who contributed what | No outside contributions yet | The sign-off rule above, so the chain starts clean |
 | Liability | Apache-2.0 sections 7 and 8 disclaim warranty and liability | The README and [use-cases.md](use-cases.md) say experimental and not for production inference |
 | EU Cyber Resilience Act | The Act applies from 11 December 2027, with reporting duties from 11 September 2026 ([Commission](https://digital-strategy.ec.europa.eu/en/policies/cyber-resilience-act)). Free and open-source software supplied outside a commercial activity is outside it. A legal person that supports such a project on a sustained basis for commercial use can be an "open-source software steward", with duties to document a cybersecurity policy and cooperate with authorities ([OpenSSF summary](https://policy.openssf.org/CRA/stewards-one-pager.html)). A company that sells a product containing the code is a manufacturer | `SECURITY.md` is a first vulnerability-handling policy. Open: whether SARA STAR QUANT LLC counts as a steward or manufacturer depends on its commercial activity; ask counsel before charging for support, hosting or binaries |
-| Patents | Nothing found; none searched | The techniques are published and old; Apache-2.0 gives users a patent licence from us. Open: no freedom-to-operate search |
+| Patents | Not assessed by counsel | The techniques are published and old ([provenance.md](provenance.md)); Apache-2.0 gives users a patent licence from us. Open: no professional freedom-to-operate search |
 
 ## Options we looked at
 
