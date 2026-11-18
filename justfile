@@ -55,6 +55,7 @@ scripts-test:
     python3 -I scripts/test_dco_check.py
     python3 -I scripts/test_licence_scan_check.py
     python3 -I scripts/test_coverage_badge.py
+    python3 -I scripts/test_pre_merge.py
 
 # Regenerate the seeded random-graph corpus (needs numpy, see scripts/requirements.txt).
 corpus:
@@ -180,3 +181,7 @@ licence-snippets:
     git ls-files -- '*.rs' '*.py' '*.wgsl' '*.yml' '*.toml' '*.hbs' justfile | tar -cf - -T - | tar -xf - -C target/snippets-in
     uvx --from scanoss==1.54.3 scanoss-py scan target/snippets-in -o target/snippets.json
     python3 -I scripts/licence_scan_check.py snippets target/snippets.json
+
+# Read every check of a pull request, including the ones the gate does not require.
+pre-merge pr *args:
+    python3 -I scripts/pre_merge.py {{pr}} {{args}}
