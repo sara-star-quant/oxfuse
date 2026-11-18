@@ -25,8 +25,10 @@ jobs:
           RUN: ${{ github.event.workflow_run.id }}
           ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
+          # The aggregate "required" job fails whenever any job it needs did not
+          # succeed, so it is a symptom here and would always read as a real failure.
           jobs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/jobs" --paginate \
-            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | if .runner_id == 0 and (.steps | length) == 0 then "stuck" else "real" end')
+            --jq '.jobs[] | select(.name != "required") | select(.conclusion == "failure" or .conclusion == "cancelled") | if .runner_id == 0 and (.steps | length) == 0 then "stuck" else "real" end')
           echo "failed jobs: $jobs"
           case "$jobs" in *real*|"") echo "not a capacity failure"; exit 0 ;; esac
           wait=$((300 * 3 ** (ATTEMPT - 1)))
