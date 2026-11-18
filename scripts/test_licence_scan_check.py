@@ -46,6 +46,24 @@ class Scancode(unittest.TestCase):
         self.assertEqual(c.relative("b.rs"), "b.rs")
 
 
+    def test_the_contributing_guide_may_quote_the_dco_text(self):
+        report = {"files": [file("CONTRIBUTING.md", "Apache-2.0 AND LicenseRef-scancode-dco-1.1", ["SARA STAR QUANT LLC"])]}
+        self.assertEqual(c.scancode_findings(report), [])
+
+
+class Workflow(unittest.TestCase):
+    def test_a_failing_check_fails_the_scan_job(self):
+        """GitHub runs `bash -e` without pipefail, so `check | tee` exits 0 whatever the check says."""
+        lines = (Path(__file__).parent.parent / ".github/workflows/licence-scan.yml").read_text().splitlines()
+        i = next(n for n, line in enumerate(lines) if "licence_scan_check.py scancode" in line)
+        if "|" in lines[i]:
+            self.assertIn("pipefail", "\n".join(lines[max(0, i - 3) : i + 1]))
+
+    def test_the_scan_skips_only_its_own_test_fixture(self):
+        text = (Path(__file__).parent.parent / ".github/workflows/licence-scan.yml").read_text()
+        self.assertIn('--ignore "*/scripts/test_licence_scan_check.py"', text)
+
+
 class Snippets(unittest.TestCase):
     def test_a_judged_file_passes_and_a_new_match_fails(self):
         report = {
