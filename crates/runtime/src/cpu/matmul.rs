@@ -84,12 +84,16 @@ fn micro_rows<S: Simd>(
     match (rows, ns) {
         (1, 4) => micro::<S, 1, 4>(simd, a, lda, b, ldb, c, ldc, klen),
         (2, 2) => micro::<S, 2, 2>(simd, a, lda, b, ldb, c, ldc, klen),
-        (1, _) => micro::<S, 1, 1>(simd, a, lda, b, ldb, c, ldc, klen),
-        (2, _) => micro::<S, 2, 1>(simd, a, lda, b, ldb, c, ldc, klen),
-        (3, _) => micro::<S, 3, 1>(simd, a, lda, b, ldb, c, ldc, klen),
-        (4, _) => micro::<S, 4, 1>(simd, a, lda, b, ldb, c, ldc, klen),
-        (5, _) => micro::<S, 5, 1>(simd, a, lda, b, ldb, c, ldc, klen),
-        _ => micro::<S, 6, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (1, 1) => micro::<S, 1, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (2, 1) => micro::<S, 2, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (3, 1) => micro::<S, 3, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (4, 1) => micro::<S, 4, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (5, 1) => micro::<S, 5, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        (6, 1) => micro::<S, 6, 1>(simd, a, lda, b, ldb, c, ldc, klen),
+        // A shape without an arm would leave strips of C unwritten and return
+        // wrong sums with no error, so it stops here. `strips_for` may only
+        // return widths listed above.
+        _ => unreachable!("no micro-kernel for {rows} rows by {ns} strips"),
     }
 }
 
@@ -408,6 +412,72 @@ mod tests {
         // A tile that starts past the fitting rows has none.
         assert_eq!(direct_rows(50, 10, 0, 4, 1), 0);
     }
+    /// The block shapes `micro_rows` has a kernel for. Written out here on
+    /// purpose, apart from the dispatch, so the two cannot drift together.
+    fn has_kernel(rows: usize, ns: usize) -> bool {
+        matches!((rows, ns), (1, 4) | (2, 2) | (1..=R, 1))
+    }
+
+    /// The reference sum of one micro-kernel call: one fused multiply-add per
+    /// `p`, ascending, from +0.0.
+    fn micro_want(rows: usize, ns: usize, a: &[f32], b: &[f32], klen: usize) -> Vec<f32> {
+        let ldb = ns * W;
+        let mut want = vec![0.0f32; rows * ldb];
+        for r in 0..rows {
+            for j in 0..ldb {
+                for p in 0..klen {
+                    want[r * ldb + j] = a[r * klen + p].mul_add(b[p * ldb + j], want[r * ldb + j]);
+                }
+            }
+        }
+        want
+    }
+
+    #[test]
+    fn micro_rows_covers_every_requested_strip_or_refuses_the_shape() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        let klen = 5;
+        for rows in 1..=R + 1 {
+            for ns in 1..=5 {
+                let ldb = ns * W;
+                let a: Vec<f32> = (0..rows * klen).map(|i| i as f32 * 0.37 - 1.1).collect();
+                let b: Vec<f32> = (0..klen * ldb)
+                    .map(|i| (i % 11) as f32 * 0.21 - 1.0)
+                    .collect();
+                let mut c = vec![0.0f32; rows * ldb];
+                let ran = catch_unwind(AssertUnwindSafe(|| {
+                    dispatch!(Level::new(), simd => micro_rows(
+                        simd, rows, ns, &a, klen, &b, ldb, &mut c, ldb, klen,
+                    ));
+                }));
+                if has_kernel(rows, ns) {
+                    assert!(ran.is_ok(), "{rows} rows by {ns} strips must run");
+                    let want = micro_want(rows, ns, &a, &b, klen);
+                    let same = c.iter().zip(&want).all(|(x, y)| x.to_bits() == y.to_bits());
+                    assert!(same, "{rows} rows by {ns} strips: wrong bits");
+                } else {
+                    assert!(
+                        ran.is_err(),
+                        "{rows} rows by {ns} strips has no kernel and must refuse"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strips_for_only_asks_for_shapes_that_have_a_kernel() {
+        for rows in 1..=R {
+            for left in 0..=9 {
+                let ns = strips_for(rows, left * W);
+                assert!(
+                    has_kernel(rows, ns),
+                    "strips_for({rows}, {left} * W) = {ns}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn strips_for_widens_only_a_whole_group_of_few_rows() {
         // One row: 4 strips when 4 or more remain, else one at a time.
