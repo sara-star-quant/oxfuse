@@ -21,6 +21,14 @@ jobs:
       # (lavapipe) with the reference; the other targets ignore it.
       - if: matrix.target == 'gpu_generated'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+      # Keep what each run finds so the next one starts from it, not from the seed
+      # graphs alone. This workflow never runs on a pull request, so a pull request
+      # cannot write the cache it restores.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
       - run: rustup toolchain install nightly-2026-05-22 --profile minimal
       - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
         with:
