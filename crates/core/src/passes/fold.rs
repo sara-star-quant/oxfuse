@@ -2,6 +2,7 @@
 //! and replaced by a constant of the same name. The evaluator is injected so
 //! core never depends on a backend; with the reference kernels the folded
 //! value is bit-identical to what the run-time path would compute.
+#![allow(clippy::expect_used, clippy::indexing_slicing)] // baseline: 5 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use super::rebuild::Rebuilder;
 use super::{Pass, PassOutput};

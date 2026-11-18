@@ -1,4 +1,5 @@
 //! `TensorProto` to dense data, with every size checked before any copy.
+#![allow(clippy::expect_used)] // baseline: 2 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{
     OnnxError,

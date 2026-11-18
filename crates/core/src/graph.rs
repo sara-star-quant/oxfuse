@@ -1,4 +1,5 @@
 //! The IR: an arena of values in definition order. Every op has one output.
+#![allow(clippy::indexing_slicing)] // baseline: 3 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{Op, TensorType, ValueId};
 use std::sync::Arc;

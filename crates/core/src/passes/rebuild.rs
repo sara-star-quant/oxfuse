@@ -3,6 +3,7 @@
 //! value, whether to copy it, alias it to an earlier value or replace it
 //! with a constant. Names and output names carry over, so the graph
 //! interface cannot change by accident.
+#![allow(clippy::expect_used, clippy::indexing_slicing)] // baseline: 3 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{Error, Graph, GraphBuilder, Limits, Op, Source, ValueId};
 use std::sync::Arc;

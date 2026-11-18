@@ -1,0 +1,5 @@
+# Tests may index, unwrap and expect; library code in core and onnx may not (see lib.rs).
+allow-indexing-slicing-in-tests = true
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true

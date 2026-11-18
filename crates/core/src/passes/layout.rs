@@ -4,6 +4,7 @@
 //! `Reshape` to the shape it already has is aliased to its input. Both ops
 //! only move bits, so the result is bit-identical and the intermediate value,
 //! if nothing else reads it, is left for dead-code elimination.
+#![allow(clippy::indexing_slicing)] // baseline: 3 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use super::rebuild::Rebuilder;
 use super::{Pass, PassOutput};

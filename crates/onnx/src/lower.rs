@@ -2,6 +2,7 @@
 //! the existing IR ops; `Add`, `Mul`, `Sub` and `Div` broadcast in the IR, so
 //! an operand of any kind (an initializer, an input or a computed value) is
 //! passed as is.
+#![allow(clippy::expect_used, clippy::indexing_slicing)] // baseline: 65 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{
     ImportOptions, OnnxError,

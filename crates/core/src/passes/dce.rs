@@ -1,5 +1,6 @@
 //! Dead-code elimination: keep what the outputs transitively use, plus every
 //! graph input. Inputs are never removed because they are the interface.
+#![allow(clippy::indexing_slicing)] // baseline: 4 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use super::rebuild::Rebuilder;
 use super::{Pass, PassOutput};
