@@ -2,7 +2,6 @@
 //! the existing IR ops; `Add`, `Mul`, `Sub` and `Div` broadcast in the IR, so
 //! an operand of any kind (an initializer, an input or a computed value) is
 //! passed as is.
-#![allow(clippy::expect_used, clippy::indexing_slicing)] // baseline: 65 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{
     ImportOptions, OnnxError,
@@ -164,40 +163,48 @@ impl Cx<'_> {
         attrs.finish()
     }
 
-    /// Exactly `inputs` non-empty inputs and one output.
-    fn arity(&self, n: &Node, inputs: usize) -> Result<(), OnnxError> {
-        if n.inputs.len() != inputs || n.inputs.iter().any(String::is_empty) {
+    /// Exactly `K` non-empty inputs and one output, returned by name.
+    fn arity<'a, const K: usize>(
+        &self,
+        n: &'a Node,
+    ) -> Result<([&'a String; K], &'a String), OnnxError> {
+        let inputs: Option<[&String; K]> = if n.inputs.iter().any(String::is_empty) {
+            None
+        } else {
+            n.inputs.iter().collect::<Vec<_>>().try_into().ok()
+        };
+        let Some(inputs) = inputs else {
             return Err(shape_err(
                 n,
                 format!(
-                    "{} takes {inputs} input(s), got {}",
+                    "{} takes {K} input(s), got {}",
                     n.op,
                     n.inputs.iter().filter(|s| !s.is_empty()).count()
                 ),
             ));
-        }
-        if n.outputs.len() != 1 {
+        };
+        let [out] = n.outputs.as_slice() else {
             return Err(shape_err(
                 n,
                 format!("{} produces 1 output, got {}", n.op, n.outputs.len()),
             ));
-        }
-        Ok(())
+        };
+        Ok((inputs, out))
     }
 
     fn unary(&mut self, n: &Node, op: Op) -> Result<(), OnnxError> {
-        self.arity(n, 1)?;
-        let x = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        let y = self.emit(&n.outputs[0], op, &[&x], x.shape.clone())?;
-        self.define(&n.outputs[0], Val::Tensor(y));
+        let ([x_name], out) = self.arity::<1>(n)?;
+        let x = self.tensor(x_name, x_name)?;
+        let y = self.emit(out, op, &[&x], x.shape.clone())?;
+        self.define(out, Val::Tensor(y));
         Ok(())
     }
 
     fn matmul(&mut self, n: &Node) -> Result<(), OnnxError> {
-        self.arity(n, 2)?;
-        let a = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        let b = self.tensor(&n.inputs[1], &n.inputs[1])?;
-        if a.shape.len() != 2 || b.shape.len() != 2 {
+        let ([a_name, b_name], out) = self.arity::<2>(n)?;
+        let a = self.tensor(a_name, a_name)?;
+        let b = self.tensor(b_name, b_name)?;
+        let ([m, _], [_, p]) = (a.shape.as_slice(), b.shape.as_slice()) else {
             return Err(shape_err(
                 n,
                 format!(
@@ -206,20 +213,20 @@ impl Cx<'_> {
                     b.shape.len()
                 ),
             ));
-        }
-        let shape = vec![a.shape[0], b.shape[1]];
-        let y = self.emit(&n.outputs[0], Op::MatMul, &[&a, &b], shape)?;
-        self.define(&n.outputs[0], Val::Tensor(y));
+        };
+        let shape = vec![*m, *p];
+        let y = self.emit(out, Op::MatMul, &[&a, &b], shape)?;
+        self.define(out, Val::Tensor(y));
         Ok(())
     }
 
     fn binary(&mut self, n: &Node, op: Op) -> Result<(), OnnxError> {
-        self.arity(n, 2)?;
-        let a = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        let b = self.tensor(&n.inputs[1], &n.inputs[1])?;
+        let ([a_name, b_name], out) = self.arity::<2>(n)?;
+        let a = self.tensor(a_name, a_name)?;
+        let b = self.tensor(b_name, b_name)?;
         let shape = self.broadcast_shape(n, &a, &b)?;
-        let y = self.emit(&n.outputs[0], op, &[&a, &b], shape)?;
-        self.define(&n.outputs[0], Val::Tensor(y));
+        let y = self.emit(out, op, &[&a, &b], shape)?;
+        self.define(out, Val::Tensor(y));
         Ok(())
     }
 
@@ -234,19 +241,24 @@ impl Cx<'_> {
                 format!("{} takes at least 2 inputs, got {given}", n.op),
             ));
         }
-        if n.outputs.len() != 1 {
+        let ([first, rest @ ..], [out]) = (n.inputs.as_slice(), n.outputs.as_slice()) else {
             return Err(shape_err(
                 n,
                 format!("{} produces 1 output, got {}", n.op, n.outputs.len()),
             ));
-        }
-        let out = n.outputs[0].clone();
-        let mut acc = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        for (i, name) in n.inputs.iter().enumerate().skip(1) {
+        };
+        let out = out.clone();
+        let mut acc = self.tensor(first, first)?;
+        for (i, name) in rest.iter().enumerate() {
             let next = self.tensor(name, name)?;
             let shape = self.broadcast_shape(n, &acc, &next)?;
             // Node names only keep the steps apart; the output keeps its ONNX name.
-            acc = self.emit(&format!("{out}.fold{i}"), op.clone(), &[&acc, &next], shape)?;
+            acc = self.emit(
+                &format!("{out}.fold{}", i + 1),
+                op.clone(),
+                &[&acc, &next],
+                shape,
+            )?;
         }
         self.define(&out, Val::Tensor(acc));
         Ok(())
@@ -256,21 +268,27 @@ impl Cx<'_> {
     /// step, so with neither the result is `x` itself. Both bounds are scalars.
     /// With `min` above `max` every element becomes `max`, as in ONNX.
     fn clip(&mut self, n: &Node) -> Result<(), OnnxError> {
-        if !(1..=3).contains(&n.inputs.len()) || n.inputs[0].is_empty() {
+        let [x_name, bounds @ ..] = n.inputs.as_slice() else {
+            return Err(shape_err(n, "Clip takes 1 to 3 inputs"));
+        };
+        if bounds.len() > 2 || x_name.is_empty() {
             return Err(shape_err(n, "Clip takes 1 to 3 inputs"));
         }
-        if n.outputs.len() != 1 {
+        let [out] = n.outputs.as_slice() else {
             return Err(shape_err(n, "Clip produces 1 output"));
-        }
-        let out = n.outputs[0].clone();
-        let mut y = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        let steps = [(1, Op::Max, "min"), (2, Op::Min, "max")];
+        };
+        let out = out.clone();
+        let mut y = self.tensor(x_name, x_name)?;
+        let steps = [
+            (bounds.first(), Op::Max, "min"),
+            (bounds.get(1), Op::Min, "max"),
+        ];
         let present: Vec<_> = steps
             .into_iter()
-            .filter(|(i, _, _)| n.inputs.get(*i).is_some_and(|s| !s.is_empty()))
+            .filter_map(|(name, op, what)| name.filter(|s| !s.is_empty()).map(|s| (s, op, what)))
             .collect();
-        for (i, op, what) in &present {
-            let bound = self.tensor(&n.inputs[*i], &n.inputs[*i])?;
+        for (name, op, what) in &present {
+            let bound = self.tensor(name, name)?;
             if !bound.shape.is_empty() {
                 return Err(shape_err(
                     n,
@@ -307,16 +325,20 @@ impl Cx<'_> {
         let beta = attrs.float("beta")?.unwrap_or(1.0);
         let trans_a = attrs.flag(n, "transA")?;
         let trans_b = attrs.flag(n, "transB")?;
-        let has_c = n.inputs.get(2).is_some_and(|s| !s.is_empty());
-        if !(2..=3).contains(&n.inputs.len()) || n.inputs[..2].iter().any(String::is_empty) {
+        let [a_name, b_name, rest @ ..] = n.inputs.as_slice() else {
+            return Err(shape_err(n, "Gemm takes 2 or 3 inputs"));
+        };
+        if rest.len() > 1 || a_name.is_empty() || b_name.is_empty() {
             return Err(shape_err(n, "Gemm takes 2 or 3 inputs"));
         }
-        if n.outputs.len() != 1 {
+        let c_name = rest.first().filter(|s| !s.is_empty());
+        let has_c = c_name.is_some();
+        let [out] = n.outputs.as_slice() else {
             return Err(shape_err(n, "Gemm produces 1 output"));
-        }
-        let out = n.outputs[0].clone();
-        let mut a = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        let mut b = self.tensor(&n.inputs[1], &n.inputs[1])?;
+        };
+        let out = out.clone();
+        let mut a = self.tensor(a_name, a_name)?;
+        let mut b = self.tensor(b_name, b_name)?;
         if a.shape.len() != 2 || b.shape.len() != 2 {
             return Err(shape_err(
                 n,
@@ -328,18 +350,22 @@ impl Cx<'_> {
             ));
         }
         if trans_a {
-            a = self.transpose2(&format!("{out}.transA"), &a)?;
+            a = self.transpose2(n, &format!("{out}.transA"), &a)?;
         }
         if trans_b {
-            b = self.transpose2(&format!("{out}.transB"), &b)?;
+            b = self.transpose2(n, &format!("{out}.transB"), &b)?;
         }
+        let ([m, _], [_, p]) = (a.shape.as_slice(), b.shape.as_slice()) else {
+            return Err(shape_err(n, "Gemm supports rank 2 only"));
+        };
+        let (m, p) = (*m, *p);
         let scaled = !is_one(alpha);
         // ONNX adds beta * C only when beta is not zero, so a zero beta drops
         // C even where C holds infinity or NaN. C is still checked.
         let adds_c = has_c && !is_zero(beta);
-        let c = if has_c {
-            let c = self.tensor(&n.inputs[2], &n.inputs[2])?;
-            let shape = [a.shape[0], b.shape[1]];
+        let c = if let Some(c_name) = c_name {
+            let c = self.tensor(c_name, c_name)?;
+            let shape = [m, p];
             if numpy_broadcast(&shape, &c.shape).as_deref() != Some(shape.as_slice()) {
                 return Err(shape_err(
                     n,
@@ -360,7 +386,7 @@ impl Cx<'_> {
                 format!("{out}.{suffix}")
             }
         };
-        let shape = vec![a.shape[0], b.shape[1]];
+        let shape = vec![m, p];
         let mut y = self.emit(
             &name(!scaled && !adds_c, "matmul"),
             Op::MatMul,
@@ -387,9 +413,9 @@ impl Cx<'_> {
     /// known at import, so every output shape is known too.
     fn reshape(&mut self, n: &Node, attrs: &mut Attrs) -> Result<(), OnnxError> {
         let allowzero = attrs.flag(n, "allowzero")?;
-        self.arity(n, 2)?;
-        let x = self.tensor(&n.inputs[0], &n.inputs[0])?;
-        let spec = match self.get(&n.inputs[1])? {
+        let ([x_name, spec_name], out) = self.arity::<2>(n)?;
+        let x = self.tensor(x_name, x_name)?;
+        let spec = match self.get(spec_name)? {
             Val::Ints { dims, data } if dims.len() == 1 => data,
             Val::Ints { .. } => {
                 return Err(shape_err(
@@ -412,49 +438,50 @@ impl Cx<'_> {
         };
         let target = resolve_reshape(n, &x.shape, &spec, allowzero)?;
         let y = self.emit(
-            &n.outputs[0],
+            out,
             Op::Reshape {
                 shape: target.clone(),
             },
             &[&x],
             target,
         )?;
-        self.define(&n.outputs[0], Val::Tensor(y));
+        self.define(out, Val::Tensor(y));
         Ok(())
     }
 
     fn flatten(&mut self, n: &Node, attrs: &mut Attrs) -> Result<(), OnnxError> {
         let axis = attrs.int("axis")?.unwrap_or(1);
-        self.arity(n, 1)?;
-        let x = self.tensor(&n.inputs[0], &n.inputs[0])?;
+        let ([x_name], out) = self.arity::<1>(n)?;
+        let x = self.tensor(x_name, x_name)?;
         let rank = x.shape.len() as i64;
-        if axis < -rank || axis > rank {
+        let split = usize::try_from(if axis < 0 { axis + rank } else { axis })
+            .ok()
+            .and_then(|a| x.shape.split_at_checked(a));
+        let Some((head, tail)) = split else {
             return Err(shape_err(
                 n,
                 format!("Flatten axis {axis} is out of range for rank {rank}"),
             ));
-        }
-        let axis = usize::try_from(if axis < 0 { axis + rank } else { axis })
-            .expect("axis checked against the rank");
-        let outer: usize = x.shape[..axis].iter().product();
-        let inner: usize = x.shape[axis..].iter().product();
+        };
+        let outer: usize = head.iter().product();
+        let inner: usize = tail.iter().product();
         let target = vec![outer, inner];
         let y = self.emit(
-            &n.outputs[0],
+            out,
             Op::Reshape {
                 shape: target.clone(),
             },
             &[&x],
             target,
         )?;
-        self.define(&n.outputs[0], Val::Tensor(y));
+        self.define(out, Val::Tensor(y));
         Ok(())
     }
 
     fn transpose(&mut self, n: &Node, attrs: &mut Attrs) -> Result<(), OnnxError> {
         let perm = attrs.ints("perm")?;
-        self.arity(n, 1)?;
-        let x = self.tensor(&n.inputs[0], &n.inputs[0])?;
+        let ([x_name], out) = self.arity::<1>(n)?;
+        let x = self.tensor(x_name, x_name)?;
         let rank = x.shape.len();
         let perm: Vec<usize> = match perm.filter(|p| !p.is_empty()) {
             None => (0..rank).rev().collect(),
@@ -471,9 +498,15 @@ impl Cx<'_> {
                 p.iter().map(|v| *v as usize).collect()
             }
         };
-        let shape: Vec<usize> = perm.iter().map(|i| x.shape[*i]).collect();
-        let y = self.emit(&n.outputs[0], Op::Transpose { perm }, &[&x], shape)?;
-        self.define(&n.outputs[0], Val::Tensor(y));
+        let shape: Option<Vec<usize>> = perm.iter().map(|i| x.shape.get(*i).copied()).collect();
+        let Some(shape) = shape else {
+            return Err(shape_err(
+                n,
+                format!("Transpose perm {perm:?} is not a permutation of 0..{rank}"),
+            ));
+        };
+        let y = self.emit(out, Op::Transpose { perm }, &[&x], shape)?;
+        self.define(out, Val::Tensor(y));
         Ok(())
     }
 
@@ -488,8 +521,11 @@ impl Cx<'_> {
         })
     }
 
-    fn transpose2(&mut self, name: &str, t: &T) -> Result<T, OnnxError> {
-        let shape = vec![t.shape[1], t.shape[0]];
+    fn transpose2(&mut self, n: &Node, name: &str, t: &T) -> Result<T, OnnxError> {
+        let [rows, cols] = t.shape.as_slice() else {
+            return Err(shape_err(n, "Gemm supports rank 2 only"));
+        };
+        let shape = vec![*cols, *rows];
         self.emit(name, Op::Transpose { perm: vec![1, 0] }, &[t], shape)
     }
 
@@ -514,9 +550,9 @@ impl Cx<'_> {
     }
 
     fn identity(&mut self, n: &Node) -> Result<(), OnnxError> {
-        self.arity(n, 1)?;
-        let v = self.get(&n.inputs[0])?;
-        self.define(&n.outputs[0], v);
+        let ([x_name], out) = self.arity::<1>(n)?;
+        let v = self.get(x_name)?;
+        self.define(out, v);
         Ok(())
     }
 
@@ -524,7 +560,13 @@ impl Cx<'_> {
     /// inference; a `training_mode` input or a `mask` output is an error.
     fn dropout(&mut self, n: &Node, attrs: &mut Attrs) -> Result<(), OnnxError> {
         attrs.int("seed")?;
-        if n.inputs.is_empty() || n.inputs.len() > 3 || n.inputs[0].is_empty() {
+        let ([x_name, ..], [out, rest @ ..]) = (n.inputs.as_slice(), n.outputs.as_slice()) else {
+            return Err(shape_err(
+                n,
+                "Dropout takes 1 to 3 inputs and produces an output",
+            ));
+        };
+        if n.inputs.len() > 3 || x_name.is_empty() {
             return Err(shape_err(n, "Dropout takes 1 to 3 inputs"));
         }
         if n.inputs.get(2).is_some_and(|s| !s.is_empty()) {
@@ -533,22 +575,27 @@ impl Cx<'_> {
                 "Dropout training_mode input is not supported (inference only)",
             ));
         }
-        if n.outputs.len() > 2 || (n.outputs.len() == 2 && !n.outputs[1].is_empty()) {
+        if rest.len() > 1 || rest.iter().any(|s| !s.is_empty()) {
             return Err(shape_err(n, "Dropout mask output is not supported"));
         }
-        let v = self.get(&n.inputs[0])?;
-        self.define(&n.outputs[0], v);
+        let v = self.get(x_name)?;
+        self.define(out, v);
         Ok(())
     }
 
     fn constant(&mut self, n: &Node, attrs: &mut Attrs) -> Result<(), OnnxError> {
-        if !n.inputs.is_empty() || n.outputs.len() != 1 {
+        let [out] = n.outputs.as_slice() else {
+            return Err(shape_err(
+                n,
+                "Constant takes no inputs and produces 1 output",
+            ));
+        };
+        if !n.inputs.is_empty() {
             return Err(shape_err(
                 n,
                 "Constant takes no inputs and produces 1 output",
             ));
         }
-        let out = &n.outputs[0];
         let limits = &self.opts.limits;
         let mut found: Vec<Dense> = Vec::new();
         if let Some(t) = attrs.tensor("value")? {
