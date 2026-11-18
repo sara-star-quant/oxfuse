@@ -1,5 +1,6 @@
 //! Independent re-check of every IR invariant. The builder cannot produce an
 //! invalid graph, so this exists to catch bugs in passes that rebuild graphs.
+#![allow(clippy::indexing_slicing)] // baseline: 1 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::shape::{check_shape, checked_num_elements, infer};
 use crate::{Error, Graph, Limits, Source, ValueId};

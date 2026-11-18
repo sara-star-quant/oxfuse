@@ -1,4 +1,5 @@
 //! Shape rules: one function per concern, all arithmetic checked.
+#![allow(clippy::indexing_slicing)] // baseline: 24 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{Error, Limits, Op, TensorType};
 

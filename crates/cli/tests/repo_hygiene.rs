@@ -229,3 +229,68 @@ fn hardware_claims_match_what_exists() {
         );
     }
 }
+
+/// Library code in core and onnx parses files an attacker can write, so a panic there
+/// is a denial of service. Both crates deny the panicking lints; the files below
+/// still carry a baseline allow that is converted file by file. This list only shrinks:
+/// a new entry needs a reason a reviewer accepts, a removed one means the file is clean.
+const PANIC_BASELINE: &[&str] = &[
+    "crates/core/src/builder.rs",
+    "crates/core/src/graph.rs",
+    "crates/core/src/passes/dce.rs",
+    "crates/core/src/passes/fold.rs",
+    "crates/core/src/passes/layout.rs",
+    "crates/core/src/passes/rebuild.rs",
+    "crates/core/src/shape.rs",
+    "crates/core/src/verify.rs",
+    "crates/onnx/src/lower.rs",
+    "crates/onnx/src/tensor.rs",
+];
+
+fn rust_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            rust_files(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+#[test]
+fn panicking_lints_are_denied_in_core_and_onnx_except_the_listed_baseline() {
+    let mut found = Vec::new();
+    for krate in ["core", "onnx"] {
+        let src = root().join("crates").join(krate).join("src");
+        let lib = fs::read_to_string(src.join("lib.rs")).unwrap();
+        let flat: String = lib.split_whitespace().collect();
+        assert!(
+            flat.contains("#![deny(clippy::indexing_slicing,clippy::unwrap_used,clippy::expect_used,clippy::panic,)]")
+                || flat.contains("#![deny(clippy::indexing_slicing,clippy::unwrap_used,clippy::expect_used,clippy::panic)]"),
+            "crates/{krate}/src/lib.rs must deny the panicking lints"
+        );
+        let mut files = Vec::new();
+        rust_files(&src, &mut files);
+        for path in files {
+            let text = fs::read_to_string(&path).unwrap();
+            let allows = text.lines().any(|l| {
+                l.starts_with("#![allow(")
+                    && ["indexing_slicing", "unwrap_used", "expect_used", "panic"]
+                        .iter()
+                        .any(|n| l.contains(n))
+            });
+            if allows {
+                let rel = path.strip_prefix(root().join("")).unwrap_or(&path);
+                found.push(rel.to_string_lossy().replace("../", "").replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    let mut want: Vec<String> = PANIC_BASELINE.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    assert_eq!(
+        found, want,
+        "the files that allow panicking lints must match PANIC_BASELINE"
+    );
+}
