@@ -95,7 +95,9 @@ jobs:
       matrix:
         # Two arm64 runners besides the x86_64 ones: the hash sweep (`just exp-sweep`)
         # must come out the same on all five.
-        os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm, windows-11-arm]
+        # Set the repo variable MACOS_RUNNER (say to macos-15) to move the macOS job to
+        # another runner pool when macos-latest has no capacity; unset it to go back.
+        os: [ubuntu-latest, "${{ vars.MACOS_RUNNER || 'macos-latest' }}", windows-latest, ubuntu-24.04-arm, windows-11-arm]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,7 +113,7 @@ jobs:
       - if: matrix.os == 'ubuntu-latest'
         run: just bench-check
       - name: gpu self-test report (a measurement, never a gate)
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         run: |
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest || true
           cargo run -q -p oxfuse --features wgpu --locked -- gpu-selftest --limits downlevel || true
@@ -195,7 +197,8 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
 
   # One stable name for the branch ruleset to require. Skipped jobs (a docs-only
-  # change skips the build matrix) count as success; a failure or a cancel does not.
+  # change skips the build matrix) count as success. Anything else does not: a job
+  # that never got a runner reports "abandoned", which must not pass as green.
   required:
     if: always()
     needs: [changes, docs, scripts, dco, test, standalone, msrv, gpu, deny]
@@ -206,6 +209,6 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "$RESULTS"
-          case " $RESULTS " in
-            *" failure "*|*" cancelled "*) exit 1 ;;
-          esac
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) exit 1 ;; esac
+          done
