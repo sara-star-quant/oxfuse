@@ -1,5 +1,4 @@
 //! Shape rules: one function per concern, all arithmetic checked.
-#![allow(clippy::indexing_slicing)] // baseline: 24 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{Error, Limits, Op, TensorType};
 
@@ -49,12 +48,13 @@ fn mismatch(node: &str, reason: String) -> Error {
 /// dimension of 1 or a missing dimension stretches to the other operand's.
 pub fn numpy_broadcast(a: &[usize], b: &[usize]) -> Option<Vec<usize>> {
     let rank = a.len().max(b.len());
+    // A dimension the shorter operand does not have counts as 1.
     let dim = |s: &[usize], i: usize| {
-        if i + s.len() >= rank {
-            s[i + s.len() - rank]
-        } else {
-            1
-        }
+        (i + s.len())
+            .checked_sub(rank)
+            .and_then(|k| s.get(k))
+            .copied()
+            .unwrap_or(1)
     };
     (0..rank)
         .map(|i| match (dim(a, i), dim(b, i)) {
@@ -92,10 +92,10 @@ pub fn broadcast_map(out: &[usize], operand: &[usize]) -> Vec<usize> {
     // dimensions; a stride is 0 where the operand has 1 or no such dimension.
     let mut strides = vec![0usize; rank];
     let mut stride = 1usize;
-    for d in (0..operand.len()).rev() {
-        let at = d + rank - operand.len();
-        strides[at] = if operand[d] == 1 { 0 } else { stride };
-        stride *= operand[d];
+    let lead = rank.saturating_sub(operand.len());
+    for (&dim, slot) in operand.iter().zip(strides.iter_mut().skip(lead)).rev() {
+        *slot = if dim == 1 { 0 } else { stride };
+        stride *= dim;
     }
     let total = out.iter().product::<usize>();
     let mut map = Vec::with_capacity(total);
@@ -103,14 +103,14 @@ pub fn broadcast_map(out: &[usize], operand: &[usize]) -> Vec<usize> {
     let mut offset = 0usize;
     for _ in 0..total {
         map.push(offset);
-        for d in (0..rank).rev() {
-            index[d] += 1;
-            offset += strides[d];
-            if index[d] < out[d] {
+        for ((at, &stride), &len) in index.iter_mut().zip(&strides).zip(out).rev() {
+            *at += 1;
+            offset += stride;
+            if *at < len {
                 break;
             }
-            offset -= strides[d] * out[d];
-            index[d] = 0;
+            offset -= stride * len;
+            *at = 0;
         }
     }
     map
@@ -119,7 +119,7 @@ pub fn broadcast_map(out: &[usize], operand: &[usize]) -> Vec<usize> {
 /// `[M, K] x [K, N] -> [M, N]`. The rule generalizes to `[..., M, K] x
 /// [..., K, N]` with matching batch dimensions; v1 accepts rank 2 only.
 fn matmul_shape(node: &str, a: &[usize], b: &[usize]) -> Result<Vec<usize>, Error> {
-    if a.len() != 2 || b.len() != 2 {
+    let ([m, k], [k2, n]) = (a, b) else {
         return Err(mismatch(
             node,
             format!(
@@ -128,14 +128,14 @@ fn matmul_shape(node: &str, a: &[usize], b: &[usize]) -> Result<Vec<usize>, Erro
                 b.len()
             ),
         ));
-    }
-    if a[1] != b[0] {
+    };
+    if k != k2 {
         return Err(mismatch(
             node,
             format!("MatMul: inner dimensions differ: {a:?} x {b:?}"),
         ));
     }
-    Ok(vec![a[0], b[1]])
+    Ok(vec![*m, *n])
 }
 
 fn reshape_shape(node: &str, input: &[usize], target: &[usize]) -> Result<Vec<usize>, Error> {
@@ -162,48 +162,68 @@ fn transpose_shape(node: &str, input: &[usize], perm: &[usize]) -> Result<Vec<us
             format!("Transpose: permutation {perm:?} must have {rank} entries"),
         ));
     }
+    let not_a_permutation = || {
+        mismatch(
+            node,
+            format!("Transpose: {perm:?} is not a permutation of 0..{rank}"),
+        )
+    };
     let mut seen = vec![false; rank];
     for &p in perm {
-        if p >= rank || std::mem::replace(&mut seen[p], true) {
-            return Err(mismatch(
-                node,
-                format!("Transpose: {perm:?} is not a permutation of 0..{rank}"),
-            ));
+        let fresh = seen
+            .get_mut(p)
+            .is_some_and(|slot| !std::mem::replace(slot, true));
+        if !fresh {
+            return Err(not_a_permutation());
         }
     }
-    Ok(perm.iter().map(|&p| input[p]).collect())
+    perm.iter()
+        .map(|&p| input.get(p).copied())
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(not_a_permutation)
+}
+
+fn arity_error(node: &str, op: &Op, found: usize) -> Error {
+    Error::Arity {
+        node: node.to_owned(),
+        op: op.name(),
+        expected: op.arity(),
+        found,
+    }
 }
 
 /// Infers the output type of `op` applied to `inputs`, checking arity first.
 pub fn infer(node: &str, op: &Op, inputs: &[&TensorType]) -> Result<TensorType, Error> {
     if inputs.len() != op.arity() {
-        return Err(Error::Arity {
-            node: node.to_owned(),
-            op: op.name(),
-            expected: op.arity(),
-            found: inputs.len(),
-        });
+        return Err(arity_error(node, op, inputs.len()));
     }
+    // The arity check above makes these match; the helpers keep the `match` on `op`
+    // exhaustive (a new operator must get an arm) without indexing.
+    let one = || match inputs {
+        [x] => Ok(*x),
+        _ => Err(arity_error(node, op, inputs.len())),
+    };
+    let two = || match inputs {
+        [a, b] => Ok((*a, *b)),
+        _ => Err(arity_error(node, op, inputs.len())),
+    };
     match op {
-        Op::Relu | Op::Sigmoid | Op::Neg => Ok(inputs[0].clone()),
-        Op::Transpose { perm } => Ok(TensorType::f32(transpose_shape(
-            node,
-            &inputs[0].shape,
-            perm,
-        )?)),
-        Op::Reshape { shape } => Ok(TensorType::f32(reshape_shape(
-            node,
-            &inputs[0].shape,
-            shape,
-        )?)),
-        Op::MatMul => Ok(TensorType::f32(matmul_shape(
-            node,
-            &inputs[0].shape,
-            &inputs[1].shape,
-        )?)),
-        Op::Add | Op::Mul | Op::Sub | Op::Div | Op::Min | Op::Max => Ok(TensorType::f32(
-            elementwise_shape(node, op.name(), &inputs[0].shape, &inputs[1].shape)?,
-        )),
+        Op::Relu | Op::Sigmoid | Op::Neg => Ok(one()?.clone()),
+        Op::Transpose { perm } => Ok(TensorType::f32(transpose_shape(node, &one()?.shape, perm)?)),
+        Op::Reshape { shape } => Ok(TensorType::f32(reshape_shape(node, &one()?.shape, shape)?)),
+        Op::MatMul => {
+            let (a, b) = two()?;
+            Ok(TensorType::f32(matmul_shape(node, &a.shape, &b.shape)?))
+        }
+        Op::Add | Op::Mul | Op::Sub | Op::Div | Op::Min | Op::Max => {
+            let (a, b) = two()?;
+            Ok(TensorType::f32(elementwise_shape(
+                node,
+                op.name(),
+                &a.shape,
+                &b.shape,
+            )?))
+        }
     }
 }
 

@@ -241,7 +241,6 @@ const PANIC_BASELINE: &[&str] = &[
     "crates/core/src/passes/fold.rs",
     "crates/core/src/passes/layout.rs",
     "crates/core/src/passes/rebuild.rs",
-    "crates/core/src/shape.rs",
     "crates/core/src/verify.rs",
     "crates/onnx/src/lower.rs",
     "crates/onnx/src/tensor.rs",
