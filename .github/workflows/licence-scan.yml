@@ -26,8 +26,13 @@ jobs:
       # pluggy 1.5.0: ScanCode 32.5.0 does not start with newer pluggy releases.
       - run: python3 -m pip install "scancode-toolkit==32.5.0" "pluggy==1.5.0"
       - name: ScanCode (licences, copyrights)
-        run: scancode --license --copyright --json-pp scancode.json --processes 2 --ignore ".git/*" .
-      - run: python3 -I scripts/licence_scan_check.py scancode scancode.json | tee -a "$GITHUB_STEP_SUMMARY"
+        # The check's own test plants other licences and holders on purpose.
+        run: scancode --license --copyright --json-pp scancode.json --processes 2 --ignore ".git/*" --ignore "*/scripts/test_licence_scan_check.py" .
+      - name: Check the findings
+        # GitHub runs bash -e without pipefail: without it the pipe to tee hides the exit code.
+        run: |
+          set -o pipefail
+          python3 -I scripts/licence_scan_check.py scancode scancode.json | tee -a "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

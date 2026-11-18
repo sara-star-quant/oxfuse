@@ -19,6 +19,7 @@ OWN_HOLDER = "sara star quant"
 
 # Files that mention other licences (they quote or list them); ScanCode reports every mention.
 MENTIONS = {
+    "CONTRIBUTING.md": "the Developer Certificate of Origin text",
     "about.toml": "the licence allow list",
     "deny.toml": "the licence allow list",
     "crates/cli/tests/repo_hygiene.rs": "tests that read licence files",
