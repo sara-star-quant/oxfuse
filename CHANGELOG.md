@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- `oxfuse analyze` on an imported `Gemm` with `beta` other than 1 and a constant `C` now counts the rounding of `beta * C`. The importer used to fold that product before the graph existed, so the interval left it out. The output bits do not change, and the bound grows by that one rounding.
+
 ## 0.8.0 - 2026-11-17
 
 - New operators `Min` and `Max`, exact: IEEE 754-2019 `minimum` and `maximum` per element, so a NaN in either operand gives NaN and `-0.0` sorts below `+0.0` whichever order the operands come in (onnxruntime 1.31.0 on CPU gives the same). They broadcast like `Add`, and because the result is always one of the operands the CPU backend may write it into either operand's buffer. `analyze` carries the larger input bound. The ONNX importer lowers `Min` and `Max` of two or more operands, and `Clip` as `Min(Max(x, min), max)` (opset 13 inputs, scalar bounds; an omitted bound skips its step, see `docs/onnx.md` for where onnxruntime differs). Adding a variant to `Op` is breaking for code that matches it exhaustively, so this ships as a minor release.

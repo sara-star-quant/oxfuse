@@ -178,11 +178,12 @@ fn gemm_beta_values_1_0_neg_other() {
                 c: Some((vec![M as i64, N as i64], constant)),
                 ..Case::default()
             });
-            // A constant C is scaled at import; a runtime C gets a Mul; beta 0 drops C.
+            // Any C is scaled by a Mul node (never folded at import, so `analyze` sees
+            // the rounding); beta 1 needs none and beta 0 drops C.
             let muls = ops.iter().filter(|o| **o == "Mul").count();
             assert_eq!(
                 muls,
-                usize::from(beta != 1.0 && beta != 0.0 && !constant),
+                usize::from(beta != 1.0 && beta != 0.0),
                 "beta {beta} const {constant}"
             );
         }

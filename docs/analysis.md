@@ -8,7 +8,7 @@
 - **The bound is pessimistic.** It adds up worst cases. On the 50 graphs of the NumPy oracle corpus and the examples it was 3.7 times the real error at the median, 20.8 times at the 90th percentile and 1311 times at the worst element (419 elements where the real error is not zero; the others sit on exact results).
 - **Nothing is certified once a value is not finite.** An element that is, or came from, an infinity or NaN has a `null` bound. A non-finite output value is an error, as in `run`.
 - **Only the reference arithmetic.** The fast CPU backend returns the same bits, so the bound holds for it too. A GPU that does not fuse the same way has its own measured bound ([semantics.md](semantics.md)), and this tool does not cover it.
-- **The graph is analyzed as written**, without the optimization passes.
+- **The graph is analyzed as written**, without the optimization passes. For an ONNX model that is the imported graph: the importer does no arithmetic of its own (a `Gemm` `beta` scaling is a `Mul` node), so the interval covers the model's real-number result.
 
 ## Example
 
