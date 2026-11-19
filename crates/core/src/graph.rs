@@ -1,5 +1,4 @@
 //! The IR: an arena of values in definition order. Every op has one output.
-#![allow(clippy::indexing_slicing)] // baseline: 3 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{Op, TensorType, ValueId};
 use std::sync::Arc;
@@ -65,6 +64,13 @@ impl Graph {
         &self.values
     }
 
+    /// The value an id names. Ids come from this graph, so an id from another one
+    /// may be out of range; use `values().get(id.index())` for an id you do not trust.
+    ///
+    /// # Panics
+    ///
+    /// When `id` does not name a value of this graph.
+    #[allow(clippy::indexing_slicing)]
     pub fn value(&self, id: ValueId) -> &Value {
         &self.values[id.index()]
     }
@@ -101,7 +107,11 @@ impl Graph {
                 Source::Node {
                     op: Op::MatMul,
                     inputs,
-                } => elements(inputs[0]).saturating_mul(v.ty.shape[1]),
+                } => match (inputs.first(), v.ty.shape.get(1)) {
+                    (Some(&a), Some(&n)) => elements(a).saturating_mul(n),
+                    // Not a rank 2 MatMul: cannot happen for a verified graph; refuse it.
+                    _ => usize::MAX,
+                },
                 Source::Node { .. } => elements(ValueId(i as u32)),
                 _ => 0,
             })

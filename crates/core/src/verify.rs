@@ -1,6 +1,5 @@
 //! Independent re-check of every IR invariant. The builder cannot produce an
 //! invalid graph, so this exists to catch bugs in passes that rebuild graphs.
-#![allow(clippy::indexing_slicing)] // baseline: 1 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::shape::{check_shape, checked_num_elements, infer};
 use crate::{Error, Graph, Limits, Source, ValueId};
@@ -57,7 +56,13 @@ impl Graph {
                                 input.0
                             )));
                         }
-                        types.push(&self.values[input.index()].ty);
+                        let Some(operand) = self.values.get(input.index()) else {
+                            return Err(Error::Verify(format!(
+                                "node `{label}` uses value %{} that does not exist",
+                                input.0
+                            )));
+                        };
+                        types.push(&operand.ty);
                     }
                     let inferred = infer(&label, op, &types)?;
                     if inferred != value.ty {

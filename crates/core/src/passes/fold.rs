@@ -2,7 +2,6 @@
 //! and replaced by a constant of the same name. The evaluator is injected so
 //! core never depends on a backend; with the reference kernels the folded
 //! value is bit-identical to what the run-time path would compute.
-#![allow(clippy::expect_used, clippy::indexing_slicing)] // baseline: 5 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use super::rebuild::Rebuilder;
 use super::{Pass, PassOutput};
@@ -56,41 +55,51 @@ impl Pass for ConstantFolding {
 
     fn run(&self, graph: &Graph) -> Result<PassOutput, Error> {
         let mut rebuild = Rebuilder::new(graph, &self.limits);
-        let mut constants: Vec<Option<Arc<[f32]>>> = vec![None; graph.values().len()];
+        // One entry per value, pushed in definition order: the known data of a constant.
+        let mut constants: Vec<Option<Arc<[f32]>>> = Vec::with_capacity(graph.values().len());
         let mut folded = 0;
         for (index, value) in graph.values().iter().enumerate() {
             let old = ValueId(index as u32);
-            match &value.source {
+            let known = match &value.source {
                 Source::Constant(data) => {
-                    constants[index] = Some(Arc::clone(data));
                     rebuild.copy(old)?;
+                    Some(Arc::clone(data))
                 }
-                Source::Node { op, inputs }
-                    if inputs.iter().all(|id| constants[id.index()].is_some())
-                        && self.within_cap(value.ty.shape.as_slice())
-                        && inputs
-                            .iter()
-                            .all(|id| self.within_cap(&graph.value(*id).ty.shape)) =>
-                {
-                    let args: Vec<(&TensorType, &[f32])> = inputs
-                        .iter()
-                        .map(|id| {
-                            let data = constants[id.index()].as_deref();
-                            (
-                                &graph.value(*id).ty,
-                                data.expect("all inputs were checked to be constants"),
-                            )
+                Source::Node { op, inputs } => {
+                    // Foldable when the result and every input are within the cap and every
+                    // input is a constant; `None` when any of that fails.
+                    let args: Option<Vec<(&TensorType, &[f32])>> = self
+                        .within_cap(value.ty.shape.as_slice())
+                        .then(|| {
+                            inputs
+                                .iter()
+                                .map(|id| {
+                                    let data = constants.get(id.index())?.as_deref()?;
+                                    let ty = &graph.values().get(id.index())?.ty;
+                                    self.within_cap(&ty.shape).then_some((ty, data))
+                                })
+                                .collect()
                         })
-                        .collect();
-                    let data: Arc<[f32]> = self.evaluator.eval(op, &args)?.into();
-                    rebuild.replace_with_constant(old, Arc::clone(&data))?;
-                    constants[index] = Some(data);
-                    folded += 1;
+                        .flatten();
+                    match args {
+                        Some(args) => {
+                            let data: Arc<[f32]> = self.evaluator.eval(op, &args)?.into();
+                            rebuild.replace_with_constant(old, Arc::clone(&data))?;
+                            folded += 1;
+                            Some(data)
+                        }
+                        None => {
+                            rebuild.copy(old)?;
+                            None
+                        }
+                    }
                 }
-                _ => {
+                Source::Input => {
                     rebuild.copy(old)?;
+                    None
                 }
-            }
+            };
+            constants.push(known);
         }
         Ok(PassOutput {
             graph: rebuild.finish()?,

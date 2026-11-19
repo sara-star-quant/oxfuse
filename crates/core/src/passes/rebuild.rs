@@ -3,7 +3,6 @@
 //! value, whether to copy it, alias it to an earlier value or replace it
 //! with a constant. Names and output names carry over, so the graph
 //! interface cannot change by accident.
-#![allow(clippy::expect_used, clippy::indexing_slicing)] // baseline: 3 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{Error, Graph, GraphBuilder, Limits, Op, Source, ValueId};
 use std::sync::Arc;
@@ -25,13 +24,21 @@ impl<'g> Rebuilder<'g> {
 
     /// The new id for an old value. Values are rebuilt in definition order,
     /// so every input of a node is mapped before the node is.
-    pub(crate) fn mapped(&self, old: ValueId) -> ValueId {
-        self.map[old.index()].expect("a value is rebuilt before any value that uses it")
+    pub(crate) fn mapped(&self, old: ValueId) -> Result<ValueId, Error> {
+        self.map
+            .get(old.index())
+            .copied()
+            .flatten()
+            .ok_or_else(|| Error::Verify(format!("value %{} is used before it is rebuilt", old.0)))
     }
 
     /// `old` is represented by the already-built `new` from now on.
     pub(crate) fn alias(&mut self, old: ValueId, new: ValueId) {
-        self.map[old.index()] = Some(new);
+        // `map` has one slot per value of the graph, so `old` is in range; if it were
+        // not, `mapped` would report the value as never rebuilt.
+        if let Some(slot) = self.map.get_mut(old.index()) {
+            *slot = Some(new);
+        }
     }
 
     /// Copies `old` with its inputs remapped.
@@ -45,7 +52,10 @@ impl<'g> Rebuilder<'g> {
                     .constant_shared(&name, value.ty.shape.clone(), Arc::clone(data))?
             }
             Source::Node { op, inputs } => {
-                let inputs: Vec<ValueId> = inputs.iter().map(|&id| self.mapped(id)).collect();
+                let inputs = inputs
+                    .iter()
+                    .map(|&id| self.mapped(id))
+                    .collect::<Result<Vec<ValueId>, Error>>()?;
                 self.builder.node(&name, op.clone(), &inputs)?
             }
         };
@@ -86,8 +96,33 @@ impl<'g> Rebuilder<'g> {
             .output_names()
             .iter()
             .zip(self.graph.outputs())
-            .map(|(name, &id)| (name.clone(), self.mapped(id)))
-            .collect();
+            .map(|(name, &id)| Ok((name.clone(), self.mapped(id)?)))
+            .collect::<Result<_, Error>>()?;
         self.builder.finish_named(outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_value_that_was_never_rebuilt_is_an_error_not_a_panic() {
+        let mut b = GraphBuilder::new(Limits::default());
+        let x = b.input("x", vec![1]).unwrap();
+        let graph = b.finish(&[x]).unwrap();
+        let rebuild = Rebuilder::new(&graph, &Limits::default());
+        assert!(matches!(rebuild.mapped(x), Err(Error::Verify(_))));
+        assert!(matches!(rebuild.mapped(ValueId(9)), Err(Error::Verify(_))));
+    }
+
+    #[test]
+    fn a_rebuilt_value_maps_to_its_new_id() {
+        let mut b = GraphBuilder::new(Limits::default());
+        let x = b.input("x", vec![1]).unwrap();
+        let graph = b.finish(&[x]).unwrap();
+        let mut rebuild = Rebuilder::new(&graph, &Limits::default());
+        let new = rebuild.copy(x).unwrap();
+        assert_eq!(rebuild.mapped(x).unwrap(), new);
     }
 }
