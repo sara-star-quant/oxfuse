@@ -4,6 +4,8 @@ All notable changes. The format follows Keep a Changelog; versions follow Semant
 
 ## Unreleased
 
+- New library function `oxfuse_runtime::analyze_box`: for an input box `[lo, hi]` it returns, per output element, an interval that contains the exact real result and the reference float32 result for every input in the box, using plain interval arithmetic with outward rounding (a divisor that reaches zero, or an infinite endpoint, gives an unbounded element). New error `Error::InvalidBox` (E022) for a NaN endpoint or `lo > hi`. The command line does not use it yet.
+
 - `oxfuse analyze` states its assumptions (round to nearest, a correctly rounded fused multiply-add, gradual underflow, float32 inputs) and refuses to run on a thread that flushes subnormal floats to zero, where its rounding model would not hold.
 
 - `oxfuse analyze` on an imported `Gemm` with `beta` other than 1 and a constant `C` now counts the rounding of `beta * C`. The importer used to fold that product before the graph existed, so the interval left it out. The output bits do not change, and the bound grows by that one rounding.

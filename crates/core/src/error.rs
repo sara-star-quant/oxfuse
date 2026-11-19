@@ -86,6 +86,8 @@ pub enum Error {
     Verify(String),
     #[error("backend error: {0}")]
     Backend(String),
+    #[error("input box `{name}` is invalid: {reason}")]
+    InvalidBox { name: String, reason: String },
 }
 
 impl Error {
@@ -112,6 +114,7 @@ impl Error {
             Error::UnexpectedAttribute { .. } => "E019",
             Error::InvalidAttribute { .. } => "E020",
             Error::Backend(_) => "E021",
+            Error::InvalidBox { .. } => "E022",
         }
     }
 }
@@ -199,6 +202,10 @@ mod tests {
             },
             Error::Verify("bad".into()),
             Error::Backend("no adapter".into()),
+            Error::InvalidBox {
+                name: "x".into(),
+                reason: "r".into(),
+            },
         ]
     }
 

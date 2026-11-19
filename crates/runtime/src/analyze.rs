@@ -44,12 +44,12 @@ pub(crate) const SIGMOID_RELATIVE: f64 = pow2(-22) * (1.0 + pow2(-20));
 
 /// Added to a sigmoid bound: the spacing of subnormals, for results that
 /// underflow.
-const SIGMOID_ABSOLUTE: f64 = pow2(-149);
+pub(crate) const SIGMOID_ABSOLUTE: f64 = pow2(-149);
 
 /// Below this input the sigmoid is smaller than 2^-125, where `exp` of the
 /// negated input overflows and the relative model stops holding.
-const SIGMOID_TINY_BELOW: f32 = -87.0;
-const SIGMOID_TINY_BOUND: f64 = pow2(-125);
+pub(crate) const SIGMOID_TINY_BELOW: f32 = -87.0;
+pub(crate) const SIGMOID_TINY_BOUND: f64 = pow2(-125);
 
 /// Round a float64 result up by one unit of its relative error.
 fn up(x: f64) -> f64 {
@@ -178,7 +178,7 @@ pub fn analyze(graph: &Graph, inputs: &[Tensor]) -> Result<Vec<Certificate>, Err
 
 /// For each output element of a binary op, the element each operand
 /// contributes (NumPy broadcasting).
-fn operand_maps(shapes: &[&[usize]], len: usize) -> (Vec<usize>, Vec<usize>) {
+pub(crate) fn operand_maps(shapes: &[&[usize]], len: usize) -> (Vec<usize>, Vec<usize>) {
     if shapes[0] == shapes[1] {
         return ((0..len).collect(), (0..len).collect());
     }
@@ -279,7 +279,7 @@ fn matmul_bounds(v: &[&[f32]], e: &[&[f64]], shapes: &[&[usize]]) -> Vec<f64> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::{Backend, ReferenceBackend};
     use oxfuse_core::{GraphBuilder, Limits};
@@ -567,7 +567,7 @@ mod tests {
 
     /// The exact real result, to within float64's own error (about 1e-16
     /// relative), which is far below any bound the analysis returns.
-    fn exact(graph: &Graph, inputs: &[Tensor]) -> Vec<Vec<f64>> {
+    pub(crate) fn exact(graph: &Graph, inputs: &[Tensor]) -> Vec<Vec<f64>> {
         let plan = Plan::build(graph);
         let mut slots: Vec<Vec<f64>> = vec![Vec::new(); plan.slot_shapes.len()];
         for (b, t) in plan.inputs.iter().zip(inputs) {
@@ -628,7 +628,7 @@ mod tests {
     }
 
     /// A random small graph over every operator, with inputs of mixed magnitude.
-    fn random_case(seed: u64) -> (Graph, Vec<Tensor>) {
+    pub(crate) fn random_case(seed: u64) -> (Graph, Vec<Tensor>) {
         let pick = |salt: u64, n: usize| {
             (seed.wrapping_mul(2654435761).wrapping_add(salt * 97) >> 7) as usize % n
         };

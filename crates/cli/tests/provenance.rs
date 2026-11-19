@@ -11,9 +11,10 @@ fn root() -> PathBuf {
 }
 
 /// The files whose functions compute or move results.
-const FILES: [&str; 8] = [
+const FILES: [&str; 9] = [
     "crates/runtime/src/math.rs",
     "crates/runtime/src/analyze.rs",
+    "crates/runtime/src/interval.rs",
     "crates/runtime/src/kernels.rs",
     "crates/runtime/src/cpu/vecmath.rs",
     "crates/runtime/src/cpu/matmul.rs",
@@ -29,7 +30,9 @@ fn functions(path: &str) -> BTreeSet<String> {
 }
 
 fn names_in(source: &str) -> BTreeSet<String> {
+    // A test module other test modules borrow from is `pub(crate) mod tests`.
     let code = source.split("\nmod tests {").next().unwrap();
+    let code = code.split("\npub(crate) mod tests {").next().unwrap();
     code.lines()
         .filter_map(|line| {
             let line = line.trim_start();
