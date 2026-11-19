@@ -2,11 +2,13 @@ name: licence-scan
 
 # Scans the repository for licences and copyright holders with ScanCode and
 # checks the findings against scripts/licence_scan_check.py. Runs on release
-# branches and on demand. The snippet scan (SCANOSS) is a local release step,
+# branches, weekly on main, and on demand. The snippet scan (SCANOSS) is a local release step,
 # `just licence-snippets`: its free API rate-limits hosted runners.
 
 on:
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -14,7 +16,7 @@ permissions:
 
 jobs:
   scan:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'release-') || startsWith(github.head_ref, 'licence-')
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-') || startsWith(github.head_ref, 'licence-')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

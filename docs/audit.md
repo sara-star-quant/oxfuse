@@ -22,7 +22,7 @@ Skip the tests on a first pass; read them to see what a claim is checked against
 - **Inputs are untrusted**: a graph file, an ONNX model, an inputs file. Size, rank, element count and work (`max_macs`) are bounded before anything is allocated ([architecture.md](architecture.md), [onnx.md](onnx.md)).
 - **No `unsafe`**: `unsafe_code = "forbid"` in the workspace lints. The dependencies that use `unsafe` are `wgpu` and `fearless_simd` (the SIMD kernels); their advisories count as ours ([SECURITY.md](../SECURITY.md)).
 - **No network, no native code loaded from a model**, no build script of our own.
-- **Dependencies**: `cargo deny` (advisories, licences, sources) on every pull request, a ScanCode licence scan on release branches ([licensing.md](licensing.md)), and Dependabot.
+- **Dependencies**: `cargo deny` (advisories, licences, sources) on every pull request, a ScanCode licence scan on release branches and weekly on `main` ([licensing.md](licensing.md)), and Dependabot.
 
 ## Check it yourself
 
