@@ -103,8 +103,23 @@ pub(crate) fn half_ulp(v: f32) -> f64 {
     f64::from_bits(((1023 + exponent - 24) as u64) << 52)
 }
 
+/// Whether this thread computes with gradual underflow: halving the smallest normal float32
+/// gives a subnormal that survives being added to itself. Under flush-to-zero or
+/// denormals-are-zero (a CPU mode some programs switch on) it does not, and the rounding
+/// model of the bounds, which counts subnormals at their fixed spacing, no longer holds.
+fn gradual_underflow(tiny: f32) -> bool {
+    let half = tiny / 2.0;
+    half > 0.0 && half + half == tiny
+}
+
 /// Run `graph` on `inputs` and certify every output element.
 pub fn analyze(graph: &Graph, inputs: &[Tensor]) -> Result<Vec<Certificate>, Error> {
+    if !gradual_underflow(std::hint::black_box(f32::MIN_POSITIVE)) {
+        return Err(Error::Backend(
+            "analyze needs subnormal float32 arithmetic, but this thread flushes subnormals to zero"
+                .into(),
+        ));
+    }
     let plan = Plan::build(graph);
     if inputs.len() != plan.inputs.len() {
         return Err(Error::InputCount {
@@ -293,6 +308,15 @@ mod tests {
     fn half_ulp_of_a_non_finite_value_is_infinite() {
         assert_eq!(half_ulp(f32::INFINITY), f64::INFINITY);
         assert_eq!(half_ulp(f32::NAN), f64::INFINITY);
+    }
+
+    #[test]
+    fn gradual_underflow_needs_a_subnormal_that_survives_addition() {
+        assert!(gradual_underflow(f32::MIN_POSITIVE));
+        // Flush-to-zero: the half is zero.
+        assert!(!gradual_underflow(0.0));
+        // Denormals-are-zero reads the half as zero, so the sum is not the whole.
+        assert!(!gradual_underflow(f32::from_bits(3)));
     }
 
     #[test]
