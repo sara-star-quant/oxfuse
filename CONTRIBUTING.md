@@ -6,6 +6,7 @@ Oxfuse is a small, deliberately scoped project. See the [roadmap](ROADMAP.md) fo
 
     rustup show          # installs the toolchain pinned in rust-toolchain.toml
     just ci              # format, lint, tests, docs (install just: https://just.systems)
+    just ready           # just ci plus the script tests: run it before every push
     just onnx-check      # ONNX fixtures vs onnxruntime and the onnx reference evaluator (needs .venv-onnx, see the recipe in the justfile)
     just oracle-check    # cross-checks examples and the corpus against NumPy (pip install -r scripts/requirements.txt)
     just mutants         # optional, about an hour (core, runtime, cli, onnx shards): lists breakages no test notices (cargo install cargo-mutants)

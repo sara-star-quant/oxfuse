@@ -27,6 +27,9 @@ deny:
 
 ci: fmt-check lint test doc
 
+# Everything the required CI jobs run that a laptop can: run it before every push.
+ready: ci scripts-test
+
 # Cross-check hand-computed examples and the committed corpus against the NumPy oracle.
 oracle-check:
     python3 -I scripts/gen_expected.py examples --check
