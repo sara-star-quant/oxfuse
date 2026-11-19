@@ -2,6 +2,12 @@
 
 `oxfuse analyze` runs the reference kernels on your inputs and prints, for every output element, the value and a bound: the exact real-number result of the same graph on the same float32 inputs lies within `value +- bound`. It is the first tool here that says how far a result can be from the truth, not only whether two runs agree.
 
+## What it assumes
+
+- **IEEE 754 binary32 round to nearest**, with a correctly rounded fused multiply-add (Rust's `mul_add` is, in hardware or in software).
+- **Gradual underflow.** A thread that flushes subnormals to zero, or reads them as zero, breaks the rounding model; `analyze` checks this at start and refuses to run.
+- **float32 inputs.** Decimal numbers in an inputs file round to float32 when read, and the interval covers those float32 values.
+
 ## What it does not do
 
 - **It is for the inputs you give.** It does not bound the error over a range of inputs.
