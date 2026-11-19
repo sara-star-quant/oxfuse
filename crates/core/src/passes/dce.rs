@@ -1,10 +1,9 @@
 //! Dead-code elimination: keep what the outputs transitively use, plus every
 //! graph input. Inputs are never removed because they are the interface.
-#![allow(clippy::indexing_slicing)] // baseline: 4 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use super::rebuild::Rebuilder;
 use super::{Pass, PassOutput};
-use crate::{Error, Graph, Limits, Source};
+use crate::{Error, Graph, Limits, Source, ValueId};
 
 pub struct DeadCodeElimination {
     limits: Limits,
@@ -24,17 +23,23 @@ impl Pass for DeadCodeElimination {
     fn run(&self, graph: &Graph) -> Result<PassOutput, Error> {
         let count = graph.values().len();
         let mut live = vec![false; count];
+        let mark = |live: &mut Vec<bool>, id: &ValueId| {
+            // An id outside the graph cannot be marked; the rebuild below reports it.
+            if let Some(slot) = live.get_mut(id.index()) {
+                *slot = true;
+            }
+        };
         for id in graph.outputs().iter().chain(graph.inputs()) {
-            live[id.index()] = true;
+            mark(&mut live, id);
         }
         // Inputs of a node have smaller ids, so one backward sweep suffices.
-        for index in (0..count).rev() {
-            if !live[index] {
+        for (index, value) in graph.values().iter().enumerate().rev() {
+            if !live.get(index).copied().unwrap_or(false) {
                 continue;
             }
-            if let Source::Node { inputs, .. } = &graph.values()[index].source {
+            if let Source::Node { inputs, .. } = &value.source {
                 for input in inputs {
-                    live[input.index()] = true;
+                    mark(&mut live, input);
                 }
             }
         }

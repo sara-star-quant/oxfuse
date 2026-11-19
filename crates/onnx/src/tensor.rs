@@ -1,5 +1,4 @@
 //! `TensorProto` to dense data, with every size checked before any copy.
-#![allow(clippy::expect_used)] // baseline: 2 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::{
     OnnxError,
@@ -69,12 +68,12 @@ enum Kind {
     I64,
 }
 
-fn f32_from_le(b: &[u8]) -> f32 {
-    f32::from_le_bytes(b.try_into().expect("chunks_exact(4)"))
+fn f32_from_le(b: &[u8]) -> Option<f32> {
+    b.try_into().ok().map(f32::from_le_bytes)
 }
 
-fn i64_from_le(b: &[u8]) -> i64 {
-    i64::from_le_bytes(b.try_into().expect("chunks_exact(8)"))
+fn i64_from_le(b: &[u8]) -> Option<i64> {
+    b.try_into().ok().map(i64::from_le_bytes)
 }
 
 /// Validated dims and their element count. Every step is checked against
@@ -106,7 +105,7 @@ fn pick<T: Copy, S: Copy + Into<T>>(
     typed: &[S],
     count: usize,
     width: usize,
-    from_le: fn(&[u8]) -> T,
+    from_le: fn(&[u8]) -> Option<T>,
 ) -> Result<Vec<T>, String> {
     match (raw.is_empty(), typed.is_empty()) {
         (false, false) => Err("both raw_data and a typed list are set".into()),
@@ -117,7 +116,10 @@ fn pick<T: Copy, S: Copy + Into<T>>(
                     raw.len()
                 ))
             } else {
-                Ok(raw.chunks_exact(width).map(from_le).collect())
+                raw.chunks_exact(width)
+                    .map(from_le)
+                    .collect::<Option<Vec<T>>>()
+                    .ok_or_else(|| "raw_data holds an element of the wrong width".to_owned())
             }
         }
         (true, false) => {
@@ -423,5 +425,18 @@ mod tests {
         t.float_data = vec![1.0];
         t.segment = Some(Segment { begin: 0, end: 1 });
         assert!(reason(read_tensor(&t, &limits())).contains("segment"));
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    #[test]
+    fn little_endian_readers_refuse_a_slice_of_the_wrong_width() {
+        assert_eq!(f32_from_le(&1.5f32.to_le_bytes()), Some(1.5));
+        assert_eq!(i64_from_le(&(-7i64).to_le_bytes()), Some(-7));
+        assert_eq!(f32_from_le(&[0, 0, 0]), None);
+        assert_eq!(i64_from_le(&[0; 4]), None);
     }
 }

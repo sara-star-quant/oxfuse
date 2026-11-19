@@ -231,18 +231,20 @@ fn hardware_claims_match_what_exists() {
 }
 
 /// Library code in core and onnx parses files an attacker can write, so a panic there
-/// is a denial of service. Both crates deny the panicking lints; the files below
-/// still carry a baseline allow that is converted file by file. This list only shrinks:
-/// a new entry needs a reason a reviewer accepts, a removed one means the file is clean.
-const PANIC_BASELINE: &[&str] = &[
-    "crates/core/src/builder.rs",
-    "crates/core/src/graph.rs",
-    "crates/core/src/passes/dce.rs",
-    "crates/core/src/passes/fold.rs",
-    "crates/core/src/passes/layout.rs",
-    "crates/core/src/passes/rebuild.rs",
-    "crates/core/src/verify.rs",
-    "crates/onnx/src/tensor.rs",
+/// is a denial of service. Both crates deny the panicking lints; an `allow` of one of them,
+/// at file or item level, must be listed here with how many there are and why. The list
+/// only shrinks: a new entry needs a reason a reviewer accepts.
+const PANIC_ALLOWS: &[(&str, usize, &str)] = &[
+    (
+        "crates/core/src/graph.rs",
+        1,
+        "Graph::value documents that it panics on an id from another graph",
+    ),
+    (
+        "crates/core/src/passes/layout.rs",
+        1,
+        "compose_into indexes permutations that transpose_shape checked; Kani covers rank 4",
+    ),
 ];
 
 fn rust_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
@@ -257,8 +259,9 @@ fn rust_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn panicking_lints_are_denied_in_core_and_onnx_except_the_listed_baseline() {
-    let mut found = Vec::new();
+fn panicking_lints_are_denied_in_core_and_onnx_except_the_listed_allows() {
+    let lints = ["indexing_slicing", "unwrap_used", "expect_used", "panic"];
+    let mut found: Vec<(String, usize)> = Vec::new();
     for krate in ["core", "onnx"] {
         let src = root().join("crates").join(krate).join("src");
         let lib = fs::read_to_string(src.join("lib.rs")).unwrap();
@@ -272,23 +275,31 @@ fn panicking_lints_are_denied_in_core_and_onnx_except_the_listed_baseline() {
         rust_files(&src, &mut files);
         for path in files {
             let text = fs::read_to_string(&path).unwrap();
-            let allows = text.lines().any(|l| {
-                l.starts_with("#![allow(")
-                    && ["indexing_slicing", "unwrap_used", "expect_used", "panic"]
-                        .iter()
-                        .any(|n| l.contains(n))
-            });
-            if allows {
-                let rel = path.strip_prefix(root().join("")).unwrap_or(&path);
-                found.push(rel.to_string_lossy().replace("../", "").replace('\\', "/"));
+            let count = text
+                .lines()
+                .filter(|l| {
+                    let l = l.trim_start();
+                    (l.starts_with("#[allow(")
+                        || l.starts_with("#![allow(")
+                        || l.starts_with("#[expect("))
+                        && lints.iter().any(|n| l.contains(n))
+                })
+                .count();
+            if count > 0 {
+                let rel = path.strip_prefix(root()).unwrap_or(&path);
+                let rel = rel.to_string_lossy().replace("../", "").replace('\\', "/");
+                found.push((rel, count));
             }
         }
     }
     found.sort();
-    let mut want: Vec<String> = PANIC_BASELINE.iter().map(|s| s.to_string()).collect();
+    let mut want: Vec<(String, usize)> = PANIC_ALLOWS
+        .iter()
+        .map(|(f, n, _)| (f.to_string(), *n))
+        .collect();
     want.sort();
     assert_eq!(
         found, want,
-        "the files that allow panicking lints must match PANIC_BASELINE"
+        "the allows of panicking lints must match PANIC_ALLOWS"
     );
 }

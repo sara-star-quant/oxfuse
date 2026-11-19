@@ -39,7 +39,7 @@ impl Pass for CommonSubexpressionElimination {
                 inputs
                     .iter()
                     .map(|&id| rebuild.mapped(id))
-                    .collect::<Vec<_>>(),
+                    .collect::<Result<Vec<_>, Error>>()?,
             );
             if let Some(&existing) = seen.get(&key) {
                 rebuild.alias(old, existing);

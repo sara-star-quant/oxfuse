@@ -1,6 +1,5 @@
 //! Builds a graph, inferring each node's type as it is added, so a graph
 //! with an ill-typed node cannot be constructed.
-#![allow(clippy::expect_used)] // baseline: 1 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use crate::shape::{check_shape, checked_num_elements, infer};
 use crate::{Error, Graph, Limits, Op, Source, TensorType, Value, ValueId};
@@ -145,8 +144,13 @@ impl GraphBuilder {
                 name: name.to_owned(),
             });
         }
-        let id =
-            ValueId(u32::try_from(self.values.len()).expect("the value cap keeps ids within u32"));
+        let index = u32::try_from(self.values.len()).map_err(|_| Error::TensorLimit {
+            name: name.to_owned(),
+            what: "values",
+            found: self.values.len(),
+            limit: u32::MAX as usize,
+        })?;
+        let id = ValueId(index);
         self.total_elements = total;
         self.names.insert(name.to_owned(), id);
         self.values.push(Value {

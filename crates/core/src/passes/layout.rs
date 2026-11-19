@@ -4,7 +4,6 @@
 //! `Reshape` to the shape it already has is aliased to its input. Both ops
 //! only move bits, so the result is bit-identical and the intermediate value,
 //! if nothing else reads it, is left for dead-code elimination.
-#![allow(clippy::indexing_slicing)] // baseline: 3 site(s) to convert to errors; the list only shrinks (repo_hygiene.rs)
 
 use super::rebuild::Rebuilder;
 use super::{Pass, PassOutput};
@@ -39,6 +38,10 @@ fn compose(inner: &[usize], outer: &[usize]) -> Vec<usize> {
 
 /// `compose` into `out`, which must be as long as `outer`. Split out so the
 /// model checker can run it without an allocation.
+///
+/// Indexing is deliberate: both permutations were checked by `transpose_shape`, so every
+/// `inner[i]` is in range. Kani checks every pair of rank 4 permutations.
+#[allow(clippy::indexing_slicing)]
 fn compose_into(inner: &[usize], outer: &[usize], out: &mut [usize]) {
     for (slot, &i) in out.iter_mut().zip(outer) {
         *slot = inner[i];
@@ -64,7 +67,11 @@ impl Pass for LayoutElision {
                 rebuild.copy(old)?;
                 continue;
             }
-            let input = rebuild.mapped(inputs[0]);
+            let Some(&first) = inputs.first() else {
+                rebuild.copy(old)?;
+                continue;
+            };
+            let input = rebuild.mapped(first)?;
             // Look through one earlier layout node of the same kind.
             let (source, source_shape, op) = match (links.get(&input), op) {
                 (
@@ -90,7 +97,7 @@ impl Pass for LayoutElision {
                     }),
                     Op::Reshape { .. },
                 ) => (*source, source_shape.clone(), op.clone()),
-                _ => (input, graph.value(inputs[0]).ty.shape.clone(), op.clone()),
+                _ => (input, graph.value(first).ty.shape.clone(), op.clone()),
             };
             let identity = match &op {
                 Op::Transpose { perm } => perm.iter().enumerate().all(|(i, &p)| i == p),
