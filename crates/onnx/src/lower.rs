@@ -529,21 +529,10 @@ impl Cx<'_> {
         self.emit(name, Op::Transpose { perm: vec![1, 0] }, &[t], shape)
     }
 
-    /// `k * t`: a constant is scaled at import (the same float32 product the
-    /// runtime would compute), a runtime tensor gets a `Mul` node.
+    /// `k * t` as a `Mul` node, never folded here: a product computed at import would
+    /// round outside the graph, where `analyze` cannot count it. The optimizer folds a
+    /// constant operand later with the same float32 product.
     fn scale(&mut self, name: &str, t: T, k: f32) -> Result<T, OnnxError> {
-        if let Some(data) = &t.data {
-            let scaled: Arc<[f32]> = data.iter().map(|v| k * v).collect::<Vec<_>>().into();
-            let id = self
-                .b
-                .constant_shared(name, t.shape.clone(), scaled.clone())?;
-            self.total = self.total.saturating_add(scaled.len());
-            return Ok(T {
-                id,
-                shape: t.shape,
-                data: Some(scaled),
-            });
-        }
         let k = self.scalar(&format!("{name}.k"), k)?;
         let shape = t.shape.clone();
         self.emit(name, Op::Mul, &[&k, &t], shape)
