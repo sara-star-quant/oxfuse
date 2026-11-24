@@ -27,6 +27,7 @@ use oxfuse_core::{Error, Graph, Op};
 /// exact result and the reference float32 result of element `i`, for every input in
 /// the box. An infinite end means unbounded on that side.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Enclosure {
     pub name: String,
     pub shape: Vec<usize>,
@@ -41,19 +42,19 @@ pub(crate) struct Interval {
     pub(crate) hi: f64,
 }
 
-const WHOLE: Interval = Interval {
+pub(crate) const WHOLE: Interval = Interval {
     lo: f64::NEG_INFINITY,
     hi: f64::INFINITY,
 };
 
 /// The largest finite float32, as a float64.
-const F32_MAX: f64 = f32::MAX as f64;
+pub(crate) const F32_MAX: f64 = f32::MAX as f64;
 
 /// Relative slack for a float64 evaluation of the sigmoid (an `exp` within a few ulps, a
 /// sum and a quotient).
 const SIGMOID_F64_SLACK: f64 = 16.0 * f64::EPSILON;
 
-fn up64(x: f64) -> f64 {
+pub(crate) fn up64(x: f64) -> f64 {
     if x.is_infinite() {
         x
     } else {
@@ -61,7 +62,7 @@ fn up64(x: f64) -> f64 {
     }
 }
 
-fn down64(x: f64) -> f64 {
+pub(crate) fn down64(x: f64) -> f64 {
     if x.is_infinite() {
         x
     } else {
@@ -181,7 +182,12 @@ fn matmul(a: &[Interval], b: &[Interval], shapes: &[&[usize]]) -> Vec<Interval> 
     out
 }
 
-fn step(op: &Op, v: &[&[Interval]], shapes: &[&[usize]], out_len: usize) -> Vec<Interval> {
+pub(crate) fn step(
+    op: &Op,
+    v: &[&[Interval]],
+    shapes: &[&[usize]],
+    out_len: usize,
+) -> Vec<Interval> {
     let binary = |f: fn(Interval, Interval) -> Interval| {
         let (ia, ib) = operand_maps(shapes, out_len);
         (0..out_len).map(|i| f(v[0][ia[i]], v[1][ib[i]])).collect()
@@ -251,9 +257,12 @@ fn check_box(name: &str, shape: &[usize], lo: &Tensor, hi: &Tensor) -> Result<()
     Ok(())
 }
 
-/// Run `graph` over the input box `[lo, hi]` and enclose every output element.
-pub fn analyze_box(graph: &Graph, lo: &[Tensor], hi: &[Tensor]) -> Result<Vec<Enclosure>, Error> {
-    let plan = Plan::build(graph);
+/// The interval enclosure of every slot, from plain interval arithmetic alone.
+pub(crate) fn plain_slots(
+    plan: &Plan,
+    lo: &[Tensor],
+    hi: &[Tensor],
+) -> Result<Vec<Vec<Interval>>, Error> {
     for found in [lo.len(), hi.len()] {
         if found != plan.inputs.len() {
             return Err(Error::InputCount {
@@ -292,15 +301,41 @@ pub fn analyze_box(graph: &Graph, lo: &[Tensor], hi: &[Tensor]) -> Result<Vec<En
         let out = step(&s.op, &operands, &shapes, len);
         slots[s.output] = out;
     }
+    Ok(slots)
+}
+
+/// How many noise symbols the affine layer may track: each element of every tensor carries
+/// one coefficient per symbol, so this bounds memory.
+pub const DEFAULT_MAX_SYMBOLS: usize = 256;
+
+/// Run `graph` over the input box `[lo, hi]` and enclose every output element, with affine
+/// forms (correlations kept) intersected with plain intervals.
+pub fn analyze_box(graph: &Graph, lo: &[Tensor], hi: &[Tensor]) -> Result<Vec<Enclosure>, Error> {
+    analyze_box_with(graph, lo, hi, DEFAULT_MAX_SYMBOLS)
+}
+
+/// Like [`analyze_box`] with at most `max_symbols` noise symbols. Fewer symbols use less
+/// memory and keep fewer correlations (never soundness): inputs beyond the budget are
+/// treated as independent errors, and `0` is plain interval arithmetic.
+pub fn analyze_box_with(
+    graph: &Graph,
+    lo: &[Tensor],
+    hi: &[Tensor],
+    max_symbols: usize,
+) -> Result<Vec<Enclosure>, Error> {
+    let plan = Plan::build(graph);
+    let plain = plain_slots(&plan, lo, hi)?;
+    let refined = crate::affine::refine(&plan, lo, hi, &plain, max_symbols);
     Ok(plan
         .outputs
         .iter()
         .zip(graph.output_names())
-        .map(|(&slot, name)| Enclosure {
+        .zip(refined)
+        .map(|((&slot, name), spans)| Enclosure {
             name: name.clone(),
             shape: plan.slot_shapes[slot].clone(),
-            lo: slots[slot].iter().map(|span| span.lo).collect(),
-            hi: slots[slot].iter().map(|span| span.hi).collect(),
+            lo: spans.iter().map(|span| span.lo).collect(),
+            hi: spans.iter().map(|span| span.hi).collect(),
         })
         .collect())
 }

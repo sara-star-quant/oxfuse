@@ -27,6 +27,7 @@
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
+mod affine;
 mod analyze;
 mod backend;
 mod cpu;
@@ -42,7 +43,7 @@ pub use analyze::{Certificate, analyze};
 pub use backend::{Backend, Executable};
 pub use cpu::{CpuBackend, simd_level};
 pub use evaluator::ReferenceEvaluator;
-pub use interval::{Enclosure, analyze_box};
+pub use interval::{DEFAULT_MAX_SYMBOLS, Enclosure, analyze_box, analyze_box_with};
 pub use math::sigmoid;
 pub use plan::{InputBinding, Plan, Step};
 pub use reference::ReferenceBackend;
