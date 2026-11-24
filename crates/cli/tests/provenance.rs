@@ -11,10 +11,11 @@ fn root() -> PathBuf {
 }
 
 /// The files whose functions compute or move results.
-const FILES: [&str; 9] = [
+const FILES: [&str; 10] = [
     "crates/runtime/src/math.rs",
     "crates/runtime/src/analyze.rs",
     "crates/runtime/src/interval.rs",
+    "crates/runtime/src/affine.rs",
     "crates/runtime/src/kernels.rs",
     "crates/runtime/src/cpu/vecmath.rs",
     "crates/runtime/src/cpu/matmul.rs",
