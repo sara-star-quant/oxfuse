@@ -108,7 +108,7 @@ Every claim maps to a row and a reproduction command in [docs/claims.md](docs/cl
 
 `f32` only, row-major. CPU by default; an optional GPU backend (`--features wgpu`, `--backend wgpu`) is measured on the devices in [docs/adapters.md](docs/adapters.md), with no support claimed for any device. Not supported: broadcasting in `MatMul`, batched `MatMul`, `-1` in `Reshape`, NaN or infinity in JSON files, a GPU in the default build. The plan for more operators is in [ROADMAP.md](ROADMAP.md).
 
-For production inference, large models, training or speed-critical CPU work, use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [docs/comparison.md](docs/comparison.md) quotes what each says about itself.
+For production inference, large models, training or speed-critical CPU work, use ONNX Runtime (through `ort`), `tract`, `candle` or `burn`; [docs/comparison.md](docs/comparison.md) quotes what several of the others say about themselves.
 
 ## Platforms
 
