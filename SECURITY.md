@@ -7,6 +7,7 @@ Oxfuse reads graph files, ONNX models and input files, so the parsing and resour
 - Crashes, panics, hangs or unbounded memory use caused by a crafted graph file, ONNX model or inputs file. Files are untrusted: sizes, value counts, tensor ranks and element counts are bounded before anything is allocated (see the limits in `crates/core/src/limits.rs`).
 - Any case where an optimization pass changes the result of a graph.
 - Incorrect results from an operation compared with its documented semantics.
+- An `analyze` bound or enclosure that does not contain the exact result, or a value the reference backend returns, for an input it claims to cover.
 
 The code of every oxfuse crate is `forbid(unsafe_code)`, makes no network calls and loads no native code from a model. Its dependencies are another matter: `wgpu` and `fearless_simd` (the SIMD kernels) use `unsafe` inside, and their advisories count as ours.
 
