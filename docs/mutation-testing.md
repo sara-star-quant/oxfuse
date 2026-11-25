@@ -4,17 +4,17 @@
 
 ## Result
 
-CPU-side crates, full run of every shard in CI on 2026-11-08 (run 42436705286, `ubuntu-latest`, the 0.7.0 release tree):
+CPU-side crates, full run of every shard in CI on 2026-11-25 (run 45623619303, `ubuntu-latest`, the 0.9.0 release tree):
 
 | Shard | Mutants | Caught | Timed out (counts as caught) | Unviable (do not compile) | Missed |
 |---|---|---|---|---|---|
-| core | 233 | 202 | 0 | 31 | 0 |
-| runtime (6 sub-shards) | 684 | 650 | 3 | 31 | 0 |
-| cli | 185 | 153 | 6 | 26 | 0 |
-| onnx | 293 | 274 | 1 | 18 | 0 |
-| **Total** | **1395** | **1279** | **10** | **106** | **0** |
+| core | 220 | 186 | 0 | 34 | 0 |
+| runtime (6 sub-shards) | 1190 | 1131 | 2 | 57 | 0 |
+| cli | 238 | 193 | 6 | 39 | 0 |
+| onnx | 293 | 273 | 2 | 18 | 0 |
+| **Total** | **1941** | **1783** | **10** | **148** | **0** |
 
-All 1289 mutants that compile were stopped. The six runtime sub-shards add up to the 684 mutants `cargo mutants --list` reports for the package with the `parallel` feature; check that sum whenever the shard count changes (shards are numbered from 0, and a skipped shard looks like a smaller total).
+All 1793 mutants that compile were stopped. The six runtime sub-shards add up to the 1190 mutants `cargo mutants --list` reports for the package with the `parallel` feature; check that sum whenever the shard count changes (shards are numbered from 0, and a skipped shard looks like a smaller total).
 
 GPU crate, run locally on an Apple M1 Pro (Metal) because it needs a real adapter. It has 624 mutants since the Kani-only file `proofs.rs` is excluded (`.cargo/mutants.toml`). It ran in three passes on 2026-10-23, each on the code of that moment:
 
@@ -33,7 +33,7 @@ A shard is one `cargo mutants` run over one package, with the tests that cover i
 | Shard | Recipe | Mutates | Notes |
 |---|---|---|---|
 | core | `just mutants-core` | `crates/core` | |
-| runtime | `just mutants-runtime` | `crates/runtime`, including the SIMD kernels and `math.rs`; built with the `parallel` feature so the threaded code is compiled | 491 mutants at about 90 s each on a hosted runner: CI splits it into 6 sub-shards (`--shard k/6`) that run in parallel |
+| runtime | `just mutants-runtime` | `crates/runtime`, including the SIMD kernels and `math.rs`; built with the `parallel` feature so the threaded code is compiled | 1190 mutants at about 90 s each on a hosted runner: CI splits it into 6 sub-shards (`--shard k/6`) that run in parallel |
 | cli | `just mutants-cli` | `crates/cli`, built with `wgpu` and `onnx` | runs with an adapter (software Vulkan in CI) |
 | onnx | `just mutants-onnx` | `crates/onnx` | tested by its own package only |
 | wgpu | `just mutants-wgpu` | `crates/wgpu` | 634 mutants, about 100 minutes on an M1 Pro; needs a real adapter, so it runs locally and, for the changed lines only, in the pull request job on software Vulkan |
