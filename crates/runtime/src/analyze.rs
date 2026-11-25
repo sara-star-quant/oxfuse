@@ -107,18 +107,19 @@ pub(crate) fn half_ulp(v: f32) -> f64 {
 /// gives a subnormal that survives being added to itself. Under flush-to-zero or
 /// denormals-are-zero (a CPU mode some programs switch on) it does not, and the rounding
 /// model of the bounds, which counts subnormals at their fixed spacing, no longer holds.
-fn gradual_underflow(tiny: f32) -> bool {
+pub(crate) fn gradual_underflow(tiny: f32) -> bool {
     let half = tiny / 2.0;
     half > 0.0 && half + half == tiny
 }
 
+/// The error of every analysis on a thread that flushes subnormals to zero.
+pub(crate) const FLUSHES_SUBNORMALS: &str =
+    "analyze needs subnormal float32 arithmetic, but this thread flushes subnormals to zero";
+
 /// Run `graph` on `inputs` and certify every output element.
 pub fn analyze(graph: &Graph, inputs: &[Tensor]) -> Result<Vec<Certificate>, Error> {
     if !gradual_underflow(std::hint::black_box(f32::MIN_POSITIVE)) {
-        return Err(Error::Backend(
-            "analyze needs subnormal float32 arithmetic, but this thread flushes subnormals to zero"
-                .into(),
-        ));
+        return Err(Error::Backend(FLUSHES_SUBNORMALS.into()));
     }
     let plan = Plan::build(graph);
     if inputs.len() != plan.inputs.len() {

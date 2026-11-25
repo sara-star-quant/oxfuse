@@ -75,6 +75,15 @@ impl Interval {
         Interval { lo: x, hi: x }
     }
 
+    /// Whether the reference result may be NaN. Every way to a NaN (0/0, infinity minus infinity,
+    /// zero times infinity, infinity over infinity) gives an interval unbounded on both sides, so
+    /// that is the sign: no finite end may promise anything about a NaN, and an operator that
+    /// would map such an interval to a finite one (`Sigmoid`, `Relu`, `Min`, `Max`) must keep
+    /// it unbounded.
+    pub(crate) fn may_be_nan(self) -> bool {
+        self.lo == f64::NEG_INFINITY && self.hi == f64::INFINITY
+    }
+
     /// Two float64 endpoints just computed, rounded outward. NaN means the operation had
     /// no answer (zero times infinity): unbounded.
     fn outward(lo: f64, hi: f64) -> Interval {
@@ -150,6 +159,9 @@ fn div(a: Interval, b: Interval) -> Interval {
 }
 
 fn sigmoid(x: Interval) -> Interval {
+    if x.may_be_nan() {
+        return WHOLE;
+    }
     let logistic = |v: f64| 1.0 / (1.0 + (-v).exp());
     let (sl, sh) = (logistic(x.lo), logistic(x.hi));
     let lo = sl * (1.0 - SIGMOID_F64_SLACK) - (SIGMOID_RELATIVE * sl + SIGMOID_ABSOLUTE);
@@ -195,9 +207,15 @@ pub(crate) fn step(
     match op {
         Op::Relu => v[0]
             .iter()
-            .map(|x| Interval {
-                lo: x.lo.max(0.0),
-                hi: x.hi.max(0.0),
+            .map(|x| {
+                if x.may_be_nan() {
+                    WHOLE
+                } else {
+                    Interval {
+                        lo: x.lo.max(0.0),
+                        hi: x.hi.max(0.0),
+                    }
+                }
             })
             .collect(),
         Op::Sigmoid => v[0].iter().map(|&x| sigmoid(x)).collect(),
@@ -215,13 +233,23 @@ pub(crate) fn step(
         Op::Mul => binary(mul),
         Op::Div => binary(div),
         // The result is one of the operands: nothing rounds.
-        Op::Min => binary(|a, b| Interval {
-            lo: a.lo.min(b.lo),
-            hi: a.hi.min(b.hi),
+        Op::Min => binary(|a, b| {
+            if a.may_be_nan() || b.may_be_nan() {
+                return WHOLE;
+            }
+            Interval {
+                lo: a.lo.min(b.lo),
+                hi: a.hi.min(b.hi),
+            }
         }),
-        Op::Max => binary(|a, b| Interval {
-            lo: a.lo.max(b.lo),
-            hi: a.hi.max(b.hi),
+        Op::Max => binary(|a, b| {
+            if a.may_be_nan() || b.may_be_nan() {
+                return WHOLE;
+            }
+            Interval {
+                lo: a.lo.max(b.lo),
+                hi: a.hi.max(b.hi),
+            }
         }),
         Op::MatMul => matmul(v[0], v[1], shapes),
     }
@@ -323,6 +351,9 @@ pub fn analyze_box_with(
     hi: &[Tensor],
     max_symbols: usize,
 ) -> Result<Vec<Enclosure>, Error> {
+    if !crate::analyze::gradual_underflow(std::hint::black_box(f32::MIN_POSITIVE)) {
+        return Err(Error::Backend(crate::analyze::FLUSHES_SUBNORMALS.into()));
+    }
     let plan = Plan::build(graph);
     let plain = plain_slots(&plan, lo, hi)?;
     let refined = crate::affine::refine(&plan, lo, hi, &plain, max_symbols);
@@ -912,5 +943,47 @@ mod tests {
             below.hi >= logistic(-87.5) + SIGMOID_TINY_BOUND,
             "{below:?}"
         );
+    }
+
+    #[test]
+    fn only_an_interval_unbounded_on_both_sides_may_be_a_nan() {
+        assert!(WHOLE.may_be_nan());
+        let inf = f64::INFINITY;
+        assert!(!Interval { lo: 0.0, hi: inf }.may_be_nan());
+        assert!(!Interval { lo: -inf, hi: 0.0 }.may_be_nan());
+        assert!(!Interval { lo: -1.0, hi: 1.0 }.may_be_nan());
+        assert!(!Interval::point(0.0).may_be_nan());
+    }
+
+    /// The operators that would turn an unbounded interval into a finite one keep it unbounded:
+    /// it may stand for a NaN, which no finite end can enclose. A one-sided unbounded interval
+    /// (an infinite input end) cannot be a NaN and keeps its finite end.
+    #[test]
+    fn sigmoid_relu_min_and_max_keep_a_possible_nan_unbounded() {
+        let one = |op: Op, x: Interval| step(&op, &[&[x]], &[&[1]], 1)[0];
+        let two = |op: Op, a: Interval, b: Interval| step(&op, &[&[a], &[b]], &[&[1], &[1]], 1)[0];
+        let small = Interval { lo: 0.0, hi: 1.0 };
+        assert_eq!(one(Op::Sigmoid, WHOLE), WHOLE);
+        assert_eq!(one(Op::Relu, WHOLE), WHOLE);
+        for (a, b) in [(WHOLE, small), (small, WHOLE), (WHOLE, WHOLE)] {
+            assert_eq!(two(Op::Min, a, b), WHOLE);
+            assert_eq!(two(Op::Max, a, b), WHOLE);
+        }
+        // Neg of unbounded stays unbounded on its own.
+        assert_eq!(one(Op::Neg, WHOLE), WHOLE);
+        let up = Interval {
+            lo: 0.0,
+            hi: f64::INFINITY,
+        };
+        assert_eq!(one(Op::Relu, up), up);
+        assert_eq!(two(Op::Min, up, small).hi, 1.0);
+        assert_eq!(
+            two(Op::Max, up, small),
+            Interval {
+                lo: 0.0,
+                hi: f64::INFINITY
+            }
+        );
+        assert!(one(Op::Sigmoid, up).hi.is_finite());
     }
 }

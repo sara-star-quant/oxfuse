@@ -20,7 +20,7 @@ oxfuse analyze examples/tiny_mlp.json --inputs boxes.json
 {"outputs":[{"name":"out","shape":[2,2],"lo":[0.0,0.0,0.0,0.0],"hi":[3.576278935213398e-7,2.000000298023231,2.000000178813941,4.76837195506619e-7]}]}
 ```
 
-For every input in the box, the exact real-number result and the float32 result of the reference backend (what `run --backend reference` prints) lie in `[lo, hi]` of each output element. There is no `values` or `bounds` in this form, because there is no single value. A `null` end is unbounded: a divisor whose range reaches zero, or a result that can pass the largest float32. `run` does not accept boxes.
+For every input in the box, the exact real-number result and the float32 result of the reference backend (what `run --backend reference` prints) lie in `[lo, hi]` of each output element. There is no `values` or `bounds` in this form, because there is no single value. A `null` end is unbounded: a divisor whose range reaches zero, or a result that can pass the largest float32. An element whose result can be NaN (0 / 0, infinity minus infinity, zero times infinity) is unbounded on both sides, and so is anything computed from it: a finite enclosure never claims to contain a NaN. `run` does not accept boxes.
 
 How it is built: each element is a center plus coefficients on one shared noise symbol per input element plus an independent error (an affine form), so a value used twice is not counted twice and the width grows slowly with depth. `Add`, `Sub`, `Neg`, `Reshape`, `Transpose`, a product or quotient with a constant, and a `MatMul` with a constant operand are exact on the symbols, with the float32 rounding of every result (and of every fused step of a `MatMul`) and the float64 rounding of the analysis added to the error. `Relu` is exact when its sign is decided and the standard chord relaxation when not. `Min`, `Max`, `Sigmoid`, a product of two varying values and a `MatMul` of two varying matrices use plain interval arithmetic for that node. The answer is intersected with a plain interval analysis of the whole graph, so it is never wider than that. The analysis tracks at most 256 symbols (`oxfuse_runtime::analyze_box_with` takes another number): a wider input gives its widest elements a symbol each and treats the rest as independent errors, which is looser and still sound.
 
@@ -38,7 +38,8 @@ Reproduce with `cargo test -p oxfuse-runtime --lib the_width_over_the_sampled_ra
 ## What it assumes
 
 - **IEEE 754 binary32 round to nearest**, with a correctly rounded fused multiply-add (Rust's `mul_add` is, in hardware or in software).
-- **Gradual underflow.** A thread that flushes subnormals to zero, or reads them as zero, breaks the rounding model; `analyze` checks this at start and refuses to run.
+- **Gradual underflow.** A thread that flushes subnormals to zero, or reads them as zero, breaks the rounding model; `analyze` and `analyze_box` check this at start and refuse to run.
+- **The own sigmoid.** Its relative error bound rests on the own `exp` being within 1 ulp, which the hash over all 2^32 inputs pins; the box analysis also evaluates the logistic in float64 with the platform's `exp`, which it assumes is accurate to a few ulps (it allows 16 float64 epsilons).
 - **float32 inputs.** Decimal numbers in an inputs file round to float32 when read, and the interval covers those float32 values.
 
 ## What it does not do
