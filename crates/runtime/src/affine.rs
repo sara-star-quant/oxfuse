@@ -45,9 +45,12 @@ fn round_term(m: f64) -> f64 {
     }
 }
 
-/// The part of two enclosures both hold; the plain one if they somehow do not meet.
+/// The part of two enclosures both hold; the plain one if they somehow do not meet. Both
+/// contain the true result, so they always meet: a miss is a bug in one of them, which a debug
+/// build (and so every test) reports.
 fn meet(a: Interval, b: Interval) -> Interval {
     let (lo, hi) = (a.lo.max(b.lo), a.hi.min(b.hi));
+    debug_assert!(lo <= hi, "enclosures that do not meet: {a:?} and {b:?}");
     if lo <= hi { Interval { lo, hi } } else { b }
 }
 
@@ -845,6 +848,25 @@ mod tests {
 
     fn gamma(k: usize, s: usize) -> f64 {
         2.0 * EPS * (k as f64 + s as f64 + 8.0)
+    }
+
+    #[test]
+    fn meet_is_the_overlap_of_two_enclosures() {
+        let a = Interval { lo: 0.0, hi: 4.0 };
+        let b = Interval { lo: 1.0, hi: 9.0 };
+        assert_eq!(meet(a, b), Interval { lo: 1.0, hi: 4.0 });
+        assert_eq!(meet(b, a), Interval { lo: 1.0, hi: 4.0 });
+        assert_eq!(meet(a, WHOLE), a);
+        assert_eq!(meet(a, Interval::point(2.0)), Interval::point(2.0));
+    }
+
+    /// Both enclosures contain the true result, so a pair that does not meet is a bug; a debug
+    /// build says so instead of quietly keeping the plain one.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "do not meet")]
+    fn disjoint_enclosures_are_reported_in_a_debug_build() {
+        meet(Interval { lo: 0.0, hi: 1.0 }, Interval { lo: 2.0, hi: 3.0 });
     }
 
     #[test]
