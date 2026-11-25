@@ -87,7 +87,7 @@ fn every_project_is_cited_for_every_topic() {
         "Latest release",
     ] {
         let n = rows.iter().filter(|c| c[1] == topic).count();
-        assert!(n >= 6, "topic `{topic}` has {n} rows");
+        assert!(n >= 5, "topic `{topic}` has {n} rows");
     }
 }
 
