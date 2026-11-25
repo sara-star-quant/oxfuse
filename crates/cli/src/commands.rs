@@ -2,7 +2,8 @@
 //! are testable without spawning the binary.
 
 use crate::format::{
-    CertificatesFile, CertifiedTensorFile, InputsFile, NamedTensorFile, OutputsFile,
+    BoxInputsFile, BoxTensorFile, CertificatesFile, CertifiedTensorFile, EnclosureTensorFile,
+    EnclosuresFile, InputsFile, NamedTensorFile, OutputsFile,
 };
 use crate::manifest::{self, OutputDigest};
 use crate::{CliError, load_graph};
@@ -452,9 +453,63 @@ fn render_outputs(outputs: Vec<(String, Tensor)>) -> Result<String, CliError> {
     Ok(text)
 }
 
+/// An input of `analyze`: one point, or a box `[lo, hi]`.
+enum Bound {
+    Point(Tensor),
+    Box(Tensor, Tensor),
+}
+
+/// Like `bind_inputs` for `analyze`, where an input may be a box.
+fn bind_box_inputs(
+    graph: &Graph,
+    path: Option<&Path>,
+    limits: &Limits,
+) -> Result<Vec<Bound>, CliError> {
+    let ids = graph.inputs();
+    let Some(path) = path else {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Err(CliError::MissingInputs { count: ids.len() });
+    };
+    let text = read_limited(path, limits)?;
+    let BoxInputsFile(mut file) =
+        serde_json::from_str(&text).map_err(|source| CliError::InputsJson {
+            path: path.display().to_string(),
+            source,
+        })?;
+    let mut bound = Vec::with_capacity(ids.len());
+    for &id in ids {
+        let name = graph.label(id);
+        let entry = file
+            .remove(&name)
+            .ok_or_else(|| CliError::MissingInput { name: name.clone() })?;
+        bound.push(match entry {
+            BoxTensorFile::Point(t) => {
+                ensure_finite(&name, &t.values)?;
+                Bound::Point(Tensor::named(&name, t.shape, t.values)?)
+            }
+            BoxTensorFile::Box { shape, lo, hi } => {
+                ensure_finite(&name, &lo)?;
+                ensure_finite(&name, &hi)?;
+                Bound::Box(
+                    Tensor::named(&name, shape.clone(), lo)?,
+                    Tensor::named(&name, shape, hi)?,
+                )
+            }
+        });
+    }
+    if let Some(name) = file.into_keys().next() {
+        return Err(CliError::UnknownInput { name });
+    }
+    Ok(bound)
+}
+
 /// Runs the reference kernels on the inputs and certifies every output element
-/// (see `oxfuse_runtime::analyze`). The graph is analyzed as written, without
-/// the passes. A non-finite value is an error, as in `run`.
+/// (see `oxfuse_runtime::analyze`), or, when an input is a box, encloses every
+/// output element for all inputs in the box (see `oxfuse_runtime::analyze_box`).
+/// The graph is analyzed as written, without the passes. For points a non-finite
+/// value is an error, as in `run`.
 pub fn analyze(
     graph_path: &Path,
     inputs_path: Option<&Path>,
@@ -462,7 +517,17 @@ pub fn analyze(
 ) -> Result<String, CliError> {
     let limits = Limits::default();
     let graph = load_path(graph_path, &limits, dims)?;
-    let tensors = bind_inputs(&graph, inputs_path, &limits)?;
+    let bound = bind_box_inputs(&graph, inputs_path, &limits)?;
+    if bound.iter().any(|b| matches!(b, Bound::Box(..))) {
+        return analyze_box(&graph, bound);
+    }
+    let tensors: Vec<Tensor> = bound
+        .into_iter()
+        .filter_map(|b| match b {
+            Bound::Point(t) => Some(t),
+            Bound::Box(..) => None,
+        })
+        .collect();
     let mut outputs = Vec::new();
     for cert in oxfuse_runtime::analyze(&graph, &tensors)? {
         ensure_finite(&cert.name, &cert.values)?;
@@ -479,6 +544,37 @@ pub fn analyze(
     }
     let mut text = serde_json::to_string(&CertificatesFile { outputs })
         .expect("finite values and optional bounds serialize");
+    text.push('\n');
+    Ok(text)
+}
+
+/// The enclosure form of `analyze`: a point input is the box with both ends equal.
+fn analyze_box(graph: &Graph, bound: Vec<Bound>) -> Result<String, CliError> {
+    let (mut los, mut his) = (Vec::new(), Vec::new());
+    for b in bound {
+        match b {
+            Bound::Point(t) => {
+                los.push(t.clone());
+                his.push(t);
+            }
+            Bound::Box(lo, hi) => {
+                los.push(lo);
+                his.push(hi);
+            }
+        }
+    }
+    let end = |v: f64| v.is_finite().then_some(v);
+    let outputs = oxfuse_runtime::analyze_box(graph, &los, &his)?
+        .into_iter()
+        .map(|e| EnclosureTensorFile {
+            name: e.name,
+            shape: e.shape,
+            lo: e.lo.into_iter().map(end).collect(),
+            hi: e.hi.into_iter().map(end).collect(),
+        })
+        .collect();
+    let mut text = serde_json::to_string(&EnclosuresFile { outputs })
+        .expect("finite ends and optional ends serialize");
     text.push('\n');
     Ok(text)
 }
