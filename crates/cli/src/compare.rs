@@ -34,7 +34,7 @@ fn file_error(path: &Path, reason: impl ToString) -> CliError {
     }
 }
 
-fn load_outputs(path: &Path) -> Result<BTreeMap<String, NamedTensorFile>, CliError> {
+pub(crate) fn load_outputs(path: &Path) -> Result<BTreeMap<String, NamedTensorFile>, CliError> {
     let text = fs::read_to_string(path).map_err(|source| CliError::Io {
         path: path.display().to_string(),
         source,

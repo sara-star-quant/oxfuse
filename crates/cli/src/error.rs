@@ -47,6 +47,10 @@ pub enum CliError {
     CompareFile { path: String, reason: String },
     #[error("graph needs about {estimated} multiply-adds, over --max-macs {limit}")]
     TooMuchWork { estimated: usize, limit: usize },
+    #[error("outputs do not conform: {verdict}")]
+    ConformDiffers { verdict: &'static str },
+    #[error("cannot check conformance: {reason}")]
+    ConformOutputs { reason: String },
 }
 
 impl CliError {
@@ -70,6 +74,8 @@ impl CliError {
             CliError::CompareOutputs { .. } => "E111",
             CliError::CompareManifest { .. } => "E112",
             CliError::CompareFile { .. } => "E113",
+            CliError::ConformDiffers { .. } => "E114",
+            CliError::ConformOutputs { .. } => "E115",
         }
     }
 }
