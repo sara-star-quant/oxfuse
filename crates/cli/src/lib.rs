@@ -4,6 +4,7 @@
 
 mod commands;
 mod compare;
+mod conform;
 mod error;
 mod format;
 mod loader;
@@ -16,6 +17,7 @@ pub use commands::{
     dims_from_args, inspect, run, run_with,
 };
 pub use compare::compare;
+pub use conform::conform;
 pub use error::CliError;
 pub use format::{CertificatesFile, CertifiedTensorFile, NamedTensorFile, OutputsFile, TensorFile};
 pub use loader::load_graph;

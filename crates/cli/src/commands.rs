@@ -453,8 +453,8 @@ fn render_outputs(outputs: Vec<(String, Tensor)>) -> Result<String, CliError> {
     Ok(text)
 }
 
-/// An input of `analyze`: one point, or a box `[lo, hi]`.
-enum Bound {
+/// An input of `analyze` and `conform`: one point, or a box `[lo, hi]`.
+pub(crate) enum Bound {
     Point(Tensor),
     Box(Tensor, Tensor),
 }
@@ -515,9 +515,7 @@ pub fn analyze(
     inputs_path: Option<&Path>,
     dims: &Dims,
 ) -> Result<String, CliError> {
-    let limits = Limits::default();
-    let graph = load_path(graph_path, &limits, dims)?;
-    let bound = bind_box_inputs(&graph, inputs_path, &limits)?;
+    let (graph, bound) = load_and_bind(graph_path, inputs_path, dims)?;
     if bound.iter().any(|b| matches!(b, Bound::Box(..))) {
         return analyze_box(&graph, bound);
     }
@@ -548,8 +546,20 @@ pub fn analyze(
     Ok(text)
 }
 
-/// The enclosure form of `analyze`: a point input is the box with both ends equal.
-fn analyze_box(graph: &Graph, bound: Vec<Bound>) -> Result<String, CliError> {
+/// Loads the graph and binds its inputs, each a point or a box.
+pub(crate) fn load_and_bind(
+    graph_path: &Path,
+    inputs_path: Option<&Path>,
+    dims: &Dims,
+) -> Result<(Graph, Vec<Bound>), CliError> {
+    let limits = Limits::default();
+    let graph = load_path(graph_path, &limits, dims)?;
+    let bound = bind_box_inputs(&graph, inputs_path, &limits)?;
+    Ok((graph, bound))
+}
+
+/// The lower and the upper tensor of each input: a point is the box with both ends equal.
+pub(crate) fn boxes_of(bound: Vec<Bound>) -> (Vec<Tensor>, Vec<Tensor>) {
     let (mut los, mut his) = (Vec::new(), Vec::new());
     for b in bound {
         match b {
@@ -563,6 +573,12 @@ fn analyze_box(graph: &Graph, bound: Vec<Bound>) -> Result<String, CliError> {
             }
         }
     }
+    (los, his)
+}
+
+/// The enclosure form of `analyze`.
+fn analyze_box(graph: &Graph, bound: Vec<Bound>) -> Result<String, CliError> {
+    let (los, his) = boxes_of(bound);
     let end = |v: f64| v.is_finite().then_some(v);
     let outputs = oxfuse_runtime::analyze_box(graph, &los, &his)?
         .into_iter()

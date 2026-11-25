@@ -56,6 +56,7 @@ Errors carry a code and a location: ``error[E017]: node `y`: MatMul: inner dimen
 | Golden outputs for a test suite: the fast backend must match the reference byte for byte | `oxfuse run g.json --inputs i.json --backend reference > golden.json`, then `--backend cpu > out.json`, then `cmp` |
 | A record of a run, and a verdict on a difference | `oxfuse run ... --manifest run.json`, then `oxfuse compare golden.json out.json` ([docs/manifest.md](docs/manifest.md)) |
 | A bound on how far each output is from the exact result | `oxfuse analyze g.json --inputs i.json` ([docs/analysis.md](docs/analysis.md)) |
+| To check another runtime's outputs against the exact result and the reference arithmetic, with no tolerance | `oxfuse conform out.json --graph g.json --inputs i.json` ([docs/conform.md](docs/conform.md)) |
 | A guaranteed range for each output over a whole range of inputs | `oxfuse analyze g.json --inputs boxes.json`, each input `{"shape", "lo", "hi"}` ([docs/analysis.md](docs/analysis.md)) |
 | A small ONNX model checked against another runtime | `oxfuse run model.onnx --inputs i.json --backend reference` (needs `--features onnx`) |
 | To know whether a GPU can be trusted for your numerics | `oxfuse gpu-selftest` (needs `--features wgpu`) |

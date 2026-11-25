@@ -65,6 +65,20 @@ enum Command {
         #[arg(long)]
         manifest_b: Option<PathBuf>,
     },
+    /// Check another runtime's outputs against the graph's enclosure: inside, outside or unresolved per element
+    Conform {
+        /// The outputs file to check, in the JSON `run` prints
+        outputs: PathBuf,
+        /// The graph (or ONNX model) the outputs claim to come from
+        #[arg(long)]
+        graph: PathBuf,
+        /// JSON file mapping each graph input name to a point or a box (`lo` and `hi`)
+        #[arg(long)]
+        inputs: Option<PathBuf>,
+        /// Value for a named dimension of an ONNX model, as NAME=VALUE; repeatable
+        #[arg(long = "dim", value_parser = parse_dim)]
+        dim: Vec<(String, usize)>,
+    },
     /// Certify the outputs: print each value with a bound on its distance from the exact result
     Analyze {
         file: PathBuf,
@@ -151,6 +165,21 @@ fn main() -> ExitCode {
         Command::GpuSelftest { limits } => oxfuse_cli::gpu_selftest(limits.is_some())
             .map(|text| (text, String::new()))
             .map_err(|error| (error, String::new())),
+        Command::Conform {
+            outputs,
+            graph,
+            inputs,
+            dim,
+        } => match oxfuse_cli::dims_from_args(dim) {
+            Ok(dims) => oxfuse_cli::conform(outputs, graph, inputs.as_deref(), &dims)
+                .map(|report| (report, String::new()))
+                .map_err(|failure| {
+                    // The report goes to stdout even when the verdict fails the run.
+                    let _ = emit(&failure.stdout, "");
+                    (failure.error, failure.stderr)
+                }),
+            Err(error) => Err((error, String::new())),
+        },
         Command::Analyze { file, inputs, dim } => oxfuse_cli::dims_from_args(dim)
             .and_then(|dims| oxfuse_cli::analyze(file, inputs.as_deref(), &dims))
             .map(|text| (text, String::new()))
