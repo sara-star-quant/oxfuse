@@ -10,10 +10,12 @@ oxfuse run model.onnx --inputs inputs.json    # needs --features onnx
 oxfuse inspect graph.json
 oxfuse compare a.json b.json          # bit differences between two outputs files
 oxfuse analyze graph.json --inputs inputs.json   # each output with a bound on its distance from the exact result
+oxfuse analyze graph.json --inputs boxes.json    # inputs as {"shape", "lo", "hi"}: a range per output for every input in the box
+oxfuse conform out.json --graph graph.json --inputs inputs.json   # inside, outside or unresolved per element, no tolerance
 oxfuse gpu-selftest                   # needs --features wgpu
 ```
 
-**For AI work:** exact, repeatable float32 results, golden outputs and a corpus for checking other runtimes, run records with `compare`, and a GPU numerics probe. Not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
+**For AI work:** exact, repeatable float32 results, golden outputs and a corpus for checking other runtimes, run records with `compare`, an enclosure of the reference arithmetic over a range of inputs with a verdict on another runtime's outputs (`analyze` and `conform`, no tolerance to choose), and a GPU numerics probe. Not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
 
 Try it with no clone (this is a complete run; the graph is `relu(x @ w)`):
 
@@ -27,9 +29,10 @@ oxfuse check graph.json
 oxfuse run graph.json --inputs inputs.json --backend reference --manifest ref.json > ref.out
 oxfuse run graph.json --inputs inputs.json --backend cpu --manifest cpu.json > cpu.out
 oxfuse compare ref.out cpu.out --manifest-a ref.json --manifest-b cpu.json   # verdict: identical
+oxfuse conform cpu.out --graph graph.json --inputs inputs.json   # verdict: inside
 ```
 
-`cpu.out` holds `{"outputs":[{"name":"y","shape":[2,2],"values":[0.0,0.0,12.5,0.0]}]}`.
+`cpu.out` holds `{"outputs":[{"name":"y","shape":[2,2],"values":[0.0,0.0,12.5,0.0]}]}`. `conform` prints `y: 4 of 4 inside, 0 outside, 0 unresolved` and `verdict: inside`: every element lies in the enclosure of the graph over the inputs (see `docs/conform.md` in the repository).
 
 Experimental. The `wgpu` backend and `oxfuse gpu-selftest` need the `wgpu` feature. See the repository for the graph format, examples and benchmarks.
 

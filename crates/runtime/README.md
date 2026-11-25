@@ -4,12 +4,12 @@ Part of [oxfuse](https://github.com/sara-star-quant/oxfuse), a small tensor grap
 
 Tensors, execution plans and the CPU backends for [oxfuse](https://github.com/sara-star-quant/oxfuse) graphs: a reference backend, and a fast backend that returns the same bits on the platforms it is tested on. The fast matmul and `Sigmoid` run on SIMD vectors picked at run time (AVX2 or AVX-512 on x86, NEON on ARM) through `fearless_simd`, which sets the minimum Rust to 1.89. The optional `parallel` feature threads the fast matmul without changing results (tested on 64-bit platforms).
 
-**For AI work:** run a graph on a reference backend and on a fast backend that agree bit for bit, and use the pair as a numerical baseline or an oracle in tests. Not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
+**For AI work:** run a graph on a reference backend and on a fast backend that agree bit for bit, and use the pair as a numerical baseline or an oracle in tests; `analyze` and `analyze_box` give a bound or an enclosure of the reference arithmetic, for one input or a whole box of them. Not for large models, training or production inference ([use cases](https://github.com/sara-star-quant/oxfuse/blob/main/docs/use-cases.md)).
 
 ```rust
 // cargo add oxfuse-core oxfuse-runtime
 use oxfuse_core::{GraphBuilder, Limits, Op};
-use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, Tensor};
+use oxfuse_runtime::{Backend, CpuBackend, ReferenceBackend, Tensor, analyze_box};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut b = GraphBuilder::new(Limits::default());
@@ -25,6 +25,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bits = |t: &Tensor| t.data().iter().map(|v| v.to_bits()).collect::<Vec<_>>();
     assert_eq!(bits(&reference[0]), bits(&fast[0])); // same bits
     println!("{:?}", fast[0].data()); // [0.0, 0.0, 12.5, 0.0]
+
+    // For every input in a box, an interval for each output element that holds the exact result
+    // and the reference float32 result (affine forms intersected with plain intervals).
+    let lo = Tensor::new(vec![2, 3], vec![0.5, -2.5, 2.5, 3.5, 4.5, -6.5])?;
+    let hi = Tensor::new(vec![2, 3], vec![1.5, -1.5, 3.5, 4.5, 5.5, -5.5])?;
+    let enclosure = &analyze_box(&graph, &[lo], &[hi])?[0];
+    for (i, v) in fast[0].data().iter().enumerate() {
+        assert!(enclosure.lo[i] <= f64::from(*v) && f64::from(*v) <= enclosure.hi[i]);
+    }
     Ok(())
 }
 ```
